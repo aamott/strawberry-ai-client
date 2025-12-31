@@ -1,0 +1,48 @@
+# Strawberry AI Spoke Configuration
+
+device:
+  name: "My Strawberry Spoke"
+  # id: auto-generated if not set
+
+hub:
+  url: "http://localhost:8000"
+  token: "${HUB_TOKEN}"
+
+audio:
+  backend: sounddevice
+  sample_rate: 16000
+  frame_length_ms: 30
+
+wake_word:
+  backend: porcupine
+  keywords:
+    - jarvis
+  sensitivity: 0.5
+  enabled: true
+
+vad:
+  backend: silero
+  threshold: 0.5
+  config:
+    max_buffer: 2.0
+    initial_buffer: 1.5
+    base_decay: 1.0
+    growth_rate: 2.0
+    long_talk_threshold: 8.0
+
+stt:
+  backend: leopard
+  language: en-US
+
+tts:
+  backend: orca
+
+skills:
+  path: ./skills
+  sandbox_timeout_seconds: 5.0
+
+ui:
+  theme: dark
+  start_minimized: false
+  show_waveform: true
+
