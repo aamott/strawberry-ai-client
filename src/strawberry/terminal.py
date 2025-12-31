@@ -157,21 +157,25 @@ class TerminalApp:
             return 1
         
         try:
-            # Initialize components
-            print(f"{Colors.DIM}Initializing audio...{Colors.RESET}")
-            audio = SoundDeviceBackend(
-                sample_rate=self.settings.audio.sample_rate,
-                frame_length_ms=self.settings.audio.frame_length_ms,
-            )
-            
+            # Initialize wake word detector first to get required frame length
             print(f"{Colors.DIM}Initializing wake word detector...{Colors.RESET}")
             wake = PorcupineDetector(
                 keywords=self.settings.wake_word.keywords,
                 sensitivity=self.settings.wake_word.sensitivity,
             )
             
+            # Calculate frame_length_ms from Porcupine's requirements
+            # Porcupine requires specific frame_length (512 samples at 16kHz = 32ms)
+            porcupine_frame_ms = int(wake.frame_length * 1000 / wake.sample_rate)
+            
+            print(f"{Colors.DIM}Initializing audio (frame={porcupine_frame_ms}ms to match wake word)...{Colors.RESET}")
+            audio = SoundDeviceBackend(
+                sample_rate=wake.sample_rate,  # Use Porcupine's sample rate
+                frame_length_ms=porcupine_frame_ms,
+            )
+            
             print(f"{Colors.DIM}Initializing VAD...{Colors.RESET}")
-            vad = SileroVAD(sample_rate=self.settings.audio.sample_rate)
+            vad = SileroVAD(sample_rate=wake.sample_rate)
             
             print(f"{Colors.DIM}Initializing STT...{Colors.RESET}")
             stt = LeopardSTT()
@@ -193,6 +197,9 @@ class TerminalApp:
                 response_handler=self._get_response,
                 config=config,
             )
+            
+            # Override the VAD processor's frame duration to match actual audio
+            pipeline._vad_processor._frame_duration = porcupine_frame_ms / 1000.0
             
             # Register event handler
             pipeline.on_event(self._on_pipeline_event)

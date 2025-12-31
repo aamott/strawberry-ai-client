@@ -90,6 +90,9 @@ class OrcaTTS(TTSEngine):
         
         Yields audio chunks as they're generated for low-latency playback.
         
+        The Orca streaming API is designed for token-by-token synthesis from LLMs.
+        For a complete text string, we feed it character by character or word by word.
+        
         Args:
             text: Text to synthesize
             
@@ -99,20 +102,25 @@ class OrcaTTS(TTSEngine):
         stream = self._orca.stream_open()
         
         try:
-            # Feed text to streaming synthesizer
-            for pcm in self._orca.synthesize_stream(stream, text):
+            # Feed text to streaming synthesizer word by word
+            # The stream buffers until it has enough context to synthesize
+            words = text.split()
+            for i, word in enumerate(words):
+                # Add space before word (except first)
+                chunk = word if i == 0 else " " + word
+                pcm = stream.synthesize(chunk)
                 if pcm is not None and len(pcm) > 0:
                     audio = np.array(pcm, dtype=np.int16)
                     yield AudioChunk(audio=audio, sample_rate=self._sample_rate_val)
             
             # Flush any remaining audio
-            pcm = self._orca.stream_flush(stream)
+            pcm = stream.flush()
             if pcm is not None and len(pcm) > 0:
                 audio = np.array(pcm, dtype=np.int16)
                 yield AudioChunk(audio=audio, sample_rate=self._sample_rate_val)
                 
         finally:
-            self._orca.stream_close(stream)
+            stream.close()
     
     def cleanup(self) -> None:
         """Release Orca resources."""
