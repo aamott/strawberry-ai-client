@@ -437,6 +437,45 @@ print(info)
         
         logger.info(f"Reloaded {len(skills)} skills")
         return skills
+    
+    async def execute_skill_by_name(
+        self,
+        skill_name: str,
+        method_name: str,
+        args: list,
+        kwargs: dict,
+    ) -> Any:
+        """Execute a skill method by name (for WebSocket requests).
+        
+        Args:
+            skill_name: Skill class name
+            method_name: Method name to call
+            args: Positional arguments
+            kwargs: Keyword arguments
+            
+        Returns:
+            Result from skill execution
+            
+        Raises:
+            ValueError: If skill or method not found
+            RuntimeError: If skill execution fails
+        """
+        if not self._skills_loaded:
+            self.load_skills()
+        
+        # Get skill
+        skill = self._loader.get_skill(skill_name)
+        if not skill:
+            raise ValueError(f"Skill '{skill_name}' not found")
+        
+        # Call method
+        try:
+            result = self._loader.call_method(skill_name, method_name, *args, **kwargs)
+            logger.info(f"Executed {skill_name}.{method_name} -> {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Skill execution failed: {skill_name}.{method_name} - {e}")
+            raise RuntimeError(f"Skill execution failed: {e}")
 
 
 class _DeviceProxy:

@@ -12,6 +12,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "httpx>=0.25",
     "tenacity>=8.0",  # Retry logic
+    "websockets>=12.0",  # WebSocket client for Hub connection
     
     # Audio
     "sounddevice>=0.4",

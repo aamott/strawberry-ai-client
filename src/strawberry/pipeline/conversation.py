@@ -271,11 +271,11 @@ class ConversationPipeline:
         
         # Monitor timeout in separate thread
         def monitor_timeout():
-            processing_thread.join(timeout=self._config.processing_timeout)
+            processing_thread.join(timeout=self.config.processing_timeout)
             if processing_thread.is_alive():
                 # Processing timed out
                 self._emit(EventType.ERROR, {
-                    "error": f"Processing timeout after {self._config.processing_timeout}s",
+                    "error": f"Processing timeout after {self.config.processing_timeout}s",
                     "stage": "processing"
                 })
                 # Force state back to listening

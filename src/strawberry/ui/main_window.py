@@ -30,6 +30,7 @@ class MainWindow(QMainWindow):
     
     closing = Signal()
     minimized_to_tray = Signal()
+    hub_connection_changed = Signal(bool)
     
     def __init__(
         self,
@@ -50,6 +51,10 @@ class MainWindow(QMainWindow):
         self._setup_menu()
         self._setup_ui()
         self._apply_theme()
+        
+        # Connect signals
+        self.hub_connection_changed.connect(self._update_hub_status)
+        
         
         # Initialize skills and Hub connection
         self._init_skills()
@@ -193,7 +198,22 @@ class MainWindow(QMainWindow):
         title_font.setPointSize(16)
         title_font.setWeight(QFont.Weight.Bold)
         title.setFont(title_font)
+        title.setFont(title_font)
         layout.addWidget(title)
+        
+        layout.addSpacing(12)
+        
+        # Status indicator
+        self._status_indicator = QLabel()
+        self._status_indicator.setFixedSize(12, 12)
+        self._status_indicator.setToolTip("Hub Status: Disconnected")
+        self._update_indicator_style(False)
+        layout.addWidget(self._status_indicator)
+        
+        # Status text
+        self._status_text = QLabel("Offline")
+        self._status_text.setProperty("muted", True)
+        layout.addWidget(self._status_text)
         
         layout.addStretch()
         
@@ -265,6 +285,9 @@ class MainWindow(QMainWindow):
             )
             self._hub_client = HubClient(config)
             
+            # Set connection callback
+            self._hub_client.set_connection_callback(self._on_hub_connection_callback)
+            
             # Check connection asynchronously
             asyncio.ensure_future(self._check_hub_connection())
         else:
@@ -281,20 +304,53 @@ class MainWindow(QMainWindow):
                 self._connected = healthy
                 
                 if healthy:
-                    self._status_bar.set_connected(True, self.settings.hub.url)
+                    # Update status manually since callback might not have fired yet if we didn't use connect_websocket explicitly here
+                    # But connect_websocket is called by app logic usually? 
+                    # Actually HubClient.health() is HTTP, not WebSocket.
+                    # We should probably initialize WebSocket here or rely on explicit connect.
+                    # For now, let's trust the health check for initial status.
+                    self._update_hub_status(True)
                     self._chat_area.add_system_message("Connected to Hub. Ready to chat!")
+                    
+                    # Connect WebSocket
+                    asyncio.create_task(self._hub_client.connect_websocket())
                     
                     # Register skills with Hub
                     await self._register_skills_with_hub()
                 else:
-                    self._status_bar.set_connected(False)
+                    self._update_hub_status(False)
                     self._chat_area.add_system_message(
                         "Hub is not responding. Check if the server is running."
                     )
             except Exception as e:
-                self._connected = False
-                self._status_bar.set_connected(False)
+                self._update_hub_status(False)
                 self._chat_area.add_system_message(f"Failed to connect to Hub: {e}")
+    
+    async def _on_hub_connection_callback(self, connected: bool):
+        """Handle Hub connection callback (async)."""
+        self.hub_connection_changed.emit(connected)
+
+    @Slot(bool)
+    def _update_hub_status(self, connected: bool):
+        """Update Hub connection status UI."""
+        self._connected = connected
+        
+        # Update indicator
+        self._update_indicator_style(connected)
+        self._status_indicator.setToolTip(f"Hub Status: {'Connected' if connected else 'Disconnected'}")
+        self._status_text.setText("Online" if connected else "Offline")
+        
+        # Update status bar
+        self._status_bar.set_connected(connected, self.settings.hub.url if connected else None)
+    
+    def _update_indicator_style(self, connected: bool):
+        """Update indicator style sheet."""
+        color = "#4caf50" if connected else "#f44336"  # Green or Red
+        self._status_indicator.setStyleSheet(f"""
+            background-color: {color};
+            border-radius: 6px;
+            border: 1px solid {self._theme.border};
+        """)
     
     async def _register_skills_with_hub(self):
         """Register skills with Hub and start heartbeat."""

@@ -1,8 +1,9 @@
 """HTTP client for communicating with the Strawberry AI Hub."""
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Callable, Awaitable
 import httpx
 from tenacity import (
     retry,
@@ -11,6 +12,14 @@ from tenacity import (
     retry_if_exception_type,
     before_sleep_log,
 )
+
+try:
+    import websockets
+    from websockets.client import WebSocketClientProtocol
+    WEBSOCKETS_AVAILABLE = True
+except ImportError:
+    WEBSOCKETS_AVAILABLE = False
+    WebSocketClientProtocol = None
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +100,11 @@ class HubClient:
     def __init__(self, config: HubConfig):
         self.config = config
         self._client: Optional[httpx.AsyncClient] = None
+        self._websocket: Optional[WebSocketClientProtocol] = None
+        self._ws_task: Optional[asyncio.Task] = None
+        self._skill_callback: Optional[Callable[[str, str, list, dict], Awaitable[Any]]] = None
+        self._connection_callback: Optional[Callable[[bool], Awaitable[None]]] = None
+        self._reconnect_delay = 1.0  # Start with 1 second
     
     @property
     def client(self) -> httpx.AsyncClient:
@@ -104,7 +118,11 @@ class HubClient:
         return self._client
     
     async def close(self):
-        """Close the HTTP client."""
+        """Close the HTTP client and WebSocket connection."""
+        # Close WebSocket
+        await self.disconnect_websocket()
+        
+        # Close HTTP client
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
@@ -340,4 +358,171 @@ class HubClient:
             except Exception:
                 detail = response.text
             raise HubError(f"Hub API error: {detail}", response.status_code)
+    
+    # =========================================================================
+    # WebSocket Connection
+    # =========================================================================
+    
+    def set_connection_callback(
+        self,
+        callback: Callable[[bool], Awaitable[None]]
+    ):
+        """Set callback for connection status changes.
+        
+        Args:
+            callback: Async function(connected: bool)
+        """
+        self._connection_callback = callback
+
+    def set_skill_callback(
+        self,
+        callback: Callable[[str, str, list, dict], Awaitable[Any]]
+    ):
+        """Set callback for handling incoming skill execution requests.
+        
+        Args:
+            callback: Async function(skill_name, method_name, args, kwargs) -> result
+        """
+        self._skill_callback = callback
+    
+    async def connect_websocket(self):
+        """Connect to Hub via WebSocket for receiving skill requests."""
+        if not WEBSOCKETS_AVAILABLE:
+            logger.warning("websockets library not available, WebSocket disabled")
+            return
+        
+        if self._ws_task and not self._ws_task.done():
+            logger.debug("WebSocket already connected")
+            return
+        
+        # Start WebSocket connection task
+        self._ws_task = asyncio.create_task(self._websocket_loop())
+        logger.info("WebSocket connection task started")
+    
+    async def disconnect_websocket(self):
+        """Disconnect WebSocket connection."""
+        if self._ws_task:
+            self._ws_task.cancel()
+            try:
+                await self._ws_task
+            except asyncio.CancelledError:
+                pass
+            self._ws_task = None
+        
+        if self._websocket:
+            await self._websocket.close()
+            self._websocket = None
+    
+    async def _websocket_loop(self):
+        """Main WebSocket connection loop with reconnection."""
+        while True:
+            try:
+                # Build WebSocket URL
+                ws_url = self.config.url.replace("http://", "ws://").replace("https://", "wss://")
+                ws_url = f"{ws_url}/ws/device?token={self.config.token}"
+                
+                logger.info(f"Connecting to WebSocket: {ws_url}")
+                
+                async with websockets.connect(ws_url) as websocket:
+                    self._websocket = websocket
+                    self._reconnect_delay = 1.0  # Reset delay on successful connection
+                    logger.info("WebSocket connected")
+                    
+                    # Notify connected
+                    if self._connection_callback:
+                        try:
+                            await self._connection_callback(True)
+                        except Exception as e:
+                            logger.error(f"Error in connection callback: {e}")
+                    
+                    # Handle incoming messages
+                    async for message in websocket:
+                        try:
+                            import json
+                            data = json.loads(message)
+                            await self._handle_websocket_message(data)
+                        except Exception as e:
+                            logger.error(f"Error handling WebSocket message: {e}")
+            
+            except asyncio.CancelledError:
+                logger.info("WebSocket connection cancelled")
+                break
+            
+            except Exception as e:
+                logger.error(f"WebSocket connection error: {e}")
+                self._websocket = None
+                
+                # Notify disconnected
+                if self._connection_callback:
+                    try:
+                        await self._connection_callback(False)
+                    except Exception as e:
+                        logger.error(f"Error in connection callback: {e}")
+                
+                # Exponential backoff for reconnection
+                logger.info(f"Reconnecting in {self._reconnect_delay}s...")
+                await asyncio.sleep(self._reconnect_delay)
+                self._reconnect_delay = min(self._reconnect_delay * 2, 60.0)  # Max 60s
+    
+    async def _handle_websocket_message(self, message: dict):
+        """Handle incoming WebSocket message from Hub.
+        
+        Args:
+            message: Parsed JSON message
+        """
+        msg_type = message.get("type")
+        
+        if msg_type == "skill_request":
+            await self._handle_skill_request(message)
+        
+        elif msg_type == "pong":
+            # Heartbeat response
+            pass
+        
+        else:
+            logger.warning(f"Unknown WebSocket message type: {msg_type}")
+    
+    async def _handle_skill_request(self, request: dict):
+        """Handle skill execution request from Hub.
+        
+        Args:
+            request: Skill request with request_id, skill_name, method_name, args, kwargs
+        """
+        request_id = request.get("request_id")
+        skill_name = request.get("skill_name")
+        method_name = request.get("method_name")
+        args = request.get("args", [])
+        kwargs = request.get("kwargs", {})
+        
+        logger.info(f"Received skill request {request_id}: {skill_name}.{method_name}")
+        
+        # Execute skill via callback
+        try:
+            if not self._skill_callback:
+                raise RuntimeError("No skill callback registered")
+            
+            result = await self._skill_callback(skill_name, method_name, args, kwargs)
+            
+            # Send success response
+            response = {
+                "type": "skill_response",
+                "request_id": request_id,
+                "success": True,
+                "result": result,
+            }
+        
+        except Exception as e:
+            logger.error(f"Skill execution error: {e}")
+            # Send error response
+            response = {
+                "type": "skill_response",
+                "request_id": request_id,
+                "success": False,
+                "error": str(e),
+            }
+        
+        # Send response back to Hub
+        if self._websocket:
+            import json
+            await self._websocket.send(json.dumps(response))
 
