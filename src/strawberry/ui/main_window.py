@@ -324,9 +324,20 @@ class MainWindow(QMainWindow):
             self._chat_area.add_system_message("Not connected to Hub")
     
     async def _send_message(self, message: str):
-        """Send message to Hub and display response."""
+        """Send message to Hub using agent loop.
+        
+        The agent loop allows the LLM to:
+        1. Search for skills
+        2. Call skills and see results
+        3. Continue reasoning based on results
+        4. Make more calls or provide final response
+        
+        Loop ends when LLM responds without code blocks (max 5 iterations).
+        """
+        MAX_ITERATIONS = 5
+        
         try:
-            # Build messages with system prompt
+            # Build initial messages with system prompt
             messages_to_send = []
             
             # Add system prompt with skills
@@ -345,42 +356,109 @@ class MainWindow(QMainWindow):
                 ChatMessage(role="user", content=message)
             )
             
-            # Get response from LLM
-            response = await self._hub_client.chat(
-                messages=messages_to_send,
-                temperature=0.7,
-            )
+            # Agent loop
+            all_tool_calls = []
+            final_response = None
             
-            # Process response for skill calls
-            if self._skill_service:
-                processed_content, tool_calls = self._skill_service.process_response(
-                    response.content
+            for iteration in range(MAX_ITERATIONS):
+                print(f"[Agent] Iteration {iteration + 1}/{MAX_ITERATIONS}")
+                
+                # Get response from LLM
+                response = await self._hub_client.chat(
+                    messages=messages_to_send,
+                    temperature=0.7,
                 )
                 
-                # Display tool calls in UI
-                for tc in tool_calls:
-                    widget = self._chat_area.add_tool_call(
-                        tool_name="Skill Call",
-                        arguments={"code": tc["code"][:50] + "..." if len(tc["code"]) > 50 else tc["code"]},
-                    )
-                    if tc["success"]:
-                        widget.set_success(tc["result"])
-                    else:
-                        widget.set_error(tc["error"])
+                print(f"[Agent] LLM response: {response.content[:200]}...")
                 
-                # Use processed content (with skill results)
-                display_content = processed_content
+                # Parse for code blocks
+                if self._skill_service:
+                    code_blocks = self._skill_service.parse_skill_calls(response.content)
+                else:
+                    code_blocks = []
+                
+                print(f"[Agent] Found {len(code_blocks)} code blocks")
+                
+                if not code_blocks:
+                    # No code blocks = agent is done
+                    final_response = response
+                    print(f"[Agent] No code blocks, ending loop")
+                    break
+                
+                # Execute code blocks and display in UI
+                outputs = []
+                for code in code_blocks:
+                    result = self._skill_service.execute_code(code)
+                    
+                    # Track tool call
+                    tool_call_info = {
+                        "iteration": iteration + 1,
+                        "code": code,
+                        "success": result.success,
+                        "result": result.result,
+                        "error": result.error,
+                    }
+                    all_tool_calls.append(tool_call_info)
+                    
+                    # Display in UI
+                    widget = self._chat_area.add_tool_call(
+                        tool_name=f"Agent Step {iteration + 1}",
+                        arguments={"code": code[:60] + "..." if len(code) > 60 else code},
+                    )
+                    if result.success:
+                        widget.set_success(result.result or "(no output)")
+                    else:
+                        widget.set_error(result.error)
+                    
+                    # Collect output for LLM
+                    if result.success:
+                        outputs.append(result.result or "")
+                    else:
+                        outputs.append(f"Error: {result.error}")
+                
+                # Add assistant message and tool results to conversation
+                messages_to_send.append(ChatMessage(role="assistant", content=response.content))
+                
+                # Format tool output clearly - tell LLM to continue
+                tool_output = chr(10).join(outputs) if outputs else "(no output)"
+                tool_message = f"[Code executed. Output:]\n{tool_output}\n\n[Now respond naturally to the user based on this result.]"
+                messages_to_send.append(ChatMessage(role="user", content=tool_message))
+                
+                print(f"[Agent] Tool output sent: {tool_output[:100]}...")
+                
+                final_response = response
+            
+            # Extract display content (remove code blocks from final response)
+            if final_response:
+                import re
+                display_content = re.sub(
+                    r'```[pP]ython\s*.*?\s*```', '', 
+                    final_response.content, 
+                    flags=re.DOTALL
+                ).strip()
+                
+                # If response was only code blocks and we have tool outputs, show something
+                if not display_content and all_tool_calls:
+                    last_result = all_tool_calls[-1]
+                    if last_result["success"] and last_result["result"]:
+                        display_content = last_result["result"]
+                    elif not last_result["success"]:
+                        display_content = f"Error: {last_result['error']}"
+                    else:
+                        display_content = "(Tool executed successfully)"
             else:
-                display_content = response.content
+                display_content = "No response from LLM"
             
             # Add response to history and display
-            self._conversation_history.append(
-                ChatMessage(role="assistant", content=response.content)
-            )
-            self._chat_area.add_message(display_content, is_user=False)
-            
-            # Update status
-            self._status_bar.set_info(f"Model: {response.model}")
+            if final_response:
+                self._conversation_history.append(
+                    ChatMessage(role="assistant", content=final_response.content)
+                )
+                self._chat_area.add_message(display_content, is_user=False)
+                
+                # Update status with iteration count
+                iter_info = f" ({len(all_tool_calls)} tool calls)" if all_tool_calls else ""
+                self._status_bar.set_info(f"Model: {final_response.model}{iter_info}")
             
         except HubError as e:
             self._chat_area.add_system_message(f"Error: {e}")

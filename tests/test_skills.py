@@ -256,6 +256,29 @@ Done!'''
         code_blocks = service.parse_skill_calls(response)
         assert len(code_blocks) == 2
     
+    def test_parse_bare_code_without_fences(self, service):
+        """Test parsing bare code without markdown fences."""
+        # LLM sometimes outputs code without proper fences
+        response = '''Let me try that.
+print(device.TimeSkill.get_current_time())
+'''
+        
+        code_blocks = service.parse_skill_calls(response)
+        
+        assert len(code_blocks) == 1
+        assert "device.TimeSkill.get_current_time()" in code_blocks[0]
+    
+    def test_parse_bare_code_adds_print(self, service):
+        """Test that bare code without print() gets wrapped."""
+        response = '''Here you go:
+device.CalculatorSkill.add(5, 3)
+'''
+        
+        code_blocks = service.parse_skill_calls(response)
+        
+        assert len(code_blocks) == 1
+        assert code_blocks[0].startswith("print(")
+    
     def test_execute_code_success(self, service):
         """Test executing skill code."""
         service.load_skills()
@@ -303,4 +326,90 @@ print(result)
         
         assert processed == response
         assert len(tool_calls) == 0
+
+
+class TestDeviceProxy:
+    """Tests for device proxy discovery methods."""
+    
+    @pytest.fixture
+    def service(self):
+        """Create skill service with example skills."""
+        skills_path = Path(__file__).parent.parent / "skills"
+        if not skills_path.exists():
+            pytest.skip("Example skills not found")
+        service = SkillService(skills_path)
+        service.load_skills()
+        return service
+    
+    def test_search_skills_finds_matches(self, service):
+        """Test search_skills finds matching skills."""
+        code = "results = device.search_skills('time')\nprint(results)"
+        result = service.execute_code(code)
+        
+        assert result.success
+        assert "TimeSkill" in result.result
+        assert "get_current_time" in result.result
+    
+    def test_search_skills_empty_query(self, service):
+        """Test search_skills with empty query returns all."""
+        code = "results = device.search_skills('')\nprint(len(results))"
+        result = service.execute_code(code)
+        
+        assert result.success
+        # Should have multiple methods from TimeSkill and CalculatorSkill
+        count = int(result.result)
+        assert count >= 5
+    
+    def test_search_skills_no_matches(self, service):
+        """Test search_skills with no matches."""
+        code = "results = device.search_skills('nonexistent_xyz')\nprint(len(results))"
+        result = service.execute_code(code)
+        
+        assert result.success
+        assert result.result == "0"
+    
+    def test_describe_function_success(self, service):
+        """Test describe_function returns function details."""
+        code = "info = device.describe_function('TimeSkill.get_current_time')\nprint(info)"
+        result = service.execute_code(code)
+        
+        assert result.success
+        assert "def get_current_time" in result.result
+        assert "Get the current time" in result.result
+    
+    def test_describe_function_invalid_path(self, service):
+        """Test describe_function with invalid path format."""
+        code = "info = device.describe_function('invalid')\nprint(info)"
+        result = service.execute_code(code)
+        
+        assert result.success
+        assert "Error" in result.result
+    
+    def test_describe_function_skill_not_found(self, service):
+        """Test describe_function with non-existent skill."""
+        code = "info = device.describe_function('FakeSkill.method')\nprint(info)"
+        result = service.execute_code(code)
+        
+        assert result.success
+        assert "not found" in result.result.lower()
+    
+    def test_agent_workflow(self, service):
+        """Test complete agent workflow: search → describe → call."""
+        # Step 1: Search
+        code1 = "results = device.search_skills('add')\nprint(results)"
+        result1 = service.execute_code(code1)
+        assert result1.success
+        assert "CalculatorSkill.add" in result1.result
+        
+        # Step 2: Describe
+        code2 = "info = device.describe_function('CalculatorSkill.add')\nprint(info)"
+        result2 = service.execute_code(code2)
+        assert result2.success
+        assert "a: float" in result2.result
+        
+        # Step 3: Call
+        code3 = "result = device.CalculatorSkill.add(10, 20)\nprint(result)"
+        result3 = service.execute_code(code3)
+        assert result3.success
+        assert "30" in result3.result
 

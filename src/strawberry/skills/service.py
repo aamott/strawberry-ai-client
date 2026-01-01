@@ -33,40 +33,46 @@ class SkillService:
     """
     
     # System prompt template for skills
-    SYSTEM_PROMPT_TEMPLATE = '''You are Strawberry, a helpful AI assistant with access to skills (functions) on this device.
+    SYSTEM_PROMPT_TEMPLATE = '''You are Strawberry, a helpful AI assistant with access to skills on this device.
 
-## Available Skills
+## How Skills Work
 
-When the user asks you to do something that requires a skill, you can call it using Python code blocks.
-Wrap skill calls in ```python code blocks. I will execute them and provide the results.
+When you write a ```python code block, I will execute it and show you the output. Then you continue your response.
 
-{skill_descriptions}
-
-## How to Call Skills
-
-Use the `device` object to call skills:
-
-```python
-# Example: Get the current time
+Example conversation:
+- User: "What time is it?"
+- You write: ```python
 result = device.TimeSkill.get_current_time()
 print(result)
 ```
+- I execute it and reply: "3:45 PM"
+- You respond naturally: "The current time is 3:45 PM."
 
+## Available Skills
+
+{skill_descriptions}
+
+## Discovery Commands
+
+If you're not sure what skills exist:
 ```python
-# Example: Do math
-result = device.CalculatorSkill.add(5, 3)
-print(result)
+# Search for skills
+results = device.search_skills("music")
+print(results)
 ```
 
-## Important Rules
+```python
+# Get function details
+info = device.describe_function("TimeSkill.get_current_time")
+print(info)
+```
 
-1. Only call skills that are listed above
-2. Always use `device.SkillName.function_name()` format
-3. Use `print()` to output results you want to share
-4. If a skill fails, explain the error to the user
-5. You can call multiple skills in sequence if needed
+## Rules
 
-If the user's request doesn't require a skill, just respond normally with text.'''
+1. Always wrap code in ```python fences
+2. Always use print() to see output
+3. After I show you the output, respond naturally to the user (NO code block in your final response)
+4. Keep responses concise and friendly'''
 
     def __init__(
         self,
@@ -200,6 +206,7 @@ If the user's request doesn't require a skill, just respond normally with text.'
         """Parse skill calls from LLM response.
         
         Extracts Python code blocks that may contain skill calls.
+        Also detects "bare" code lines that look like skill calls.
         
         Args:
             response: LLM response text
@@ -207,10 +214,27 @@ If the user's request doesn't require a skill, just respond normally with text.'
         Returns:
             List of code blocks to execute
         """
-        # Match ```python ... ``` code blocks
-        pattern = r'```python\s*(.*?)```'
-        matches = re.findall(pattern, response, re.DOTALL)
-        return [m.strip() for m in matches if m.strip()]
+        code_blocks = []
+        
+        # 1. Match ```python ... ``` code blocks (case-insensitive, flexible whitespace)
+        fenced_pattern = r'```[pP]ython\s*(.*?)\s*```'
+        fenced_matches = re.findall(fenced_pattern, response, re.DOTALL)
+        code_blocks.extend([m.strip() for m in fenced_matches if m.strip()])
+        
+        # 2. If no fenced blocks found, look for bare device.* calls
+        if not code_blocks:
+            # Match lines that look like: print(device.Something...) or device.Something...
+            bare_pattern = r'^[\s]*((?:print\s*\()?\s*device\.[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\)?)'
+            for line in response.split('\n'):
+                match = re.match(bare_pattern, line.strip())
+                if match:
+                    code = match.group(1).strip()
+                    # Ensure print() wrapper for output
+                    if not code.startswith('print('):
+                        code = f'print({code})'
+                    code_blocks.append(code)
+        
+        return code_blocks
     
     def execute_code(self, code: str) -> SkillCallResult:
         """Execute a code block containing skill calls.
@@ -306,17 +330,92 @@ If the user's request doesn't require a skill, just respond normally with text.'
 class _DeviceProxy:
     """Proxy object for accessing skills from LLM-generated code.
     
-    Allows: device.SkillName.method_name(args)
+    Provides:
+    - device.search_skills("query") - Find skills by keyword
+    - device.describe_function("SkillName.method") - Get function details
+    - device.SkillName.method_name(args) - Call a skill
     """
     
     def __init__(self, loader: SkillLoader):
         self._loader = loader
     
+    def search_skills(self, query: str = "") -> List[Dict[str, Any]]:
+        """Search for skills by keyword.
+        
+        Args:
+            query: Search term (matches name, signature, docstring)
+            
+        Returns:
+            List of matching skills with path, signature, summary
+        """
+        results = []
+        for skill in self._loader.get_all_skills():
+            for method in skill.methods:
+                # Check if query matches
+                query_lower = query.lower() if query else ""
+                matches = (
+                    not query or
+                    query_lower in method.name.lower() or
+                    query_lower in skill.name.lower() or
+                    query_lower in method.signature.lower() or
+                    (method.docstring and query_lower in method.docstring.lower())
+                )
+                
+                if matches:
+                    # Get first line of docstring as summary
+                    summary = ""
+                    if method.docstring:
+                        summary = method.docstring.split("\n")[0].strip()
+                    
+                    results.append({
+                        "path": f"{skill.name}.{method.name}",
+                        "signature": method.signature,
+                        "summary": summary,
+                    })
+        return results
+    
+    def describe_function(self, path: str) -> str:
+        """Get full function details including docstring.
+        
+        Args:
+            path: "SkillName.method_name"
+            
+        Returns:
+            Full function signature with docstring
+        """
+        parts = path.split(".")
+        if len(parts) != 2:
+            return f"Error: Invalid path '{path}'. Use format 'SkillName.method_name'"
+        
+        skill_name, method_name = parts
+        skill = self._loader.get_skill(skill_name)
+        
+        if not skill:
+            return f"Error: Skill '{skill_name}' not found"
+        
+        for method in skill.methods:
+            if method.name == method_name:
+                doc = method.docstring or "No description available"
+                return f"def {method.signature}:\n    \"\"\"\n    {doc}\n    \"\"\""
+        
+        return f"Error: Method '{method_name}' not found in {skill_name}"
+    
     def __getattr__(self, name: str):
-        """Get a skill class by name."""
+        """Get a skill class by name for direct calls."""
+        # Don't intercept private attributes
+        if name.startswith("_"):
+            raise AttributeError(name)
+        
         skill = self._loader.get_skill(name)
         if skill is None:
-            raise AttributeError(f"Skill not found: {name}")
+            # Get list of available skills for helpful error
+            available = [s.name for s in self._loader.get_all_skills()]
+            available_str = ", ".join(available) if available else "none loaded"
+            raise AttributeError(
+                f"Skill '{name}' not found. "
+                f"Available skills: {available_str}. "
+                f"Use device.search_skills() to search."
+            )
         return _SkillProxy(self._loader, name)
 
 
