@@ -2,11 +2,14 @@
 
 import sys
 import signal
+import asyncio
 from pathlib import Path
 from typing import Optional, Callable
 
 from .config import load_config, Settings
 from .pipeline.events import PipelineEvent, EventType
+from .hub import HubClient, HubConfig
+from .hub.client import ChatMessage, HubError
 
 
 class Colors:
@@ -35,6 +38,7 @@ class TerminalApp:
     
     Provides a simple chat interface with support for:
     - Text input/output
+    - Hub LLM integration
     - Pipeline event display
     - Debug mode
     """
@@ -58,6 +62,8 @@ class TerminalApp:
         self.debug = debug
         self._running = False
         self._response_handler = response_handler
+        self._hub_client: Optional[HubClient] = None
+        self._conversation_history: list[ChatMessage] = []
         
         # Load config
         if config_path and config_path.exists():
@@ -65,9 +71,22 @@ class TerminalApp:
         else:
             self.settings = Settings()
         
+        # Initialize Hub client if configured
+        self._init_hub_client()
+        
         # Disable colors if not a TTY
         if not sys.stdout.isatty():
             Colors.disable()
+    
+    def _init_hub_client(self) -> None:
+        """Initialize Hub client if configured."""
+        if self.settings.hub.token:
+            config = HubConfig(
+                url=self.settings.hub.url,
+                token=self.settings.hub.token,
+                timeout=self.settings.hub.timeout_seconds,
+            )
+            self._hub_client = HubClient(config)
     
     def run(self) -> int:
         """Run the terminal application.
@@ -93,6 +112,12 @@ class TerminalApp:
         print(f"{Colors.DIM}─" * 40 + Colors.RESET)
         print(f"{Colors.DIM}Device: {self.settings.device.name}{Colors.RESET}")
         
+        # Hub status
+        if self._hub_client:
+            print(f"{Colors.GREEN}Hub: {self.settings.hub.url}{Colors.RESET}")
+        else:
+            print(f"{Colors.YELLOW}Hub: Not configured (local mode){Colors.RESET}")
+        
         if self.voice_mode:
             print(f"{Colors.GREEN}Voice mode enabled{Colors.RESET}")
             print(f"{Colors.DIM}Wake word: {', '.join(self.settings.wake_word.keywords)}{Colors.RESET}")
@@ -105,6 +130,20 @@ class TerminalApp:
     
     def _run_text_mode(self) -> int:
         """Run in text-only mode."""
+        # Use asyncio for Hub communication
+        return asyncio.run(self._run_text_mode_async())
+    
+    async def _run_text_mode_async(self) -> int:
+        """Async text mode loop."""
+        # Check Hub connection
+        if self._hub_client:
+            print(f"{Colors.DIM}Checking Hub connection...{Colors.RESET}")
+            if await self._hub_client.health():
+                print(f"{Colors.GREEN}✓ Hub connected{Colors.RESET}")
+            else:
+                print(f"{Colors.YELLOW}✗ Hub not reachable - using local mode{Colors.RESET}")
+        print()
+        
         while self._running:
             try:
                 # Get user input
@@ -126,9 +165,13 @@ class TerminalApp:
                     self.debug = not self.debug
                     print(f"{Colors.YELLOW}Debug mode: {'on' if self.debug else 'off'}{Colors.RESET}")
                     continue
+                elif user_input.lower() == "clear":
+                    self._conversation_history.clear()
+                    print(f"{Colors.YELLOW}Conversation cleared{Colors.RESET}")
+                    continue
                 
                 # Get response
-                response = self._get_response(user_input)
+                response = await self._get_response_async(user_input)
                 
                 # Print response
                 print(f"{Colors.CYAN}AI:{Colors.RESET} {response}")
@@ -137,6 +180,10 @@ class TerminalApp:
             except EOFError:
                 # Handle Ctrl+D
                 break
+        
+        # Cleanup
+        if self._hub_client:
+            await self._hub_client.close()
         
         print(f"\n{Colors.DIM}Goodbye!{Colors.RESET}")
         return 0
@@ -240,15 +287,62 @@ class TerminalApp:
         return 0
     
     def _get_response(self, user_input: str) -> str:
-        """Get response to user input.
+        """Get response to user input (sync version for voice mode).
         
         Override this or pass response_handler to customize.
         """
         if self._response_handler:
             return self._response_handler(user_input)
         
-        # Default echo response (placeholder for LLM integration)
-        return f"I heard: \"{user_input}\"\n(LLM integration coming soon)"
+        # For voice mode, run async in new loop
+        return asyncio.run(self._get_response_async(user_input))
+    
+    async def _get_response_async(self, user_input: str) -> str:
+        """Get response to user input (async version).
+        
+        Uses Hub for LLM chat if configured, otherwise falls back to local.
+        """
+        if self._response_handler:
+            return self._response_handler(user_input)
+        
+        # Try Hub if available
+        if self._hub_client:
+            try:
+                # Add user message to history
+                self._conversation_history.append(
+                    ChatMessage(role="user", content=user_input)
+                )
+                
+                if self.debug:
+                    print(f"{Colors.DIM}Sending to Hub ({len(self._conversation_history)} messages)...{Colors.RESET}")
+                
+                # Get response from Hub
+                response = await self._hub_client.chat(
+                    messages=self._conversation_history,
+                    temperature=0.7,
+                )
+                
+                # Add assistant response to history
+                self._conversation_history.append(
+                    ChatMessage(role="assistant", content=response.content)
+                )
+                
+                if self.debug:
+                    print(f"{Colors.DIM}Model: {response.model}, Finish: {response.finish_reason}{Colors.RESET}")
+                
+                return response.content
+                
+            except HubError as e:
+                if self.debug:
+                    print(f"{Colors.RED}Hub error: {e}{Colors.RESET}")
+                return f"Error: {e}"
+            except Exception as e:
+                if self.debug:
+                    print(f"{Colors.RED}Unexpected error: {e}{Colors.RESET}")
+                return f"Error connecting to Hub: {e}"
+        
+        # Fallback: echo response
+        return f"I heard: \"{user_input}\"\n(Configure Hub token for LLM chat)"
     
     def _on_pipeline_event(self, event: PipelineEvent) -> None:
         """Handle pipeline events."""
@@ -295,6 +389,7 @@ class TerminalApp:
         print(f"  {Colors.CYAN}help{Colors.RESET}            - Show this help message")
         print(f"  {Colors.CYAN}config{Colors.RESET}          - Show current configuration")
         print(f"  {Colors.CYAN}debug{Colors.RESET}           - Toggle debug mode")
+        print(f"  {Colors.CYAN}clear{Colors.RESET}           - Clear conversation history")
         print()
     
     def _print_config(self) -> None:
@@ -302,11 +397,13 @@ class TerminalApp:
         print(f"\n{Colors.BOLD}Configuration:{Colors.RESET}")
         print(f"  Device: {self.settings.device.name} ({self.settings.device.id})")
         print(f"  Hub: {self.settings.hub.url}")
+        print(f"  Hub token: {'***' + self.settings.hub.token[-4:] if self.settings.hub.token else 'Not set'}")
         print(f"  Audio: {self.settings.audio.backend} @ {self.settings.audio.sample_rate}Hz")
         print(f"  Wake word: {self.settings.wake_word.keywords}")
         print(f"  VAD: {self.settings.vad.backend}")
         print(f"  STT: {self.settings.stt.backend}")
         print(f"  TTS: {self.settings.tts.backend}")
+        print(f"  Conversation history: {len(self._conversation_history)} messages")
         print()
     
     def _handle_interrupt(self, signum, frame) -> None:
