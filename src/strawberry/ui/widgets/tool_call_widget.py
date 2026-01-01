@@ -31,7 +31,7 @@ class ToolCallWidget(QFrame):
         self.tool_name = tool_name
         self.arguments = arguments
         self._theme = theme
-        self._expanded = False
+        self._expanded = True
         self._status = "pending"  # pending, running, success, error
         self._result: Optional[str] = None
 
@@ -67,7 +67,7 @@ class ToolCallWidget(QFrame):
         header.addWidget(self._status_label)
 
         # Expand/collapse button
-        self._expand_btn = QPushButton("▶")
+        self._expand_btn = QPushButton("▼")
         self._expand_btn.setFixedSize(24, 24)
         self._expand_btn.setProperty("secondary", True)
         self._expand_btn.clicked.connect(self._toggle_expand)
@@ -90,27 +90,35 @@ class ToolCallWidget(QFrame):
 
         # Expandable details section
         self._details_frame = QFrame()
-        self._details_frame.setVisible(False)
+        self._details_frame.setVisible(True)
         details_layout = QVBoxLayout(self._details_frame)
         details_layout.setContentsMargins(0, 8, 0, 0)
 
-        # Full arguments
+        # Code / full arguments
         self._full_args = QLabel()
         self._full_args.setWordWrap(True)
+        args_font = QFont()
+        args_font.setFamily("Consolas, Monaco, monospace")
+        args_font.setPointSize(11)
+        self._full_args.setFont(args_font)
         self._full_args.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         details_layout.addWidget(self._full_args)
 
-        # Result
+        # Output / error
         self._result_label = QLabel()
         self._result_label.setWordWrap(True)
+        self._result_label.setFont(args_font)
         self._result_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         details_layout.addWidget(self._result_label)
 
         layout.addWidget(self._details_frame)
+
+        # Initialize expanded content
+        self._update_details_text()
 
     def _apply_style(self):
         """Apply theme-based styling."""
@@ -135,10 +143,17 @@ class ToolCallWidget(QFrame):
         self._details_frame.setVisible(self._expanded)
         self._expand_btn.setText("▼" if self._expanded else "▶")
 
-        # Update full args if expanded
         if self._expanded:
-            args_lines = [f"  {k}: {repr(v)}" for k, v in self.arguments.items()]
-            self._full_args.setText("Arguments:\n" + "\n".join(args_lines))
+            self._update_details_text()
+
+    def _update_details_text(self):
+        code = self.arguments.get("code") if isinstance(self.arguments, dict) else None
+        if code is not None:
+            self._full_args.setText(f"Code:\n{code}")
+            return
+
+        args_lines = [f"  {k}: {repr(v)}" for k, v in self.arguments.items()]
+        self._full_args.setText("Arguments:\n" + "\n".join(args_lines))
 
     def set_running(self):
         """Set status to running."""
@@ -153,7 +168,7 @@ class ToolCallWidget(QFrame):
         self._result = str(result) if result is not None else "None"
         self._status_icon.setText("✓")
         self._status_label.setText("Success")
-        self._result_label.setText(f"Result: {self._result}")
+        self._result_label.setText(f"Output:\n{self._result}")
         self._update_status_style()
 
     def set_error(self, error: str):
@@ -162,7 +177,7 @@ class ToolCallWidget(QFrame):
         self._result = error
         self._status_icon.setText("✗")
         self._status_label.setText("Error")
-        self._result_label.setText(f"Error: {error}")
+        self._result_label.setText(f"Error:\n{error}")
         self._update_status_style()
 
     def _update_status_style(self):

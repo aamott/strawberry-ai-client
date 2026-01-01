@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from ..theme import Theme
+from .assistant_turn_widget import AssistantTurnWidget
 from .chat_bubble import ChatBubble
 from .tool_call_widget import ToolCallWidget
 
@@ -22,6 +23,7 @@ class ChatArea(QScrollArea):
         self._theme = theme
         self._messages: List[ChatBubble] = []
         self._auto_scroll = True
+        self._last_assistant_turn: Optional[AssistantTurnWidget] = None
 
         self._setup_ui()
 
@@ -46,7 +48,7 @@ class ChatArea(QScrollArea):
         self.verticalScrollBar().valueChanged.connect(self._on_scroll)
         self.verticalScrollBar().rangeChanged.connect(self._on_range_changed)
 
-    def add_message(self, content: str, is_user: bool = True) -> ChatBubble:
+    def add_message(self, content: str, is_user: bool = True):
         """Add a new message to the chat.
         
         Args:
@@ -56,18 +58,42 @@ class ChatArea(QScrollArea):
         Returns:
             The created ChatBubble widget
         """
-        bubble = ChatBubble(
+        if is_user:
+            bubble = ChatBubble(
+                content=content,
+                is_user=is_user,
+                theme=self._theme,
+                parent=self._container,
+            )
+            self._messages.append(bubble)
+            self._last_assistant_turn = None
+        else:
+            bubble = AssistantTurnWidget(
+                content=content,
+                theme=self._theme,
+                parent=self._container,
+            )
+            self._last_assistant_turn = bubble
+
+        # Insert before the stretch
+        self._layout.insertWidget(self._layout.count() - 1, bubble)
+
+        # Schedule scroll to bottom
+        if self._auto_scroll:
+            QTimer.singleShot(10, self._scroll_to_bottom)
+
+        return bubble
+
+    def add_assistant_turn(self, content: str) -> AssistantTurnWidget:
+        bubble = AssistantTurnWidget(
             content=content,
-            is_user=is_user,
             theme=self._theme,
             parent=self._container,
         )
 
-        # Insert before the stretch
         self._layout.insertWidget(self._layout.count() - 1, bubble)
-        self._messages.append(bubble)
+        self._last_assistant_turn = bubble
 
-        # Schedule scroll to bottom
         if self._auto_scroll:
             QTimer.singleShot(10, self._scroll_to_bottom)
 
@@ -107,15 +133,18 @@ class ChatArea(QScrollArea):
         Returns:
             The created ToolCallWidget (can be updated with results)
         """
-        widget = ToolCallWidget(
-            tool_name=tool_name,
-            arguments=arguments,
-            theme=self._theme,
-            parent=self._container,
-        )
+        if self._last_assistant_turn is not None:
+            widget = self._last_assistant_turn.add_tool_call(tool_name=tool_name, arguments=arguments)
+        else:
+            widget = ToolCallWidget(
+                tool_name=tool_name,
+                arguments=arguments,
+                theme=self._theme,
+                parent=self._container,
+            )
 
-        # Insert before the stretch
-        self._layout.insertWidget(self._layout.count() - 1, widget)
+            # Insert before the stretch
+            self._layout.insertWidget(self._layout.count() - 1, widget)
 
         if self._auto_scroll:
             QTimer.singleShot(10, self._scroll_to_bottom)

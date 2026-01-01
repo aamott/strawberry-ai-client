@@ -189,7 +189,7 @@ class SettingsDialog(QDialog):
                         "",
                         "[functions.chat.variants.default]",
                         'type = "chat_completion"',
-                        'model = "openai::gpt-4o-mini"',
+                        'model = "openai::gpt-4o-mini-2024-07-18"',
                         "",
                     ]
                 ),
@@ -222,6 +222,12 @@ class SettingsDialog(QDialog):
         self._env_picovoice_api_key = _secret_line_edit("PICOVOICE_API_KEY")
         secrets_layout.addRow("PICOVOICE_API_KEY:", self._env_picovoice_api_key)
 
+        self._env_openai_api_key = _secret_line_edit("OPENAI_API_KEY")
+        secrets_layout.addRow("OPENAI_API_KEY:", self._env_openai_api_key)
+
+        self._env_anthropic_api_key = _secret_line_edit("ANTHROPIC_API_KEY")
+        secrets_layout.addRow("ANTHROPIC_API_KEY:", self._env_anthropic_api_key)
+
         self._env_google_api_key = _secret_line_edit("GOOGLE_API_KEY")
         secrets_layout.addRow("GOOGLE_API_KEY:", self._env_google_api_key)
 
@@ -238,6 +244,8 @@ class SettingsDialog(QDialog):
         def _toggle_secrets(checked: bool):
             mode = QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
             self._env_picovoice_api_key.setEchoMode(mode)
+            self._env_openai_api_key.setEchoMode(mode)
+            self._env_anthropic_api_key.setEchoMode(mode)
             self._env_google_api_key.setEchoMode(mode)
             self._env_news_api_key.setEchoMode(mode)
             self._env_weather_api_key.setEchoMode(mode)
@@ -290,6 +298,8 @@ class SettingsDialog(QDialog):
         # Seed the UI from current process environment
         self._env_original = {
             "PICOVOICE_API_KEY": os.environ.get("PICOVOICE_API_KEY", ""),
+            "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
+            "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", ""),
             "GOOGLE_API_KEY": os.environ.get("GOOGLE_API_KEY", ""),
             "GOOGLE_SEARCH_ENGINE_ID": os.environ.get("GOOGLE_SEARCH_ENGINE_ID", ""),
             "NEWS_API_KEY": os.environ.get("NEWS_API_KEY", ""),
@@ -297,6 +307,8 @@ class SettingsDialog(QDialog):
         }
 
         self._env_picovoice_api_key.setText(self._env_original["PICOVOICE_API_KEY"])
+        self._env_openai_api_key.setText(self._env_original["OPENAI_API_KEY"])
+        self._env_anthropic_api_key.setText(self._env_original["ANTHROPIC_API_KEY"])
         self._env_google_api_key.setText(self._env_original["GOOGLE_API_KEY"])
         self._env_google_search_engine_id.setText(self._env_original["GOOGLE_SEARCH_ENGINE_ID"])
         self._env_news_api_key.setText(self._env_original["NEWS_API_KEY"])
@@ -493,6 +505,8 @@ class SettingsDialog(QDialog):
         env_updates = {
             "HUB_TOKEN": _clean_env_value(self._hub_token.text()),
             "PICOVOICE_API_KEY": _clean_env_value(self._env_picovoice_api_key.text()),
+            "OPENAI_API_KEY": _clean_env_value(self._env_openai_api_key.text()),
+            "ANTHROPIC_API_KEY": _clean_env_value(self._env_anthropic_api_key.text()),
             "GOOGLE_API_KEY": _clean_env_value(self._env_google_api_key.text()),
             "GOOGLE_SEARCH_ENGINE_ID": _clean_env_value(self._env_google_search_engine_id.text()),
             "NEWS_API_KEY": _clean_env_value(self._env_news_api_key.text()),

@@ -1,5 +1,6 @@
 """Conversation pipeline orchestrator."""
 
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -361,7 +362,8 @@ class ConversationPipeline:
             return
 
         # Speak response
-        self._speak_response(response_text)
+        tts_text = re.sub(r"```.*?```", "", response_text, flags=re.DOTALL).strip()
+        self._speak_response(tts_text)
 
     def _speak_response(self, text: str) -> None:
         """Synthesize and play response."""

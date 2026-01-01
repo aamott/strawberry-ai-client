@@ -403,6 +403,8 @@ class MainWindow(QMainWindow):
         MAX_ITERATIONS = 5
 
         try:
+            import re
+
             # Build initial messages with system prompt
             messages_to_send = []
 
@@ -454,6 +456,17 @@ class MainWindow(QMainWindow):
                     print("[Agent] No code blocks, ending loop")
                     break
 
+                # Create a notebook-style assistant turn for this iteration
+                iteration_display = re.sub(
+                    r"```[pP]ython\s*.*?\s*```",
+                    "",
+                    response.content,
+                    flags=re.DOTALL,
+                ).strip()
+                if not iteration_display:
+                    iteration_display = "(Running tools...)"
+                self._chat_area.add_message(iteration_display, is_user=False)
+
                 # Execute code blocks and display in UI
                 outputs = []
                 for code in code_blocks:
@@ -472,7 +485,7 @@ class MainWindow(QMainWindow):
                     # Display in UI
                     widget = self._chat_area.add_tool_call(
                         tool_name=f"Agent Step {iteration + 1}",
-                        arguments={"code": code[:60] + "..." if len(code) > 60 else code},
+                        arguments={"code": code},
                     )
                     if result.success:
                         widget.set_success(result.result or "(no output)")
@@ -499,7 +512,6 @@ class MainWindow(QMainWindow):
 
             # Extract display content (remove code blocks from final response)
             if final_response:
-                import re
                 display_content = re.sub(
                     r'```[pP]ython\s*.*?\s*```', '',
                     final_response.content,
