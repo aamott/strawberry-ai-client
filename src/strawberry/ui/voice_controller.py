@@ -10,6 +10,7 @@ from PySide6.QtCore import QObject, Signal, QTimer, QMetaObject, Qt, Q_ARG
 
 from ..config import Settings
 from ..pipeline.events import PipelineEvent, EventType
+from ..audio.feedback import AudioFeedback, FeedbackSound, get_feedback
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,12 @@ class VoiceController(QObject):
         self._running = False
         self._current_state = "idle"
         self._main_thread_id = threading.get_ident()
+        self._push_to_talk_active = False
+        
+        # Audio feedback
+        self._audio_feedback = get_feedback(
+            enabled=settings.voice.audio_feedback_enabled
+        )
         
         # Timer created on main thread
         self._level_timer = QTimer(self)
@@ -178,6 +185,60 @@ class VoiceController(QObject):
         """Check if voice is running."""
         return self._running
     
+    def push_to_talk_start(self):
+        """Start push-to-talk recording.
+        
+        Bypasses wake word and starts recording immediately.
+        Call push_to_talk_stop() when user releases the button.
+        """
+        if not self._running or not self._pipeline:
+            logger.warning("Cannot start push-to-talk: voice not running")
+            return
+        
+        if self._push_to_talk_active:
+            return  # Already active
+        
+        self._push_to_talk_active = True
+        
+        # Play feedback sound
+        self._audio_feedback.play(FeedbackSound.RECORDING_START)
+        
+        # Trigger recording in pipeline (bypass wake word)
+        if hasattr(self._pipeline, 'start_recording'):
+            self._pipeline.start_recording()
+        else:
+            # Fallback: simulate wake word detection
+            logger.info("Push-to-talk: starting recording")
+            self._emit_state.emit("recording")
+    
+    def push_to_talk_stop(self):
+        """Stop push-to-talk recording and process.
+        
+        Called when user releases the push-to-talk button.
+        """
+        if not self._push_to_talk_active:
+            return
+        
+        self._push_to_talk_active = False
+        
+        # Play feedback sound
+        self._audio_feedback.play(FeedbackSound.RECORDING_END)
+        
+        # Stop recording and process
+        if self._pipeline and hasattr(self._pipeline, 'stop_recording'):
+            self._pipeline.stop_recording()
+        else:
+            logger.info("Push-to-talk: stopping recording")
+    
+    def is_push_to_talk_active(self) -> bool:
+        """Check if push-to-talk is currently active."""
+        return self._push_to_talk_active
+    
+    def set_audio_feedback_enabled(self, enabled: bool):
+        """Enable or disable audio feedback."""
+        self._audio_feedback.set_enabled(enabled)
+        self.settings.voice.audio_feedback_enabled = enabled
+    
     def _create_wake_detector(self):
         """Create wake word detector based on settings."""
         try:
@@ -234,6 +295,7 @@ class VoiceController(QObject):
         
         This method may be called from background threads, so we use
         internal signals with QueuedConnection to safely emit to the main thread.
+        Also plays audio feedback for key events.
         """
         if event.type == EventType.STATE_CHANGED:
             state = event.data.get("new_state", "")
@@ -255,14 +317,22 @@ class VoiceController(QObject):
         
         elif event.type == EventType.WAKE_WORD_DETECTED:
             keyword = event.data.get("keyword", "")
+            # Play wake word detected sound
+            self._audio_feedback.play(FeedbackSound.WAKE_DETECTED)
             self._emit_wake.emit(keyword)
             self._emit_state.emit("wake_detected")
         
         elif event.type == EventType.RECORDING_STARTED:
+            # Play recording start sound (if not from push-to-talk which already played)
+            if not self._push_to_talk_active:
+                self._audio_feedback.play(FeedbackSound.RECORDING_START)
             self._current_state = "recording"
             self._emit_state.emit("recording")
         
         elif event.type == EventType.RECORDING_STOPPED:
+            # Play recording end sound (if not from push-to-talk which already played)
+            if not self._push_to_talk_active:
+                self._audio_feedback.play(FeedbackSound.RECORDING_END)
             self._current_state = "processing"
             self._emit_state.emit("processing")
         
@@ -281,12 +351,16 @@ class VoiceController(QObject):
             self._emit_state.emit("speaking")
         
         elif event.type == EventType.TTS_COMPLETE:
+            # Play success sound when response complete
+            self._audio_feedback.play(FeedbackSound.SUCCESS)
             self._emit_tts_finished.emit()
             self._current_state = "idle"
             self._emit_state.emit("idle")
         
         elif event.type == EventType.ERROR:
             error = event.data.get("error", "Unknown error")
+            # Play error sound
+            self._audio_feedback.play(FeedbackSound.ERROR)
             self._emit_error.emit(error)
     
     def _update_level(self):

@@ -1,4 +1,4 @@
-"""Message input area with send button."""
+"""Message input area with send button and mic button."""
 
 from typing import Optional, Callable
 from PySide6.QtWidgets import (
@@ -8,6 +8,13 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent, QFont
 
 from ..theme import Theme
+
+
+class MicState:
+    """Mic button states."""
+    IDLE = "idle"           # Not recording, ready to start
+    RECORDING = "recording"  # Currently recording
+    PROCESSING = "processing"  # Processing recorded audio
 
 
 class InputTextEdit(QTextEdit):
@@ -40,13 +47,15 @@ class InputTextEdit(QTextEdit):
 
 
 class InputArea(QWidget):
-    """Input area with text field and send button.
+    """Input area with text field, send button, and mic button.
     
     Signals:
         message_submitted(str): Emitted when user submits a message
+        mic_clicked: Emitted when mic button is clicked (toggle recording)
     """
     
     message_submitted = Signal(str)
+    mic_clicked = Signal()
     
     def __init__(
         self,
@@ -59,6 +68,8 @@ class InputArea(QWidget):
         self._theme = theme
         self._placeholder = placeholder
         self._sending = False
+        self._mic_state = MicState.IDLE
+        self._mic_visible = True
         
         self._setup_ui()
     
@@ -67,6 +78,15 @@ class InputArea(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 8, 16, 16)
         layout.setSpacing(12)
+        
+        # Mic button (prominent, for push-to-talk)
+        self._mic_btn = QPushButton("🎤")
+        self._mic_btn.setObjectName("micRecordButton")
+        self._mic_btn.setFixedSize(44, 44)
+        self._mic_btn.setToolTip("Click to record voice message")
+        self._mic_btn.clicked.connect(self._on_mic_clicked)
+        self._mic_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        layout.addWidget(self._mic_btn)
         
         # Text input
         self._text_edit = InputTextEdit()
@@ -106,6 +126,29 @@ class InputArea(QWidget):
             InputArea {{
                 background-color: {self._theme.bg_secondary};
                 border-top: 1px solid {self._theme.border};
+            }}
+            
+            QPushButton#micRecordButton {{
+                background-color: {self._theme.bg_tertiary};
+                border: 2px solid {self._theme.border};
+                border-radius: 22px;
+                font-size: 18px;
+            }}
+            
+            QPushButton#micRecordButton:hover {{
+                background-color: {self._theme.accent};
+                border-color: {self._theme.accent};
+            }}
+            
+            QPushButton#micRecordButton[recording="true"] {{
+                background-color: {self._theme.error};
+                border-color: {self._theme.error};
+                animation: pulse 1s infinite;
+            }}
+            
+            QPushButton#micRecordButton[processing="true"] {{
+                background-color: {self._theme.warning};
+                border-color: {self._theme.warning};
             }}
         """)
     
@@ -150,4 +193,44 @@ class InputArea(QWidget):
         """Update theme."""
         self._theme = theme
         self._apply_theme()
+    
+    def _on_mic_clicked(self):
+        """Handle mic button click."""
+        self.mic_clicked.emit()
+    
+    def set_mic_state(self, state: str):
+        """Set the mic button state.
+        
+        Args:
+            state: One of MicState.IDLE, MicState.RECORDING, MicState.PROCESSING
+        """
+        self._mic_state = state
+        
+        # Update button appearance via properties
+        self._mic_btn.setProperty("recording", state == MicState.RECORDING)
+        self._mic_btn.setProperty("processing", state == MicState.PROCESSING)
+        
+        # Update tooltip
+        if state == MicState.RECORDING:
+            self._mic_btn.setToolTip("Click to stop recording")
+            self._mic_btn.setText("⏹️")
+        elif state == MicState.PROCESSING:
+            self._mic_btn.setToolTip("Processing...")
+            self._mic_btn.setText("⏳")
+        else:
+            self._mic_btn.setToolTip("Click to record voice message")
+            self._mic_btn.setText("🎤")
+        
+        # Force style refresh
+        self._mic_btn.style().unpolish(self._mic_btn)
+        self._mic_btn.style().polish(self._mic_btn)
+    
+    def set_mic_visible(self, visible: bool):
+        """Show or hide the mic button."""
+        self._mic_visible = visible
+        self._mic_btn.setVisible(visible)
+    
+    def set_mic_enabled(self, enabled: bool):
+        """Enable or disable the mic button."""
+        self._mic_btn.setEnabled(enabled)
 

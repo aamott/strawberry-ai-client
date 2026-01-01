@@ -7,12 +7,12 @@ from PySide6.QtWidgets import (
     QMenuBar, QMenu, QSplitter, QFrame
 )
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
-from PySide6.QtGui import QAction, QFont, QIcon
+from PySide6.QtGui import QAction, QFont, QIcon, QShortcut, QKeySequence
 
 from pathlib import Path
 
 from .theme import Theme, THEMES, get_stylesheet, DARK_THEME
-from .widgets import ChatArea, InputArea, StatusBar, VoiceIndicator
+from .widgets import ChatArea, InputArea, MicState, StatusBar, VoiceIndicator
 from .voice_controller import VoiceController
 from ..config import Settings
 from ..hub import HubClient, HubConfig
@@ -122,6 +122,15 @@ class MainWindow(QMainWindow):
         
         voice_menu.addSeparator()
         
+        # Audio feedback toggle
+        self._audio_feedback_action = QAction("&Audio Feedback", self)
+        self._audio_feedback_action.setCheckable(True)
+        self._audio_feedback_action.setChecked(self.settings.voice.audio_feedback_enabled)
+        self._audio_feedback_action.triggered.connect(self._toggle_audio_feedback)
+        voice_menu.addAction(self._audio_feedback_action)
+        
+        voice_menu.addSeparator()
+        
         voice_settings = QAction("Voice &Settings...", self)
         voice_settings.triggered.connect(self._on_voice_settings)
         voice_menu.addAction(voice_settings)
@@ -162,6 +171,7 @@ class MainWindow(QMainWindow):
             placeholder="Type your message... (Enter to send, Shift+Enter for newline)",
         )
         self._input_area.message_submitted.connect(self._on_message_submitted)
+        self._input_area.mic_clicked.connect(self._on_mic_button_clicked)
         layout.addWidget(self._input_area)
         
         # Status bar
@@ -604,6 +614,14 @@ class MainWindow(QMainWindow):
     def _on_voice_state_changed(self, state: str):
         """Handle voice state changes."""
         self._voice_indicator.set_state(state)
+        
+        # Also update mic button state
+        if state == "recording":
+            self._input_area.set_mic_state(MicState.RECORDING)
+        elif state == "processing":
+            self._input_area.set_mic_state(MicState.PROCESSING)
+        elif state in ("idle", "listening"):
+            self._input_area.set_mic_state(MicState.IDLE)
     
     @Slot(str)
     def _on_wake_word_detected(self, keyword: str):
@@ -705,6 +723,40 @@ class MainWindow(QMainWindow):
         """Minimize window to system tray."""
         self.hide()
         self.minimized_to_tray.emit()
+    
+    def _on_mic_button_clicked(self):
+        """Handle mic button click - toggle voice recording.
+        
+        Click 1: Start recording (like wake word was detected)
+        Click 2: Stop recording and process
+        """
+        # Check if already recording
+        if self._voice_controller and self._voice_controller.is_push_to_talk_active():
+            # Stop recording
+            self._voice_controller.push_to_talk_stop()
+            self._input_area.set_mic_state(MicState.PROCESSING)
+            return
+        
+        # Start recording - ensure voice mode is enabled first
+        if not self._voice_controller or not self._voice_controller.is_running():
+            # Enable voice mode
+            self._voice_toggle_action.setChecked(True)
+            self._enable_voice()
+        
+        # Start recording
+        if self._voice_controller:
+            self._voice_controller.push_to_talk_start()
+            self._input_area.set_mic_state(MicState.RECORDING)
+    
+    def _toggle_audio_feedback(self, enabled: bool):
+        """Toggle audio feedback sounds."""
+        self.settings.voice.audio_feedback_enabled = enabled
+        
+        if self._voice_controller:
+            self._voice_controller.set_audio_feedback_enabled(enabled)
+        
+        status = "enabled" if enabled else "disabled"
+        self._chat_area.add_system_message(f"Audio feedback {status}")
     
     def closeEvent(self, event):
         """Handle window close."""

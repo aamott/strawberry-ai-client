@@ -216,9 +216,10 @@ print(info)
         """
         code_blocks = []
         
-        # 1. Match ```python ... ``` code blocks (case-insensitive, flexible whitespace)
-        fenced_pattern = r'```[pP]ython\s*(.*?)\s*```'
-        fenced_matches = re.findall(fenced_pattern, response, re.DOTALL)
+        # 1. Match fenced code blocks: ```python, ```tool_code, ```code, etc.
+        # LLMs use various fence names - accept common ones
+        fenced_pattern = r'```(?:python|tool_code|code|py)?\s*(.*?)\s*```'
+        fenced_matches = re.findall(fenced_pattern, response, re.DOTALL | re.IGNORECASE)
         code_blocks.extend([m.strip() for m in fenced_matches if m.strip()])
         
         # 2. If no fenced blocks found, look for bare device.* calls
@@ -309,7 +310,7 @@ print(info)
                 results.append(f"Error: {result.error}")
         
         # Remove code blocks from response and append results
-        clean_response = re.sub(r'```python\s*.*?```', '', response, flags=re.DOTALL).strip()
+        clean_response = re.sub(r'```(?:python|tool_code|code|py)?\s*.*?```', '', response, flags=re.DOTALL | re.IGNORECASE).strip()
         
         if results:
             clean_response = clean_response + "\n\n" + "\n".join(results)

@@ -70,6 +70,13 @@ class SkillsSettings(BaseModel):
     sandbox_timeout_seconds: float = 5.0
 
 
+class VoiceSettings(BaseModel):
+    """Voice interaction settings."""
+    audio_feedback_enabled: bool = True
+    push_to_talk_enabled: bool = True
+    push_to_talk_key: str = "Ctrl+Space"  # Keyboard shortcut
+
+
 class UISettings(BaseModel):
     """User interface settings."""
     theme: Literal["dark", "light", "system"] = "dark"
@@ -87,6 +94,7 @@ class Settings(BaseModel):
     stt: STTSettings = Field(default_factory=STTSettings)
     tts: TTSSettings = Field(default_factory=TTSSettings)
     skills: SkillsSettings = Field(default_factory=SkillsSettings)
+    voice: VoiceSettings = Field(default_factory=VoiceSettings)
     ui: UISettings = Field(default_factory=UISettings)
     
     class Config:

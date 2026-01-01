@@ -279,6 +279,35 @@ device.CalculatorSkill.add(5, 3)
         assert len(code_blocks) == 1
         assert code_blocks[0].startswith("print(")
     
+    def test_parse_tool_code_fence(self, service):
+        """Test parsing ```tool_code``` fences (some LLMs use this)."""
+        response = '''Let me search for that.
+
+```tool_code
+print(device.search_skills("browser"))
+```
+
+Here are the results.'''
+        
+        code_blocks = service.parse_skill_calls(response)
+        
+        assert len(code_blocks) == 1
+        assert "device.search_skills" in code_blocks[0]
+    
+    def test_parse_various_fence_types(self, service):
+        """Test parsing various code fence types."""
+        # Test ```code
+        response1 = '```code\nprint(device.TimeSkill.get_current_time())\n```'
+        assert len(service.parse_skill_calls(response1)) == 1
+        
+        # Test ```py
+        response2 = '```py\nprint(device.TimeSkill.get_current_time())\n```'
+        assert len(service.parse_skill_calls(response2)) == 1
+        
+        # Test bare ``` (no language)
+        response3 = '```\nprint(device.TimeSkill.get_current_time())\n```'
+        assert len(service.parse_skill_calls(response3)) == 1
+    
     def test_execute_code_success(self, service):
         """Test executing skill code."""
         service.load_skills()

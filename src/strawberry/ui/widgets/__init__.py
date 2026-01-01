@@ -2,13 +2,13 @@
 
 from .chat_bubble import ChatBubble
 from .chat_area import ChatArea
-from .input_area import InputArea
+from .input_area import InputArea, MicState
 from .status_bar import StatusBar
 from .tool_call_widget import ToolCallWidget
 from .voice_indicator import VoiceIndicator
 
 __all__ = [
-    "ChatBubble", "ChatArea", "InputArea", "StatusBar", 
+    "ChatBubble", "ChatArea", "InputArea", "MicState", "StatusBar", 
     "ToolCallWidget", "VoiceIndicator"
 ]
 

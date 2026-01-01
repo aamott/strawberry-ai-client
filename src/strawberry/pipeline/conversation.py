@@ -170,6 +170,32 @@ class ConversationPipeline:
         if self._state == PipelineState.PAUSED:
             self._set_state(self._previous_state)
     
+    def start_recording(self) -> bool:
+        """Start recording immediately (for push-to-talk).
+        
+        Bypasses wake word detection and starts recording directly.
+        
+        Returns:
+            True if recording started, False otherwise
+        """
+        if self._state not in (PipelineState.LISTENING, PipelineState.IDLE):
+            return False
+        
+        self._start_recording()
+        return True
+    
+    def stop_recording(self) -> bool:
+        """Stop recording and process (for push-to-talk).
+        
+        Returns:
+            True if recording was stopped, False otherwise
+        """
+        if self._state != PipelineState.RECORDING:
+            return False
+        
+        self._finish_recording()
+        return True
+    
     def _on_audio_frame(self, frame: np.ndarray) -> None:
         """Handle incoming audio frame based on current state."""
         if self._state == PipelineState.LISTENING:

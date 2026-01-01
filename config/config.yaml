@@ -41,6 +41,11 @@ skills:
   path: ./skills
   sandbox_timeout_seconds: 5.0
 
+voice:
+  audio_feedback_enabled: true  # Play sounds for wake word, recording, etc.
+  push_to_talk_enabled: true    # Enable Ctrl+Space push-to-talk
+  push_to_talk_key: "Ctrl+Space"
+
 ui:
   theme: dark
   start_minimized: false
