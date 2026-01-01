@@ -60,6 +60,18 @@ def load_config(
     
     # Expand environment variables
     config_data = _expand_env_vars(config_data)
+
+    # Allow direct overrides via STRAWBERRY_HUB_URL and STRAWBERRY_DEVICE_TOKEN
+    # regardless of config.yaml content
+    if "STRAWBERRY_HUB_URL" in os.environ:
+        if "hub" not in config_data:
+            config_data["hub"] = {}
+        config_data["hub"]["url"] = os.environ["STRAWBERRY_HUB_URL"]
+    
+    if "STRAWBERRY_DEVICE_TOKEN" in os.environ:
+        if "hub" not in config_data:
+            config_data["hub"] = {}
+        config_data["hub"]["token"] = os.environ["STRAWBERRY_DEVICE_TOKEN"]
     
     # Create settings
     _settings = Settings(**config_data)
