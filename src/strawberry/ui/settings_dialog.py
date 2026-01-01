@@ -1,14 +1,19 @@
 """Settings dialog for configuration."""
 
 from typing import Optional
+import os
+from pathlib import Path
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QComboBox, QCheckBox, QPushButton,
-    QFormLayout, QGroupBox, QMessageBox, QFileDialog
+    QFormLayout, QGroupBox, QMessageBox, QFileDialog, QTableWidget,
+    QTableWidgetItem, QHeaderView
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 
-from .theme import Theme, THEMES, get_stylesheet, DARK_THEME
+from .theme import Theme, get_stylesheet, DARK_THEME
 from ..config import Settings
 
 
@@ -66,6 +71,10 @@ class SettingsDialog(QDialog):
         # Appearance tab
         appearance_tab = self._create_appearance_tab()
         tabs.addTab(appearance_tab, "Appearance")
+
+        # Environment tab
+        env_tab = self._create_env_tab()
+        tabs.addTab(env_tab, "Environment")
         
         layout.addWidget(tabs)
         
@@ -122,9 +131,165 @@ class SettingsDialog(QDialog):
         skills_layout.addRow("Skills Folder:", skills_path_layout)
         
         layout.addWidget(skills_group)
-        
+
+        # TensorZero config
+        tz_group = QGroupBox("TensorZero")
+        tz_layout = QHBoxLayout(tz_group)
+
+        tz_path = Path("config") / "tensorzero.toml"
+        self._tensorzero_path_label = QLabel(str(tz_path))
+        self._tensorzero_path_label.setProperty("muted", True)
+        tz_layout.addWidget(self._tensorzero_path_label, 1)
+
+        open_tz_btn = QPushButton("Open tensorzero.toml")
+        open_tz_btn.setProperty("secondary", True)
+        open_tz_btn.clicked.connect(self._open_tensorzero_toml)
+        tz_layout.addWidget(open_tz_btn)
+
+        layout.addWidget(tz_group)
+         
         layout.addStretch()
-        
+         
+        return tab
+
+    def _open_tensorzero_toml(self):
+        tz_path = (Path("config") / "tensorzero.toml").resolve()
+
+        if not tz_path.exists():
+            choice = QMessageBox.question(
+                self,
+                "Create tensorzero.toml",
+                "config/tensorzero.toml does not exist. Create a minimal template now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if choice != QMessageBox.StandardButton.Yes:
+                return
+
+            tz_path.parent.mkdir(parents=True, exist_ok=True)
+            tz_path.write_text(
+                "\n".join(
+                    [
+                        "[gateway]",
+                        "",
+                        "[functions.chat]",
+                        'type = "chat"',
+                        "",
+                        "[functions.chat.variants.default]",
+                        'type = "chat_completion"',
+                        'model = "openai::gpt-4o-mini"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(tz_path)))
+
+    def _create_env_tab(self) -> QWidget:
+        """Create the environment variable settings tab."""
+        import os
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        # Common secrets / keys
+        secrets_group = QGroupBox("Secrets")
+        secrets_layout = QFormLayout(secrets_group)
+
+        self._show_secrets = QCheckBox("Show secret values")
+        secrets_layout.addRow("", self._show_secrets)
+
+        def _secret_line_edit(placeholder: str) -> QLineEdit:
+            edit = QLineEdit()
+            edit.setPlaceholderText(placeholder)
+            edit.setEchoMode(QLineEdit.EchoMode.Password)
+            return edit
+
+        self._env_picovoice_api_key = _secret_line_edit("PICOVOICE_API_KEY")
+        secrets_layout.addRow("PICOVOICE_API_KEY:", self._env_picovoice_api_key)
+
+        self._env_google_api_key = _secret_line_edit("GOOGLE_API_KEY")
+        secrets_layout.addRow("GOOGLE_API_KEY:", self._env_google_api_key)
+
+        self._env_google_search_engine_id = QLineEdit()
+        self._env_google_search_engine_id.setPlaceholderText("GOOGLE_SEARCH_ENGINE_ID")
+        secrets_layout.addRow("GOOGLE_SEARCH_ENGINE_ID:", self._env_google_search_engine_id)
+
+        self._env_news_api_key = _secret_line_edit("NEWS_API_KEY")
+        secrets_layout.addRow("NEWS_API_KEY:", self._env_news_api_key)
+
+        self._env_weather_api_key = _secret_line_edit("WEATHER_API_KEY")
+        secrets_layout.addRow("WEATHER_API_KEY:", self._env_weather_api_key)
+
+        def _toggle_secrets(checked: bool):
+            mode = QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+            self._env_picovoice_api_key.setEchoMode(mode)
+            self._env_google_api_key.setEchoMode(mode)
+            self._env_news_api_key.setEchoMode(mode)
+            self._env_weather_api_key.setEchoMode(mode)
+
+        self._show_secrets.toggled.connect(_toggle_secrets)
+
+        layout.addWidget(secrets_group)
+
+        # Advanced environment variables
+        advanced_group = QGroupBox("Other Environment Variables")
+        advanced_layout = QVBoxLayout(advanced_group)
+
+        self._env_table = QTableWidget(0, 2)
+        self._env_table.setHorizontalHeaderLabels(["Key", "Value"])
+        self._env_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self._env_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._env_table.verticalHeader().setVisible(False)
+        self._env_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._env_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
+        advanced_layout.addWidget(self._env_table)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        add_btn = QPushButton("Add")
+        add_btn.setProperty("secondary", True)
+        btn_row.addWidget(add_btn)
+
+        remove_btn = QPushButton("Remove")
+        remove_btn.setProperty("secondary", True)
+        btn_row.addWidget(remove_btn)
+
+        advanced_layout.addLayout(btn_row)
+        layout.addWidget(advanced_group)
+
+        def _add_row(key: str = "", value: str = ""):
+            row = self._env_table.rowCount()
+            self._env_table.insertRow(row)
+            self._env_table.setItem(row, 0, QTableWidgetItem(key))
+            self._env_table.setItem(row, 1, QTableWidgetItem(value))
+
+        def _remove_selected_rows():
+            rows = sorted({i.row() for i in self._env_table.selectedIndexes()}, reverse=True)
+            for r in rows:
+                self._env_table.removeRow(r)
+
+        add_btn.clicked.connect(lambda: _add_row())
+        remove_btn.clicked.connect(_remove_selected_rows)
+
+        # Seed the UI from current process environment
+        self._env_original = {
+            "PICOVOICE_API_KEY": os.environ.get("PICOVOICE_API_KEY", ""),
+            "GOOGLE_API_KEY": os.environ.get("GOOGLE_API_KEY", ""),
+            "GOOGLE_SEARCH_ENGINE_ID": os.environ.get("GOOGLE_SEARCH_ENGINE_ID", ""),
+            "NEWS_API_KEY": os.environ.get("NEWS_API_KEY", ""),
+            "WEATHER_API_KEY": os.environ.get("WEATHER_API_KEY", ""),
+        }
+
+        self._env_picovoice_api_key.setText(self._env_original["PICOVOICE_API_KEY"])
+        self._env_google_api_key.setText(self._env_original["GOOGLE_API_KEY"])
+        self._env_google_search_engine_id.setText(self._env_original["GOOGLE_SEARCH_ENGINE_ID"])
+        self._env_news_api_key.setText(self._env_original["NEWS_API_KEY"])
+        self._env_weather_api_key.setText(self._env_original["WEATHER_API_KEY"])
+
+        # Don't auto-import the entire environment. Start empty and let the user add.
         return tab
     
     def _create_hub_tab(self) -> QWidget:
@@ -224,7 +389,7 @@ class SettingsDialog(QDialog):
         
         # Hub
         self._hub_url.setText(self.settings.hub.url)
-        self._hub_token.setText(self.settings.hub.token or "")
+        self._hub_token.setText(os.environ.get("HUB_TOKEN", "") or (self.settings.hub.token or ""))
         
         # Appearance
         index = self._theme_combo.findData(self.settings.ui.theme)
@@ -305,6 +470,31 @@ class SettingsDialog(QDialog):
     
     def _on_save(self):
         """Save settings and close dialog."""
+        def _clean_env_value(text: str) -> Optional[str]:
+            value = text.strip()
+            if value == "":
+                return None
+            return value
+
+        env_updates = {
+            "HUB_TOKEN": _clean_env_value(self._hub_token.text()),
+            "PICOVOICE_API_KEY": _clean_env_value(self._env_picovoice_api_key.text()),
+            "GOOGLE_API_KEY": _clean_env_value(self._env_google_api_key.text()),
+            "GOOGLE_SEARCH_ENGINE_ID": _clean_env_value(self._env_google_search_engine_id.text()),
+            "NEWS_API_KEY": _clean_env_value(self._env_news_api_key.text()),
+            "WEATHER_API_KEY": _clean_env_value(self._env_weather_api_key.text()),
+        }
+
+        # Additional env vars
+        for row in range(self._env_table.rowCount()):
+            key_item = self._env_table.item(row, 0)
+            val_item = self._env_table.item(row, 1)
+            key = key_item.text().strip() if key_item else ""
+            if not key:
+                continue
+            value = val_item.text() if val_item else ""
+            env_updates[key] = _clean_env_value(value)
+
         # Collect changes
         self._changes = {
             "device": {
@@ -322,6 +512,7 @@ class SettingsDialog(QDialog):
                 "start_minimized": self._start_minimized.isChecked(),
                 "show_waveform": self._show_waveform.isChecked(),
             },
+            "env": env_updates,
         }
         
         self.settings_changed.emit(self._changes)

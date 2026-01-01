@@ -13,7 +13,7 @@ from ..audio.playback import AudioPlayer
 from ..wake.base import WakeWordDetector
 from ..vad.base import VADBackend
 from ..vad.processor import VADProcessor, VADConfig
-from ..stt.base import STTEngine, TranscriptionResult
+from ..stt.base import STTEngine
 from ..tts.base import TTSEngine
 
 from .events import PipelineEvent, EventType
@@ -112,6 +112,10 @@ class ConversationPipeline:
         # Event handling
         self._event_handlers: List[Callable[[PipelineEvent], None]] = []
         self._lock = threading.Lock()
+
+        # Lifecycle control for background processing threads.
+        self._stop_event = threading.Event()
+        self._worker_threads: List[threading.Thread] = []
     
     @property
     def state(self) -> PipelineState:
@@ -148,6 +152,8 @@ class ConversationPipeline:
         """Start the conversation pipeline."""
         if self._state != PipelineState.IDLE:
             return
+
+        self._stop_event.clear()
         
         # Subscribe to audio stream
         self._audio_stream.subscribe(self._on_audio_frame)
@@ -157,8 +163,28 @@ class ConversationPipeline:
     
     def stop(self) -> None:
         """Stop the conversation pipeline."""
+        self._stop_event.set()
+
+        # Stop any ongoing playback immediately.
+        if self._state == PipelineState.SPEAKING:
+            try:
+                self._audio_player.stop()
+            except Exception:
+                pass
+
         self._audio_stream.unsubscribe(self._on_audio_frame)
         self._audio_stream.stop()
+
+        # Best-effort join of background threads so they can't touch freed
+        # resources after stop().
+        for t in list(self._worker_threads):
+            try:
+                if t.is_alive():
+                    t.join(timeout=1.0)
+            except Exception:
+                pass
+        self._worker_threads = [t for t in self._worker_threads if t.is_alive()]
+
         self._set_state(PipelineState.IDLE)
     
     def pause(self) -> None:
@@ -200,6 +226,8 @@ class ConversationPipeline:
     
     def _on_audio_frame(self, frame: np.ndarray) -> None:
         """Handle incoming audio frame based on current state."""
+        if self._stop_event.is_set():
+            return
         if self._state == PipelineState.LISTENING:
             self._handle_listening(frame)
         elif self._state == PipelineState.RECORDING:
@@ -251,6 +279,10 @@ class ConversationPipeline:
         """Transition from recording to processing."""
         self._emit(EventType.RECORDING_STOPPED)
         self._set_state(PipelineState.PROCESSING)
+
+        if self._stop_event.is_set():
+            self._set_state(PipelineState.LISTENING)
+            return
         
         # Concatenate all recorded audio
         if self._recording_buffer:
@@ -265,9 +297,11 @@ class ConversationPipeline:
         
         processing_thread = threading.Thread(
             target=processing_with_timeout,
-            daemon=True,
+            daemon=False,
         )
         processing_thread.start()
+
+        self._worker_threads.append(processing_thread)
         
         # Monitor timeout in separate thread
         def monitor_timeout():
@@ -279,12 +313,15 @@ class ConversationPipeline:
                     "stage": "processing"
                 })
                 # Force state back to listening
-                self._set_state(PipelineState.LISTENING)
+                if not self._stop_event.is_set():
+                    self._set_state(PipelineState.LISTENING)
         
         threading.Thread(target=monitor_timeout, daemon=True).start()
     
     def _process_speech(self, audio: np.ndarray) -> None:
         """Transcribe audio and generate response."""
+        if self._stop_event.is_set():
+            return
         self._emit(EventType.TRANSCRIPTION_STARTED)
         
         # Transcribe
@@ -299,6 +336,9 @@ class ConversationPipeline:
             "text": result.text,
             "confidence": result.confidence,
         })
+
+        if self._stop_event.is_set():
+            return
         
         if not result.text.strip():
             # No speech detected
@@ -316,17 +356,25 @@ class ConversationPipeline:
         
         self._emit(EventType.RESPONSE_TEXT, {"text": response_text})
         self._emit(EventType.RESPONSE_COMPLETE)
+
+        if self._stop_event.is_set():
+            return
         
         # Speak response
         self._speak_response(response_text)
     
     def _speak_response(self, text: str) -> None:
         """Synthesize and play response."""
+        if self._stop_event.is_set():
+            return
         self._set_state(PipelineState.SPEAKING)
         self._emit(EventType.TTS_STARTED, {"text": text})
         
         try:
             for chunk in self._tts_engine.synthesize_stream(text):
+                if self._stop_event.is_set():
+                    self._audio_player.stop()
+                    break
                 if self._state != PipelineState.SPEAKING:
                     # Interrupted
                     self._audio_player.stop()

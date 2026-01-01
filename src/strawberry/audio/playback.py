@@ -23,6 +23,7 @@ class AudioPlayer:
         self._sample_rate = sample_rate
         self._device = device
         self._sd = None
+        self._play_called = False
         
         try:
             import sounddevice as sd
@@ -56,6 +57,7 @@ class AudioPlayer:
         
         try:
             self._sd.play(audio, sr, device=self._device, blocking=blocking)
+            self._play_called = True
         except Exception as e:
             logger.error(f"Audio playback failed: {e}")
             # Try with default device if specific device failed
@@ -63,20 +65,23 @@ class AudioPlayer:
                 try:
                     logger.info("Retrying with default output device...")
                     self._sd.play(audio, sr, device=None, blocking=blocking)
+                    self._play_called = True
                 except Exception as e2:
                     logger.error(f"Default device playback also failed: {e2}")
     
     def stop(self):
         """Stop current playback."""
-        if self._sd:
+        if self._sd and self._play_called:
             try:
                 self._sd.stop()
             except Exception:
                 pass
+            finally:
+                self._play_called = False
     
     def wait(self):
         """Wait for current playback to finish."""
-        if self._sd:
+        if self._sd and self._play_called:
             try:
                 self._sd.wait()
             except Exception:

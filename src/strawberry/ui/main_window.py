@@ -1,20 +1,22 @@
 """Main application window."""
 
 import asyncio
+import os
 from typing import Optional, List
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QMenuBar, QMenu, QSplitter, QFrame
+    QMenu, QFrame
 )
-from PySide6.QtCore import Qt, Signal, Slot, QTimer
-from PySide6.QtGui import QAction, QFont, QIcon, QShortcut, QKeySequence
+from PySide6.QtCore import Signal, Slot, QTimer
+from PySide6.QtGui import QAction, QFont
 
 from pathlib import Path
 
-from .theme import Theme, THEMES, get_stylesheet, DARK_THEME
+from .theme import THEMES, get_stylesheet, DARK_THEME
 from .widgets import ChatArea, InputArea, MicState, StatusBar, VoiceIndicator
 from .voice_controller import VoiceController
 from ..config import Settings
+from ..config.persistence import persist_settings_and_env
 from ..hub import HubClient, HubConfig
 from ..hub.client import ChatMessage, HubError
 from ..skills import SkillService
@@ -62,7 +64,7 @@ class MainWindow(QMainWindow):
     
     def _setup_window(self):
         """Configure the main window."""
-        self.setWindowTitle("🍓 Strawberry AI")
+        self.setWindowTitle(" Strawberry AI")
         self.setMinimumSize(500, 600)
         self.resize(700, 800)
         
@@ -193,7 +195,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 0, 16, 0)
         
         # Logo/title
-        title = QLabel("🍓 Strawberry AI")
+        title = QLabel(" Strawberry AI")
         title_font = QFont()
         title_font.setPointSize(16)
         title_font.setWeight(QFont.Weight.Bold)
@@ -249,6 +251,7 @@ class MainWindow(QMainWindow):
             
             # Update menu checkmarks
             view_menu = self.menuBar().findChild(QMenu, "")
+            _ = view_menu
             # Note: Would need to properly track actions to update checkmarks
     
     def _init_skills(self):
@@ -451,7 +454,7 @@ class MainWindow(QMainWindow):
                 if not code_blocks:
                     # No code blocks = agent is done
                     final_response = response
-                    print(f"[Agent] No code blocks, ending loop")
+                    print("[Agent] No code blocks, ending loop")
                     break
                 
                 # Execute code blocks and display in UI
@@ -619,7 +622,6 @@ class MainWindow(QMainWindow):
         
         # Use a new event loop in this thread for the async call
         import asyncio
-        import concurrent.futures
         
         # Create a new event loop for this thread
         loop = asyncio.new_event_loop()
@@ -740,6 +742,49 @@ class MainWindow(QMainWindow):
     
     def _apply_settings_changes(self, changes: dict):
         """Apply settings changes from dialog."""
+        # Persist changes first (best effort). Non-secrets go to config/config.yaml.
+        # Secrets (tokens/API keys) go to .env and are applied immediately.
+        yaml_updates = {}
+        env_updates = {}
+ 
+        if "device" in changes:
+            yaml_updates["device.name"] = changes["device"].get("name", self.settings.device.name)
+ 
+        if "hub" in changes:
+            yaml_updates["hub.url"] = changes["hub"].get("url", self.settings.hub.url)
+ 
+        if "skills" in changes:
+            yaml_updates["skills.path"] = changes["skills"].get("path", self.settings.skills.path)
+ 
+        if "ui" in changes:
+            yaml_updates["ui.theme"] = changes["ui"].get("theme", self.settings.ui.theme)
+            yaml_updates["ui.start_minimized"] = changes["ui"].get(
+                "start_minimized", self.settings.ui.start_minimized
+            )
+            yaml_updates["ui.show_waveform"] = changes["ui"].get(
+                "show_waveform", self.settings.ui.show_waveform
+            )
+ 
+        if "env" in changes:
+            env_updates.update(changes["env"] or {})
+ 
+        # Ensure Hub token is stored as HUB_TOKEN for config.yaml's ${HUB_TOKEN} pattern
+        if "hub" in changes and "token" in changes["hub"]:
+            token = changes["hub"].get("token")
+            env_updates["HUB_TOKEN"] = token
+ 
+        try:
+            result = persist_settings_and_env(
+                config_path=Path("config/config.yaml"),
+                env_path=Path(".env"),
+                yaml_updates=yaml_updates,
+                env_updates=env_updates,
+            )
+            if result.wrote_config or result.wrote_env:
+                self._chat_area.add_system_message("Settings saved")
+        except Exception as e:
+            self._chat_area.add_system_message(f"Failed to save settings: {e}")
+
         # Update in-memory settings
         if "device" in changes:
             self.settings.device.name = changes["device"].get("name", self.settings.device.name)
@@ -749,7 +794,10 @@ class MainWindow(QMainWindow):
             old_token = self.settings.hub.token
             
             self.settings.hub.url = changes["hub"].get("url", self.settings.hub.url)
-            self.settings.hub.token = changes["hub"].get("token", self.settings.hub.token)
+            # Hub token is sourced from env (HUB_TOKEN); keep settings.hub.token in sync
+            self.settings.hub.token = os.environ.get("HUB_TOKEN") or changes["hub"].get(
+                "token", self.settings.hub.token
+            )
             
             # Reconnect if Hub settings changed
             if (self.settings.hub.url != old_url or 
@@ -764,6 +812,17 @@ class MainWindow(QMainWindow):
             self.settings.ui.start_minimized = changes["ui"].get(
                 "start_minimized", self.settings.ui.start_minimized
             )
+
+            self.settings.ui.show_waveform = changes["ui"].get(
+                "show_waveform", self.settings.ui.show_waveform
+            )
+
+        if "skills" in changes:
+            old_skills_path = self.settings.skills.path
+            self.settings.skills.path = changes["skills"].get("path", self.settings.skills.path)
+            if self.settings.skills.path != old_skills_path and self._skill_service:
+                # Reload skills to pick up new directory and any env-dependent skill init
+                self._init_skills()
         
         self._chat_area.add_system_message("Settings updated")
     
