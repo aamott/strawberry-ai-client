@@ -313,19 +313,25 @@ class TerminalApp:
                     ChatMessage(role="user", content=user_input)
                 )
                 
+                # Trim history to prevent memory growth
+                self._trim_history()
+                
                 if self.debug:
                     print(f"{Colors.DIM}Sending to Hub ({len(self._conversation_history)} messages)...{Colors.RESET}")
                 
-                # Get response from Hub
+                # Get response from Hub (use configurable temperature)
                 response = await self._hub_client.chat(
                     messages=self._conversation_history,
-                    temperature=0.7,
+                    temperature=self.settings.llm.temperature,
                 )
                 
                 # Add assistant response to history
                 self._conversation_history.append(
                     ChatMessage(role="assistant", content=response.content)
                 )
+                
+                # Trim again after adding response
+                self._trim_history()
                 
                 if self.debug:
                     print(f"{Colors.DIM}Model: {response.model}, Finish: {response.finish_reason}{Colors.RESET}")
@@ -405,6 +411,18 @@ class TerminalApp:
         print(f"  TTS: {self.settings.tts.backend}")
         print(f"  Conversation history: {len(self._conversation_history)} messages")
         print()
+    
+    def _trim_history(self) -> None:
+        """Trim conversation history to prevent unbounded memory growth.
+        
+        Keeps the most recent messages up to the configured max_history limit.
+        """
+        max_history = self.settings.conversation.max_history
+        if len(self._conversation_history) > max_history:
+            # Keep the most recent messages
+            self._conversation_history = self._conversation_history[-max_history:]
+            if self.debug:
+                print(f"{Colors.DIM}Trimmed history to {max_history} messages{Colors.RESET}")
     
     def _handle_interrupt(self, signum, frame) -> None:
         """Handle Ctrl+C."""

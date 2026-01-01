@@ -64,10 +64,34 @@ class TTSSettings(BaseModel):
     voice: Optional[str] = None  # Backend-specific voice ID
 
 
+class SandboxSettings(BaseModel):
+    """Sandbox execution settings."""
+    enabled: bool = True  # Use secure sandbox (disable for development)
+    timeout_seconds: float = 5.0  # Execution timeout
+    memory_limit_mb: int = 128  # Memory limit for sandbox
+    deno_path: str = "deno"  # Path to Deno executable
+
+
 class SkillsSettings(BaseModel):
     """Skill runner settings."""
     path: str = "./skills"
-    sandbox_timeout_seconds: float = 5.0
+    sandbox: SandboxSettings = Field(default_factory=SandboxSettings)
+
+
+class LLMConfig(BaseModel):
+    """Large Language Model configuration."""
+    temperature: float = 0.7
+    max_tokens: int = 1000
+    top_p: float = 1.0
+    presence_penalty: float = 0.0
+    frequency_penalty: float = 0.0
+
+
+class ConversationConfig(BaseModel):
+    """Conversation history management."""
+    max_history: int = 50  # Max messages to keep
+    max_tokens: int = 8000  # Approximate token limit for context
+    timeout_minutes: int = 30  # Session timeout
 
 
 class VoiceSettings(BaseModel):
@@ -96,6 +120,8 @@ class Settings(BaseModel):
     skills: SkillsSettings = Field(default_factory=SkillsSettings)
     voice: VoiceSettings = Field(default_factory=VoiceSettings)
     ui: UISettings = Field(default_factory=UISettings)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    conversation: ConversationConfig = Field(default_factory=ConversationConfig)
     
     class Config:
         extra = "ignore"  # Ignore unknown fields in config file

@@ -1,8 +1,18 @@
 """HTTP client for communicating with the Strawberry AI Hub."""
 
+import logging
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 import httpx
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -45,6 +55,27 @@ class HubError(Exception):
     def __init__(self, message: str, status_code: int = 0):
         super().__init__(message)
         self.status_code = status_code
+    
+    @property
+    def is_retryable(self) -> bool:
+        """Check if this error should be retried."""
+        # Retry server errors (5xx) but not client errors (4xx)
+        return self.status_code >= 500
+
+
+class RetryableHubError(HubError):
+    """Hub error that should be retried."""
+    pass
+
+
+# Retry configuration for Hub requests
+_retry_config = retry(
+    stop=stop_after_attempt(3),  # Max 3 attempts
+    wait=wait_exponential(multiplier=1, min=1, max=10),  # 1s, 2s, 4s backoff
+    retry=retry_if_exception_type((RetryableHubError, httpx.TransportError)),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
 
 
 class HubClient:
@@ -106,6 +137,7 @@ class HubClient:
     # Chat / LLM
     # =========================================================================
     
+    @_retry_config
     async def chat(
         self,
         messages: List[ChatMessage],
@@ -163,6 +195,7 @@ class HubClient:
     # Skills
     # =========================================================================
     
+    @_retry_config
     async def register_skills(self, skills: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Register local skills with the Hub.
         
@@ -183,12 +216,14 @@ class HubClient:
         self._check_response(response)
         return response.json()
     
+    @_retry_config
     async def heartbeat(self) -> Dict[str, Any]:
         """Send heartbeat to keep skills alive."""
         response = await self.client.post("/skills/heartbeat")
         self._check_response(response)
         return response.json()
     
+    @_retry_config
     async def list_skills(self, include_expired: bool = False) -> List[Dict[str, Any]]:
         """List all skills visible to this device.
         
@@ -205,6 +240,7 @@ class HubClient:
         self._check_response(response)
         return response.json()["skills"]
     
+    @_retry_config
     async def search_skills(self, query: str = "") -> List[Dict[str, Any]]:
         """Search for skills across all devices.
         
@@ -222,6 +258,55 @@ class HubClient:
         return response.json()["results"]
     
     # =========================================================================
+    # Remote Skill Execution
+    # =========================================================================
+    
+    @_retry_config
+    async def execute_remote_skill(
+        self,
+        device_name: str,
+        skill_name: str,
+        method_name: str,
+        args: List[Any] = None,
+        kwargs: Dict[str, Any] = None,
+    ) -> Any:
+        """Execute a skill on a remote device via Hub.
+        
+        Args:
+            device_name: Target device name
+            skill_name: Skill class name
+            method_name: Method name to call
+            args: Positional arguments
+            kwargs: Keyword arguments
+            
+        Returns:
+            Result from remote skill execution
+            
+        Raises:
+            HubError: If remote execution fails
+        """
+        payload = {
+            "device_name": device_name,
+            "skill_name": skill_name,
+            "method_name": method_name,
+            "args": args or [],
+            "kwargs": kwargs or {},
+        }
+        
+        response = await self.client.post(
+            "/skills/execute",
+            json=payload,
+            timeout=60.0,  # Longer timeout for remote execution
+        )
+        self._check_response(response)
+        
+        result = response.json()
+        if not result.get("success"):
+            raise HubError(result.get("error", "Remote execution failed"))
+        
+        return result.get("result")
+    
+    # =========================================================================
     # Devices
     # =========================================================================
     
@@ -236,8 +321,20 @@ class HubClient:
     # =========================================================================
     
     def _check_response(self, response: httpx.Response):
-        """Check response for errors and raise HubError if needed."""
-        if response.status_code >= 400:
+        """Check response for errors and raise HubError if needed.
+        
+        Raises RetryableHubError for 5xx errors (server errors).
+        Raises HubError for 4xx errors (client errors).
+        """
+        if response.status_code >= 500:
+            # Server error - should retry
+            try:
+                detail = response.json().get("detail", response.text)
+            except Exception:
+                detail = response.text
+            raise RetryableHubError(f"Hub server error: {detail}", response.status_code)
+        elif response.status_code >= 400:
+            # Client error - don't retry
             try:
                 detail = response.json().get("detail", response.text)
             except Exception:

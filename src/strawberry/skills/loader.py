@@ -34,6 +34,7 @@ class SkillInfo:
     class_obj: type
     methods: List[SkillMethod] = field(default_factory=list)
     module_path: Optional[Path] = None
+    instance: Optional[Any] = None  # Instantiated skill object
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API."""
@@ -192,11 +193,19 @@ class SkillLoader:
                 callable=method,
             ))
         
+        # Create instance of the skill class
+        try:
+            instance = cls()
+        except Exception as e:
+            logger.warning(f"Failed to instantiate {name}: {e}")
+            instance = None
+        
         return SkillInfo(
             name=name,
             class_obj=cls,
             methods=methods,
             module_path=file_path,
+            instance=instance,
         )
     
     def get_skill(self, name: str) -> Optional[SkillInfo]:

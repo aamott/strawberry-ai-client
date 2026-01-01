@@ -366,6 +366,9 @@ class MainWindow(QMainWindow):
                 ChatMessage(role="user", content=message)
             )
             
+            # Trim history to prevent unbounded memory growth
+            self._trim_history()
+            
             # Agent loop
             all_tool_calls = []
             final_response = None
@@ -373,10 +376,10 @@ class MainWindow(QMainWindow):
             for iteration in range(MAX_ITERATIONS):
                 print(f"[Agent] Iteration {iteration + 1}/{MAX_ITERATIONS}")
                 
-                # Get response from LLM
+                # Get response from LLM (use configurable temperature)
                 response = await self._hub_client.chat(
                     messages=messages_to_send,
-                    temperature=0.7,
+                    temperature=self.settings.llm.temperature,
                 )
                 
                 print(f"[Agent] LLM response: {response.content[:200]}...")
@@ -464,6 +467,10 @@ class MainWindow(QMainWindow):
                 self._conversation_history.append(
                     ChatMessage(role="assistant", content=final_response.content)
                 )
+                
+                # Trim history after adding response
+                self._trim_history()
+                
                 self._chat_area.add_message(display_content, is_user=False)
                 
                 # Update status with iteration count
@@ -477,6 +484,15 @@ class MainWindow(QMainWindow):
         finally:
             self._input_area.set_sending(False)
             self._input_area.set_focus()
+    
+    def _trim_history(self) -> None:
+        """Trim conversation history to prevent unbounded memory growth.
+        
+        Keeps the most recent messages up to the configured max_history limit.
+        """
+        max_history = self.settings.conversation.max_history
+        if len(self._conversation_history) > max_history:
+            self._conversation_history = self._conversation_history[-max_history:]
     
     def _on_new_chat(self):
         """Start a new chat (clear history)."""

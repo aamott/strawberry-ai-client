@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
 
 from .loader import SkillLoader, SkillInfo
+from .sandbox import SandboxExecutor, SandboxConfig, Gatekeeper, ProxyGenerator
 from ..hub import HubClient
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,8 @@ print(info)
         skills_path: Path,
         hub_client: Optional[HubClient] = None,
         heartbeat_interval: float = 300.0,  # 5 minutes
+        use_sandbox: bool = True,
+        sandbox_config: Optional[SandboxConfig] = None,
     ):
         """Initialize skill service.
         
@@ -86,15 +89,22 @@ print(info)
             skills_path: Path to skills directory
             hub_client: Hub client for registration (optional)
             heartbeat_interval: Seconds between heartbeats
+            use_sandbox: Whether to use secure sandbox (default True)
+            sandbox_config: Sandbox configuration (optional)
         """
         self.skills_path = Path(skills_path)
         self.hub_client = hub_client
         self.heartbeat_interval = heartbeat_interval
+        self.use_sandbox = use_sandbox
         
         self._loader = SkillLoader(skills_path)
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._registered = False
         self._skills_loaded = False
+        
+        # Sandbox components (initialized after skills are loaded)
+        self._sandbox: Optional[SandboxExecutor] = None
+        self._sandbox_config = sandbox_config or SandboxConfig(enabled=use_sandbox)
     
     def load_skills(self) -> List[SkillInfo]:
         """Load all skills from the skills directory.
@@ -105,6 +115,18 @@ print(info)
         skills = self._loader.load_all()
         self._skills_loaded = True
         logger.info(f"Loaded {len(skills)} skills from {self.skills_path}")
+        
+        # Initialize sandbox components
+        if self.use_sandbox:
+            gatekeeper = Gatekeeper(self._loader)
+            proxy_gen = ProxyGenerator(skills)
+            self._sandbox = SandboxExecutor(
+                gatekeeper=gatekeeper,
+                proxy_generator=proxy_gen,
+                config=self._sandbox_config,
+            )
+            logger.info("Sandbox executor initialized")
+        
         return skills
     
     async def register_with_hub(self) -> bool:
@@ -237,10 +259,31 @@ print(info)
         
         return code_blocks
     
-    def execute_code(self, code: str) -> SkillCallResult:
-        """Execute a code block containing skill calls.
+    async def execute_code_async(self, code: str) -> SkillCallResult:
+        """Execute a code block containing skill calls (async, sandbox).
         
-        Creates a sandboxed environment with the `device` object available.
+        Args:
+            code: Python code to execute
+            
+        Returns:
+            SkillCallResult with output or error
+        """
+        if self._sandbox:
+            result = await self._sandbox.execute(code)
+            return SkillCallResult(
+                success=result.success,
+                result=result.output,
+                error=result.error,
+            )
+        else:
+            # Fallback to sync execution if sandbox not initialized
+            return self.execute_code(code)
+    
+    def execute_code(self, code: str) -> SkillCallResult:
+        """Execute a code block containing skill calls (sync, direct).
+        
+        WARNING: This method uses direct exec() and is NOT secure.
+        Use execute_code_async() with sandbox for production.
         
         Args:
             code: Python code to execute
@@ -277,8 +320,51 @@ print(info)
         finally:
             sys.stdout = old_stdout
     
+    async def process_response_async(self, response: str) -> Tuple[str, List[Dict[str, Any]]]:
+        """Process LLM response, executing any skill calls (async, sandbox).
+        
+        Args:
+            response: LLM response text
+            
+        Returns:
+            Tuple of (final_response, list of tool_call_info)
+        """
+        code_blocks = self.parse_skill_calls(response)
+        
+        if not code_blocks:
+            return response, []
+        
+        tool_calls = []
+        results = []
+        
+        for code in code_blocks:
+            result = await self.execute_code_async(code)
+            
+            tool_calls.append({
+                "code": code,
+                "success": result.success,
+                "result": result.result,
+                "error": result.error,
+            })
+            
+            if result.success and result.result:
+                results.append(f"Output:\n{result.result}")
+            elif not result.success:
+                results.append(f"Error: {result.error}")
+        
+        # Remove code blocks from response and append results
+        clean_response = re.sub(r'```(?:python|tool_code|code|py)?\s*.*?```', '', response, flags=re.DOTALL | re.IGNORECASE).strip()
+        
+        if results:
+            clean_response = clean_response + "\n\n" + "\n".join(results)
+        
+        return clean_response, tool_calls
+    
     def process_response(self, response: str) -> Tuple[str, List[Dict[str, Any]]]:
-        """Process LLM response, executing any skill calls.
+        """Process LLM response, executing any skill calls (sync).
+        
+        WARNING: Uses direct exec() - not secure for production.
+        Use process_response_async() for secure sandbox execution.
         
         Args:
             response: LLM response text
@@ -326,6 +412,31 @@ print(info)
         if not self._skills_loaded:
             self.load_skills()
         return self._loader.get_all_skills()
+    
+    async def shutdown(self):
+        """Shutdown the skill service and sandbox."""
+        await self.stop_heartbeat()
+        
+        if self._sandbox:
+            await self._sandbox.shutdown()
+            self._sandbox = None
+            logger.info("Sandbox shutdown complete")
+    
+    def reload_skills(self) -> List[SkillInfo]:
+        """Reload all skills and refresh sandbox.
+        
+        Returns:
+            List of reloaded skills
+        """
+        skills = self._loader.load_all()
+        self._skills_loaded = True
+        
+        # Refresh sandbox components
+        if self._sandbox:
+            self._sandbox.refresh_skills()
+        
+        logger.info(f"Reloaded {len(skills)} skills")
+        return skills
 
 
 class _DeviceProxy:

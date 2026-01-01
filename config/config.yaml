@@ -39,7 +39,11 @@ tts:
 
 skills:
   path: ./skills
-  sandbox_timeout_seconds: 5.0
+  sandbox:
+    enabled: true  # Use secure Pyodide sandbox (disable for debugging)
+    timeout_seconds: 5.0  # Max execution time per code block
+    memory_limit_mb: 128  # Memory limit for sandbox
+    deno_path: deno  # Path to Deno executable
 
 voice:
   audio_feedback_enabled: true  # Play sounds for wake word, recording, etc.

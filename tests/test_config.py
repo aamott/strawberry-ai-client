@@ -8,7 +8,9 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from strawberry.config.settings import Settings, AudioSettings, VADConfig
+from strawberry.config.settings import (
+    Settings, AudioSettings, VADConfig, LLMConfig, ConversationConfig
+)
 from strawberry.config.loader import load_config, get_settings, reset_settings
 
 
@@ -117,4 +119,54 @@ def test_device_id_auto_generated():
     
     assert settings.device.id is not None
     assert len(settings.device.id) == 8  # UUID first 8 chars
+
+
+def test_llm_config_defaults():
+    """LLM config should have sensible defaults."""
+    config = LLMConfig()
+    
+    assert config.temperature == 0.7
+    assert config.max_tokens == 1000
+    assert config.top_p == 1.0
+    assert config.presence_penalty == 0.0
+    assert config.frequency_penalty == 0.0
+
+
+def test_conversation_config_defaults():
+    """Conversation config should have sensible defaults."""
+    config = ConversationConfig()
+    
+    assert config.max_history == 50
+    assert config.max_tokens == 8000
+    assert config.timeout_minutes == 30
+
+
+def test_settings_include_llm_and_conversation():
+    """Settings should include LLM and conversation configs."""
+    settings = Settings()
+    
+    assert hasattr(settings, 'llm')
+    assert hasattr(settings, 'conversation')
+    assert settings.llm.temperature == 0.7
+    assert settings.conversation.max_history == 50
+
+
+def test_llm_config_override():
+    """LLM config should be overridable."""
+    settings = Settings(
+        llm=LLMConfig(temperature=0.5, max_tokens=500)
+    )
+    
+    assert settings.llm.temperature == 0.5
+    assert settings.llm.max_tokens == 500
+
+
+def test_conversation_config_override():
+    """Conversation config should be overridable."""
+    settings = Settings(
+        conversation=ConversationConfig(max_history=100, timeout_minutes=60)
+    )
+    
+    assert settings.conversation.max_history == 100
+    assert settings.conversation.timeout_minutes == 60
 

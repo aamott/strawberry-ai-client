@@ -38,11 +38,13 @@ class PipelineConfig:
         max_recording_duration: Maximum seconds to record
         lookback_frames: Frames to include from before wake word
         interrupt_enabled: Allow user to interrupt TTS playback
+        processing_timeout: Maximum seconds for STT + LLM processing
         vad_config: VAD algorithm configuration
     """
     max_recording_duration: float = 30.0
     lookback_frames: int = 10
     interrupt_enabled: bool = True
+    processing_timeout: float = 60.0  # 60 second timeout for processing
     vad_config: VADConfig = field(default_factory=VADConfig)
 
 
@@ -257,12 +259,29 @@ class ConversationPipeline:
             audio = np.array([], dtype=np.int16)
         self._recording_buffer = []
         
-        # Process in separate thread to not block audio
-        threading.Thread(
-            target=self._process_speech,
-            args=(audio,),
+        # Process in separate thread with timeout to not block audio
+        def processing_with_timeout():
+            self._process_speech(audio)
+        
+        processing_thread = threading.Thread(
+            target=processing_with_timeout,
             daemon=True,
-        ).start()
+        )
+        processing_thread.start()
+        
+        # Monitor timeout in separate thread
+        def monitor_timeout():
+            processing_thread.join(timeout=self._config.processing_timeout)
+            if processing_thread.is_alive():
+                # Processing timed out
+                self._emit(EventType.ERROR, {
+                    "error": f"Processing timeout after {self._config.processing_timeout}s",
+                    "stage": "processing"
+                })
+                # Force state back to listening
+                self._set_state(PipelineState.LISTENING)
+        
+        threading.Thread(target=monitor_timeout, daemon=True).start()
     
     def _process_speech(self, audio: np.ndarray) -> None:
         """Transcribe audio and generate response."""

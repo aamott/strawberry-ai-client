@@ -11,6 +11,7 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "httpx>=0.25",
+    "tenacity>=8.0",  # Retry logic
     
     # Audio
     "sounddevice>=0.4",
