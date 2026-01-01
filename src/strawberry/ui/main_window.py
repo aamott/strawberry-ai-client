@@ -9,12 +9,15 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QAction, QFont, QIcon
 
+from pathlib import Path
+
 from .theme import Theme, THEMES, get_stylesheet, DARK_THEME
 from .widgets import ChatArea, InputArea, StatusBar, VoiceIndicator
 from .voice_controller import VoiceController
 from ..config import Settings
 from ..hub import HubClient, HubConfig
 from ..hub.client import ChatMessage, HubError
+from ..skills import SkillService
 
 
 class MainWindow(QMainWindow):
@@ -41,13 +44,15 @@ class MainWindow(QMainWindow):
         self._conversation_history: List[ChatMessage] = []
         self._connected = False
         self._voice_controller: Optional[VoiceController] = None
+        self._skill_service: Optional[SkillService] = None
         
         self._setup_window()
         self._setup_menu()
         self._setup_ui()
         self._apply_theme()
         
-        # Initialize Hub connection
+        # Initialize skills and Hub connection
+        self._init_skills()
         QTimer.singleShot(100, self._init_hub)
     
     def _setup_window(self):
@@ -216,6 +221,30 @@ class MainWindow(QMainWindow):
             view_menu = self.menuBar().findChild(QMenu, "")
             # Note: Would need to properly track actions to update checkmarks
     
+    def _init_skills(self):
+        """Initialize skill service."""
+        skills_path = Path(self.settings.skills.path)
+        
+        # Make path absolute if relative
+        if not skills_path.is_absolute():
+            # Relative to config file or cwd
+            skills_path = Path.cwd() / skills_path
+        
+        self._skill_service = SkillService(skills_path)
+        
+        # Load skills
+        skills = self._skill_service.load_skills()
+        
+        if skills:
+            skill_names = [s.name for s in skills]
+            self._chat_area.add_system_message(
+                f"Loaded {len(skills)} skill(s): {', '.join(skill_names)}"
+            )
+        else:
+            self._chat_area.add_system_message(
+                f"No skills found in {skills_path}"
+            )
+    
     def _init_hub(self):
         """Initialize Hub connection."""
         if self.settings.hub.token:
@@ -244,6 +273,9 @@ class MainWindow(QMainWindow):
                 if healthy:
                     self._status_bar.set_connected(True, self.settings.hub.url)
                     self._chat_area.add_system_message("Connected to Hub. Ready to chat!")
+                    
+                    # Register skills with Hub
+                    await self._register_skills_with_hub()
                 else:
                     self._status_bar.set_connected(False)
                     self._chat_area.add_system_message(
@@ -253,6 +285,30 @@ class MainWindow(QMainWindow):
                 self._connected = False
                 self._status_bar.set_connected(False)
                 self._chat_area.add_system_message(f"Failed to connect to Hub: {e}")
+    
+    async def _register_skills_with_hub(self):
+        """Register skills with Hub and start heartbeat."""
+        if not self._skill_service or not self._hub_client:
+            return
+        
+        # Set hub client on skill service
+        self._skill_service.hub_client = self._hub_client
+        
+        # Register skills
+        success = await self._skill_service.register_with_hub()
+        
+        if success:
+            skills = self._skill_service.get_all_skills()
+            if skills:
+                self._chat_area.add_system_message(
+                    f"Registered {len(skills)} skill(s) with Hub"
+                )
+                # Start heartbeat
+                await self._skill_service.start_heartbeat()
+        else:
+            self._chat_area.add_system_message(
+                "Failed to register skills with Hub (running in local mode)"
+            )
     
     @Slot(str)
     def _on_message_submitted(self, message: str):
@@ -270,22 +326,58 @@ class MainWindow(QMainWindow):
     async def _send_message(self, message: str):
         """Send message to Hub and display response."""
         try:
-            # Add to history
+            # Build messages with system prompt
+            messages_to_send = []
+            
+            # Add system prompt with skills
+            if self._skill_service:
+                system_prompt = self._skill_service.get_system_prompt()
+                messages_to_send.append(ChatMessage(role="system", content=system_prompt))
+            
+            # Add conversation history
+            messages_to_send.extend(self._conversation_history)
+            
+            # Add current message
+            messages_to_send.append(ChatMessage(role="user", content=message))
+            
+            # Add to local history
             self._conversation_history.append(
                 ChatMessage(role="user", content=message)
             )
             
-            # Get response
+            # Get response from LLM
             response = await self._hub_client.chat(
-                messages=self._conversation_history,
+                messages=messages_to_send,
                 temperature=0.7,
             )
+            
+            # Process response for skill calls
+            if self._skill_service:
+                processed_content, tool_calls = self._skill_service.process_response(
+                    response.content
+                )
+                
+                # Display tool calls in UI
+                for tc in tool_calls:
+                    widget = self._chat_area.add_tool_call(
+                        tool_name="Skill Call",
+                        arguments={"code": tc["code"][:50] + "..." if len(tc["code"]) > 50 else tc["code"]},
+                    )
+                    if tc["success"]:
+                        widget.set_success(tc["result"])
+                    else:
+                        widget.set_error(tc["error"])
+                
+                # Use processed content (with skill results)
+                display_content = processed_content
+            else:
+                display_content = response.content
             
             # Add response to history and display
             self._conversation_history.append(
                 ChatMessage(role="assistant", content=response.content)
             )
-            self._chat_area.add_message(response.content, is_user=False)
+            self._chat_area.add_message(display_content, is_user=False)
             
             # Update status
             self._status_bar.set_info(f"Model: {response.model}")

@@ -1,4 +1,4 @@
-"""Tests for skill loading and registry."""
+"""Tests for skill loading, registry, and service."""
 
 import pytest
 from pathlib import Path
@@ -7,6 +7,7 @@ import tempfile
 import os
 
 from strawberry.skills.loader import SkillLoader, SkillInfo
+from strawberry.skills.service import SkillService
 
 
 @pytest.fixture
@@ -194,4 +195,112 @@ class TestExampleSkills:
         """Test divide by zero handling."""
         with pytest.raises(ValueError, match="Cannot divide by zero"):
             example_loader.call_method("CalculatorSkill", "divide", 10, 0)
+
+
+class TestSkillService:
+    """Tests for SkillService."""
+    
+    @pytest.fixture
+    def service(self):
+        """Create skill service with example skills."""
+        skills_path = Path(__file__).parent.parent / "skills"
+        if not skills_path.exists():
+            pytest.skip("Example skills not found")
+        return SkillService(skills_path)
+    
+    def test_load_skills(self, service):
+        """Test loading skills through service."""
+        skills = service.load_skills()
+        assert len(skills) >= 2  # TimeSkill and CalculatorSkill
+    
+    def test_get_system_prompt(self, service):
+        """Test system prompt generation."""
+        prompt = service.get_system_prompt()
+        
+        assert "Strawberry" in prompt
+        assert "TimeSkill" in prompt or "CalculatorSkill" in prompt
+        assert "device" in prompt
+    
+    def test_parse_skill_calls(self, service):
+        """Test parsing skill calls from response."""
+        response = '''Here's the time:
+
+```python
+result = device.TimeSkill.get_current_time()
+print(result)
+```
+
+That's the current time!'''
+        
+        code_blocks = service.parse_skill_calls(response)
+        
+        assert len(code_blocks) == 1
+        assert "TimeSkill" in code_blocks[0]
+    
+    def test_parse_multiple_skill_calls(self, service):
+        """Test parsing multiple skill calls."""
+        response = '''Let me do both:
+
+```python
+time = device.TimeSkill.get_current_time()
+print(time)
+```
+
+```python
+result = device.CalculatorSkill.add(5, 3)
+print(result)
+```
+
+Done!'''
+        
+        code_blocks = service.parse_skill_calls(response)
+        assert len(code_blocks) == 2
+    
+    def test_execute_code_success(self, service):
+        """Test executing skill code."""
+        service.load_skills()
+        
+        code = "result = device.CalculatorSkill.add(10, 5)\nprint(result)"
+        result = service.execute_code(code)
+        
+        assert result.success
+        assert "15" in result.result
+    
+    def test_execute_code_error(self, service):
+        """Test executing code with error."""
+        service.load_skills()
+        
+        code = "result = device.NonExistentSkill.method()"
+        result = service.execute_code(code)
+        
+        assert not result.success
+        assert result.error is not None
+    
+    def test_process_response(self, service):
+        """Test processing LLM response with skill calls."""
+        service.load_skills()
+        
+        response = '''The sum is:
+
+```python
+result = device.CalculatorSkill.add(7, 3)
+print(result)
+```'''
+        
+        processed, tool_calls = service.process_response(response)
+        
+        assert len(tool_calls) == 1
+        assert tool_calls[0]["success"]
+        assert "10" in processed  # Result included
+    
+    def test_process_response_no_skills(self, service):
+        """Test processing response without skill calls."""
+        service.load_skills()
+        
+        response = "Just a normal response without any code."
+        
+        processed, tool_calls = service.process_response(response)
+        
+        assert processed == response
+        assert len(tool_calls) == 0
 
