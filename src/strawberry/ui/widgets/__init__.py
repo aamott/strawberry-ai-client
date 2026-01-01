@@ -5,6 +5,10 @@ from .chat_area import ChatArea
 from .input_area import InputArea
 from .status_bar import StatusBar
 from .tool_call_widget import ToolCallWidget
+from .voice_indicator import VoiceIndicator
 
-__all__ = ["ChatBubble", "ChatArea", "InputArea", "StatusBar", "ToolCallWidget"]
+__all__ = [
+    "ChatBubble", "ChatArea", "InputArea", "StatusBar", 
+    "ToolCallWidget", "VoiceIndicator"
+]
 

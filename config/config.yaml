@@ -14,9 +14,9 @@ audio:
   frame_length_ms: 30
 
 wake_word:
-  backend: porcupine
+  backend: porcupine  # Requires PICOVOICE_API_KEY env var
   keywords:
-    - jarvis
+    - jarvis  # Built-in: jarvis, computer, hey google, etc.
   sensitivity: 0.5
   enabled: true
 
@@ -31,11 +31,11 @@ vad:
     long_talk_threshold: 8.0
 
 stt:
-  backend: leopard
+  backend: leopard  # Requires PICOVOICE_API_KEY env var
   language: en-US
 
 tts:
-  backend: orca
+  backend: orca  # Requires PICOVOICE_API_KEY env var
 
 skills:
   path: ./skills

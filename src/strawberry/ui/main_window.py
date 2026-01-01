@@ -10,7 +10,8 @@ from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QAction, QFont, QIcon
 
 from .theme import Theme, THEMES, get_stylesheet, DARK_THEME
-from .widgets import ChatArea, InputArea, StatusBar
+from .widgets import ChatArea, InputArea, StatusBar, VoiceIndicator
+from .voice_controller import VoiceController
 from ..config import Settings
 from ..hub import HubClient, HubConfig
 from ..hub.client import ChatMessage, HubError
@@ -39,6 +40,7 @@ class MainWindow(QMainWindow):
         self._hub_client: Optional[HubClient] = None
         self._conversation_history: List[ChatMessage] = []
         self._connected = False
+        self._voice_controller: Optional[VoiceController] = None
         
         self._setup_window()
         self._setup_menu()
@@ -104,6 +106,21 @@ class MainWindow(QMainWindow):
         minimize_tray.triggered.connect(self._minimize_to_tray)
         view_menu.addAction(minimize_tray)
         
+        # Voice menu
+        voice_menu = menubar.addMenu("&Voice")
+        
+        self._voice_toggle_action = QAction("Enable &Voice Mode", self)
+        self._voice_toggle_action.setShortcut("Ctrl+M")
+        self._voice_toggle_action.setCheckable(True)
+        self._voice_toggle_action.triggered.connect(self._toggle_voice_mode)
+        voice_menu.addAction(self._voice_toggle_action)
+        
+        voice_menu.addSeparator()
+        
+        voice_settings = QAction("Voice &Settings...", self)
+        voice_settings.triggered.connect(self._on_voice_settings)
+        voice_menu.addAction(voice_settings)
+        
         # Help menu
         help_menu = menubar.addMenu("&Help")
         
@@ -123,6 +140,12 @@ class MainWindow(QMainWindow):
         # Header
         header = self._create_header()
         layout.addWidget(header)
+        
+        # Voice indicator (hidden by default)
+        self._voice_indicator = VoiceIndicator(theme=self._theme)
+        self._voice_indicator.setVisible(False)
+        self._voice_indicator.voice_toggled.connect(self._on_voice_toggled)
+        layout.addWidget(self._voice_indicator)
         
         # Chat area
         self._chat_area = ChatArea(theme=self._theme)
@@ -282,6 +305,167 @@ class MainWindow(QMainWindow):
         self._chat_area.add_system_message("New conversation started")
         self._input_area.set_focus()
     
+    def _toggle_voice_mode(self, enabled: bool):
+        """Toggle voice mode on/off."""
+        if enabled:
+            self._enable_voice()
+        else:
+            self._disable_voice()
+    
+    def _on_voice_toggled(self, enabled: bool):
+        """Handle voice toggle from indicator widget."""
+        self._voice_toggle_action.setChecked(enabled)
+        self._toggle_voice_mode(enabled)
+    
+    def _enable_voice(self):
+        """Enable voice interaction."""
+        # Show voice indicator
+        self._voice_indicator.setVisible(True)
+        self._voice_indicator.set_voice_enabled(True)
+        
+        # Create voice controller if needed
+        if self._voice_controller is None:
+            self._voice_controller = VoiceController(
+                settings=self.settings,
+                response_handler=self._handle_voice_transcription,
+            )
+            
+            # Connect signals
+            self._voice_controller.state_changed.connect(self._on_voice_state_changed)
+            self._voice_controller.level_changed.connect(self._voice_indicator.set_level)
+            self._voice_controller.wake_word_detected.connect(self._on_wake_word_detected)
+            self._voice_controller.transcription_ready.connect(self._on_transcription_ready)
+            self._voice_controller.response_ready.connect(self._on_voice_response)
+            self._voice_controller.error_occurred.connect(self._on_voice_error)
+        
+        # Start voice
+        if self._voice_controller.start():
+            self._chat_area.add_system_message(
+                f"Voice mode enabled. Say '{self.settings.wake_word.keywords[0]}' to activate."
+            )
+        else:
+            self._voice_indicator.setVisible(False)
+            self._voice_toggle_action.setChecked(False)
+    
+    def _disable_voice(self):
+        """Disable voice interaction."""
+        if self._voice_controller:
+            self._voice_controller.stop()
+        
+        self._voice_indicator.setVisible(False)
+        self._voice_indicator.set_voice_enabled(False)
+        self._chat_area.add_system_message("Voice mode disabled")
+    
+    def _handle_voice_transcription(self, text: str) -> str:
+        """Handle transcription from voice - get LLM response.
+        
+        This is called from a background thread, so we use a thread-safe
+        approach to get the response from the async Hub client.
+        """
+        if not self._hub_client or not self._connected:
+            return f"Hub not connected. You said: {text}"
+        
+        # Use a new event loop in this thread for the async call
+        import asyncio
+        import concurrent.futures
+        
+        # Create a new event loop for this thread
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(self._get_voice_response_async(text))
+            return result
+        except Exception as e:
+            return f"Error: {e}"
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+    
+    async def _get_voice_response_async(self, text: str) -> str:
+        """Get response from Hub for voice transcription (async).
+        
+        Creates a fresh HTTP client since we're in a different thread/loop.
+        """
+        import httpx
+        
+        try:
+            # Create a new client for this request (thread-safe)
+            async with httpx.AsyncClient(
+                base_url=self.settings.hub.url,
+                timeout=30.0,
+            ) as client:
+                # Build message history
+                messages = [
+                    {"role": m.role, "content": m.content}
+                    for m in self._conversation_history
+                ]
+                messages.append({"role": "user", "content": text})
+                
+                # Use the correct endpoint: /v1/chat/completions (OpenAI-compatible)
+                response = await client.post(
+                    "/v1/chat/completions",
+                    json={
+                        "messages": messages,
+                        "temperature": 0.7,
+                    },
+                    headers={"Authorization": f"Bearer {self.settings.hub.token}"},
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    # Parse OpenAI-compatible response format
+                    choice = data.get("choices", [{}])[0]
+                    response_text = choice.get("message", {}).get("content", "")
+                    
+                    # Update conversation history (thread-safe - just appending)
+                    self._conversation_history.append(ChatMessage(role="user", content=text))
+                    self._conversation_history.append(ChatMessage(role="assistant", content=response_text))
+                    
+                    return response_text
+                else:
+                    return f"Hub error: {response.status_code}"
+                    
+        except Exception as e:
+            return f"Error: {e}"
+    
+    @Slot(str)
+    def _on_voice_state_changed(self, state: str):
+        """Handle voice state changes."""
+        self._voice_indicator.set_state(state)
+    
+    @Slot(str)
+    def _on_wake_word_detected(self, keyword: str):
+        """Handle wake word detection."""
+        self._chat_area.add_system_message(f"Wake word '{keyword}' detected!")
+    
+    @Slot(str)
+    def _on_transcription_ready(self, text: str):
+        """Handle transcription completion."""
+        self._chat_area.add_message(text, is_user=True)
+    
+    @Slot(str)
+    def _on_voice_response(self, text: str):
+        """Handle voice response."""
+        self._chat_area.add_message(text, is_user=False)
+    
+    @Slot(str)
+    def _on_voice_error(self, error: str):
+        """Handle voice error."""
+        self._chat_area.add_system_message(f"Voice error: {error}")
+    
+    def _on_voice_settings(self):
+        """Open voice settings."""
+        # TODO: Voice-specific settings dialog
+        self._chat_area.add_system_message(
+            f"Voice settings:\n"
+            f"  Wake words: {', '.join(self.settings.wake_word.keywords)}\n"
+            f"  Sensitivity: {self.settings.wake_word.sensitivity}\n"
+            f"  STT: {self.settings.stt.backend}\n"
+            f"  TTS: {self.settings.tts.backend}"
+        )
+    
     def _on_settings(self):
         """Open settings dialog."""
         from .settings_dialog import SettingsDialog
@@ -355,6 +539,10 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Handle window close."""
         self.closing.emit()
+        
+        # Cleanup voice
+        if self._voice_controller:
+            self._voice_controller.stop()
         
         # Cleanup Hub client
         if self._hub_client:

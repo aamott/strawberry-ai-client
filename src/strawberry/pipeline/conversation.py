@@ -9,6 +9,7 @@ import numpy as np
 
 from ..audio.base import AudioBackend
 from ..audio.stream import AudioStream
+from ..audio.playback import AudioPlayer
 from ..wake.base import WakeWordDetector
 from ..vad.base import VADBackend
 from ..vad.processor import VADProcessor, VADConfig
@@ -94,6 +95,11 @@ class ConversationPipeline:
         self._stt_engine = stt_engine
         self._tts_engine = tts_engine
         self._response_handler = response_handler or (lambda x: f"You said: {x}")
+        
+        # Audio player for TTS output
+        self._audio_player = AudioPlayer(
+            sample_rate=tts_engine.sample_rate if tts_engine else 22050
+        )
         
         # State
         self._state = PipelineState.IDLE
@@ -278,14 +284,18 @@ class ConversationPipeline:
             for chunk in self._tts_engine.synthesize_stream(text):
                 if self._state != PipelineState.SPEAKING:
                     # Interrupted
+                    self._audio_player.stop()
                     break
                 self._emit(EventType.TTS_CHUNK, {
                     "samples": len(chunk.audio),
                     "duration": chunk.duration_sec,
                 })
-                # In a real implementation, we'd play the audio here
-                # For now, just simulate the duration
-                time.sleep(chunk.duration_sec * 0.01)  # Faster for testing
+                # Play the audio chunk
+                self._audio_player.play(
+                    chunk.audio, 
+                    sample_rate=chunk.sample_rate,
+                    blocking=True  # Wait for chunk to finish
+                )
         except Exception as e:
             self._emit(EventType.ERROR, {"error": str(e), "stage": "tts"})
         

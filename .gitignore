@@ -8,5 +8,16 @@ __pycache__/
 .venv
 *.egg-info
 
+# Data
+data/
+*.db
+*.log
+settings.json
+
+# Editor
+.vscode/
+.windsurf/
+.cursor/
+
 # Environment variables
 .env
