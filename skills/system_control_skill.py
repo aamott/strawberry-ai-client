@@ -2,13 +2,12 @@
 
 import platform
 import subprocess
-import os
-from typing import Dict, Any
+from typing import Any, Dict
 
 
 class SystemControlSkill:
     """Controls basic system functions."""
-    
+
     def get_system_info(self) -> Dict[str, Any]:
         """Get basic system information.
         
@@ -22,7 +21,7 @@ class SystemControlSkill:
             "processor": platform.processor(),
             "hostname": platform.node()
         }
-    
+
     def set_system_volume(self, volume: int) -> str:
         """Set the system volume.
         
@@ -37,9 +36,9 @@ class SystemControlSkill:
         """
         if volume < 0 or volume > 100:
             raise ValueError("Volume must be between 0 and 100")
-        
+
         system = platform.system()
-        
+
         try:
             if system == "Windows":
                 # Windows volume control
@@ -50,11 +49,11 @@ class SystemControlSkill:
             elif system == "Linux":
                 # Linux volume control (using amixer or pactl)
                 subprocess.run(["amixer", "-D", "pulse", "sset", "Master", f"{volume}%"])
-            
+
             return f"System volume set to {volume}%"
-        except Exception as e:
+        except Exception:
             return f"System volume set to {volume}% (simulated)"
-    
+
     def get_system_volume(self) -> int:
         """Get the current system volume.
         
@@ -63,7 +62,7 @@ class SystemControlSkill:
         """
         # Simulated volume - real implementation would query system
         return 75
-    
+
     def sleep_system(self) -> str:
         """Put the system to sleep.
         
@@ -73,7 +72,7 @@ class SystemControlSkill:
         """
         # Always simulate for safety
         return "System sleep command sent (simulated for safety)"
-    
+
     def restart_system(self) -> str:
         """Restart the system.
         
@@ -83,7 +82,7 @@ class SystemControlSkill:
         """
         # Always simulate for safety
         return "System restart command sent (simulated for safety - requires admin privileges)"
-    
+
     def shutdown_system(self) -> str:
         """Shut down the system.
         
@@ -97,7 +96,7 @@ class SystemControlSkill:
 
 class DisplayControlSkill:
     """Controls display settings."""
-    
+
     def set_brightness(self, brightness: int) -> str:
         """Set the display brightness.
         
@@ -112,24 +111,24 @@ class DisplayControlSkill:
         """
         if brightness < 0 or brightness > 100:
             raise ValueError("Brightness must be between 0 and 100")
-        
+
         system = platform.system()
-        
+
         try:
             if system == "Windows":
                 # Windows brightness control
                 subprocess.run(["powershell", f"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, {brightness})"])
             elif system == "Darwin":  # macOS
                 # macOS brightness control
-                subprocess.run(["osascript", "-e", f"tell application \"System Events\" to key code 144 using control down"])
+                subprocess.run(["osascript", "-e", "tell application \"System Events\" to key code 144 using control down"])
             elif system == "Linux":
                 # Linux brightness control
                 subprocess.run(["xrandr", "--output", "eDP-1", "--brightness", str(brightness/100)])
-            
+
             return f"Display brightness set to {brightness}%"
-        except Exception as e:
+        except Exception:
             return f"Display brightness set to {brightness}% (simulated)"
-    
+
     def get_brightness(self) -> int:
         """Get the current display brightness.
         

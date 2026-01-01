@@ -1,8 +1,9 @@
 """Configuration settings models using Pydantic."""
 
-from typing import Optional, List, Literal
-from pydantic import BaseModel, Field
 import uuid
+from typing import List, Literal, Optional
+
+from pydantic import BaseModel, Field
 
 
 class DeviceSettings(BaseModel):
@@ -122,7 +123,7 @@ class Settings(BaseModel):
     ui: UISettings = Field(default_factory=UISettings)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     conversation: ConversationConfig = Field(default_factory=ConversationConfig)
-    
+
     class Config:
         extra = "ignore"  # Ignore unknown fields in config file
 

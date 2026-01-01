@@ -2,14 +2,13 @@
 
 from datetime import datetime
 from typing import Optional
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QFrame
-)
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
-from ..theme import Theme
 from ..markdown_renderer import render_markdown
+from ..theme import Theme
 
 
 class ChatBubble(QFrame):
@@ -18,7 +17,7 @@ class ChatBubble(QFrame):
     Displays a message with sender info and timestamp.
     Supports user messages (right-aligned) and AI messages (left-aligned).
     """
-    
+
     def __init__(
         self,
         content: str,
@@ -28,30 +27,30 @@ class ChatBubble(QFrame):
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
-        
+
         self.content = content
         self.is_user = is_user
         self.timestamp = timestamp or datetime.now()
         self._theme = theme
-        
+
         self._setup_ui()
-    
+
     def _setup_ui(self):
         """Set up the bubble UI."""
         # Main horizontal layout for alignment
         outer_layout = QHBoxLayout(self)
         outer_layout.setContentsMargins(8, 4, 8, 4)
-        
+
         if self.is_user:
             outer_layout.addStretch()
-        
+
         # Bubble container
         bubble = QFrame()
         bubble.setObjectName("chatBubble")
         bubble_layout = QVBoxLayout(bubble)
         bubble_layout.setContentsMargins(12, 8, 12, 8)
         bubble_layout.setSpacing(4)
-        
+
         # Sender label
         sender = QLabel("You" if self.is_user else "Strawberry")
         sender.setObjectName("senderLabel")
@@ -60,7 +59,7 @@ class ChatBubble(QFrame):
         sender_font.setPointSize(11)
         sender.setFont(sender_font)
         bubble_layout.addWidget(sender)
-        
+
         # Message content - QLabel with rich text
         message = QLabel()
         message.setObjectName("messageLabel")
@@ -73,7 +72,7 @@ class ChatBubble(QFrame):
         )
         message.setOpenExternalLinks(True)
         message.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-        
+
         # Render content
         if not self.is_user:
             # Render markdown for AI messages
@@ -84,9 +83,9 @@ class ChatBubble(QFrame):
             escaped = self.content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             escaped = escaped.replace("\n", "<br>")
             message.setText(escaped)
-        
+
         bubble_layout.addWidget(message)
-        
+
         # Timestamp
         time_str = self.timestamp.strftime("%H:%M")
         time_label = QLabel(time_str)
@@ -96,20 +95,20 @@ class ChatBubble(QFrame):
         time_font.setPointSize(10)
         time_label.setFont(time_font)
         bubble_layout.addWidget(time_label)
-        
+
         # Bubble sizing
         bubble.setMinimumWidth(100)
         bubble.setMaximumWidth(600)
         bubble.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
-        
+
         outer_layout.addWidget(bubble)
-        
+
         if not self.is_user:
             outer_layout.addStretch()
-        
+
         # Apply bubble-specific styling
         self._apply_style(bubble, sender, message, time_label)
-    
+
     def _apply_style(self, bubble: QFrame, sender: QLabel, message: QLabel, time_label: QLabel):
         """Apply theme-based styling to bubble."""
         if self._theme:
@@ -119,18 +118,18 @@ class ChatBubble(QFrame):
             else:
                 bg = self._theme.ai_bubble
                 text = self._theme.ai_text
-            
+
             bubble.setStyleSheet(f"""
                 QFrame#chatBubble {{
                     background-color: {bg};
                     border-radius: 12px;
                 }}
             """)
-            
+
             sender.setStyleSheet(f"color: {text}; background: transparent;")
             message.setStyleSheet(f"color: {text}; background: transparent;")
             time_label.setStyleSheet(f"color: {self._theme.text_muted}; background: transparent;")
-    
+
     def set_theme(self, theme: Theme):
         """Update the bubble's theme."""
         self._theme = theme

@@ -2,7 +2,8 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import List, Optional
+
 import numpy as np
 
 
@@ -29,13 +30,13 @@ class STTEngine(ABC):
     
     All STT backends must implement this interface.
     """
-    
+
     @property
     @abstractmethod
     def sample_rate(self) -> int:
         """Required audio sample rate in Hz."""
         pass
-    
+
     @abstractmethod
     def transcribe(self, audio: np.ndarray) -> TranscriptionResult:
         """Transcribe complete audio buffer.
@@ -47,7 +48,7 @@ class STTEngine(ABC):
             Transcription result
         """
         pass
-    
+
     def transcribe_file(self, file_path: str) -> TranscriptionResult:
         """Transcribe audio from file.
         
@@ -61,22 +62,22 @@ class STTEngine(ABC):
             Transcription result
         """
         import wave
-        
+
         with wave.open(file_path, 'rb') as wf:
             audio = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
-        
+
         return self.transcribe(audio)
-    
+
     def cleanup(self) -> None:
         """Release any resources held by the engine.
         
         Override in subclasses that need cleanup.
         """
         pass
-    
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cleanup()
         return False

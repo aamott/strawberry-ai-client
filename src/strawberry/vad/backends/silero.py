@@ -24,7 +24,7 @@ class SileroVAD(VADBackend):
     - Requires PyTorch (large dependency)
     - First run downloads model (~3MB)
     """
-    
+
     def __init__(
         self,
         sample_rate: int = 16000,
@@ -42,22 +42,22 @@ class SileroVAD(VADBackend):
         """
         if sample_rate not in (8000, 16000):
             raise ValueError("Silero VAD only supports 8000 or 16000 Hz sample rates")
-        
+
         self._sample_rate = sample_rate
         self._threshold = threshold
         self._last_probability = 0.0
-        
+
         # Load model lazily to avoid import-time torch dependency
         self._model = None
         self._utils = None
-    
+
     def _ensure_model(self):
         """Load model on first use."""
         if self._model is not None:
             return
-        
+
         import torch
-        
+
         # Load Silero VAD from torch.hub
         self._model, self._utils = torch.hub.load(
             repo_or_dir='snakers4/silero-vad',
@@ -66,7 +66,7 @@ class SileroVAD(VADBackend):
             trust_repo=True,
         )
         self._model.eval()
-    
+
     def is_speech(self, audio_frame: np.ndarray) -> bool:
         """Detect speech in audio frame.
         
@@ -78,7 +78,7 @@ class SileroVAD(VADBackend):
         """
         prob = self.get_probability(audio_frame)
         return prob >= self._threshold
-    
+
     def get_probability(self, audio_frame: np.ndarray) -> float:
         """Get speech probability for audio frame.
         
@@ -89,19 +89,19 @@ class SileroVAD(VADBackend):
             Probability of speech (0.0 to 1.0)
         """
         self._ensure_model()
-        
+
         import torch
-        
+
         # Convert int16 to float32 and normalize to [-1, 1]
         audio = audio_frame.astype(np.float32) / 32768.0
         tensor = torch.from_numpy(audio)
-        
+
         with torch.no_grad():
             prob = self._model(tensor, self._sample_rate).item()
-        
+
         self._last_probability = prob
         return prob
-    
+
     def cleanup(self) -> None:
         """Release model resources."""
         self._model = None

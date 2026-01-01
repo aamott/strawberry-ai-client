@@ -1,33 +1,32 @@
 """Media playback control skills."""
 
-import subprocess
 import platform
-from typing import Optional
+import subprocess
 
 
 class MediaControlSkill:
     """Controls media playback on the device."""
-    
+
     def play(self) -> str:
         """Resume media playback."""
         return self._send_media_command("play")
-    
+
     def pause(self) -> str:
         """Pause media playback."""
         return self._send_media_command("pause")
-    
+
     def stop(self) -> str:
         """Stop media playback."""
         return self._send_media_command("stop")
-    
+
     def next_track(self) -> str:
         """Skip to the next track."""
         return self._send_media_command("next")
-    
+
     def previous_track(self) -> str:
         """Go back to the previous track."""
         return self._send_media_command("previous")
-    
+
     def set_volume(self, volume: int) -> str:
         """Set the media volume.
         
@@ -42,9 +41,9 @@ class MediaControlSkill:
         """
         if volume < 0 or volume > 100:
             raise ValueError("Volume must be between 0 and 100")
-        
+
         return self._send_media_command(f"volume {volume}")
-    
+
     def get_volume(self) -> int:
         """Get the current volume level.
         
@@ -53,7 +52,7 @@ class MediaControlSkill:
         """
         # Simulated volume - real implementation would query system
         return 75
-    
+
     def get_current_track(self) -> dict:
         """Get information about the currently playing track.
         
@@ -67,11 +66,11 @@ class MediaControlSkill:
             "duration": "3:45",
             "position": "1:23"
         }
-    
+
     def _send_media_command(self, command: str) -> str:
         """Send media control command to the system."""
         system = platform.system()
-        
+
         try:
             if system == "Windows":
                 # Windows media control commands
@@ -101,16 +100,16 @@ class MediaControlSkill:
             elif system == "Linux":
                 # Linux uses playerctl or dbus
                 subprocess.run(["playerctl", command])
-            
+
             return f"Media command '{command}' executed"
-            
-        except Exception as e:
+
+        except Exception:
             return f"Media command '{command}' sent (simulated)"
 
 
 class MusicLibrarySkill:
     """Manages music library and playlists."""
-    
+
     def search_songs(self, query: str, max_results: int = 10) -> list:
         """Search for songs in the music library.
         
@@ -130,7 +129,7 @@ class MusicLibrarySkill:
                 "duration": "3:30"
             }
         ][:max_results]
-    
+
     def create_playlist(self, name: str, song_titles: list) -> str:
         """Create a new playlist.
         
@@ -142,7 +141,7 @@ class MusicLibrarySkill:
             Confirmation message
         """
         return f"Created playlist '{name}' with {len(song_titles)} songs"
-    
+
     def play_playlist(self, name: str) -> str:
         """Play a specific playlist.
         

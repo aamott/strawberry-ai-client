@@ -1,27 +1,27 @@
 """Conversation pipeline orchestrator."""
 
-from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Optional, Callable, List
 import threading
 import time
+from dataclasses import dataclass, field
+from enum import Enum, auto
+from typing import Callable, List, Optional
+
 import numpy as np
 
 from ..audio.base import AudioBackend
-from ..audio.stream import AudioStream
 from ..audio.playback import AudioPlayer
-from ..wake.base import WakeWordDetector
-from ..vad.base import VADBackend
-from ..vad.processor import VADProcessor, VADConfig
+from ..audio.stream import AudioStream
 from ..stt.base import STTEngine
 from ..tts.base import TTSEngine
-
-from .events import PipelineEvent, EventType
+from ..vad.base import VADBackend
+from ..vad.processor import VADConfig, VADProcessor
+from ..wake.base import WakeWordDetector
+from .events import EventType, PipelineEvent
 
 
 class PipelineState(Enum):
     """States of the conversation pipeline."""
-    
+
     IDLE = auto()        # Not started
     LISTENING = auto()   # Waiting for wake word
     RECORDING = auto()   # Capturing user speech
@@ -61,7 +61,7 @@ class ConversationPipeline:
         Any → PAUSED (on pause)
         PAUSED → previous (on resume)
     """
-    
+
     def __init__(
         self,
         audio_backend: AudioBackend,
@@ -85,7 +85,7 @@ class ConversationPipeline:
             config: Pipeline configuration
         """
         self.config = config or PipelineConfig()
-        
+
         # Components
         self._audio_stream = AudioStream(audio_backend)
         self._wake_detector = wake_detector
@@ -97,18 +97,18 @@ class ConversationPipeline:
         self._stt_engine = stt_engine
         self._tts_engine = tts_engine
         self._response_handler = response_handler or (lambda x: f"You said: {x}")
-        
+
         # Audio player for TTS output
         self._audio_player = AudioPlayer(
             sample_rate=tts_engine.sample_rate if tts_engine else 22050
         )
-        
+
         # State
         self._state = PipelineState.IDLE
         self._previous_state = PipelineState.IDLE
         self._recording_buffer: List[np.ndarray] = []
         self._recording_start_time: float = 0
-        
+
         # Event handling
         self._event_handlers: List[Callable[[PipelineEvent], None]] = []
         self._lock = threading.Lock()
@@ -116,12 +116,12 @@ class ConversationPipeline:
         # Lifecycle control for background processing threads.
         self._stop_event = threading.Event()
         self._worker_threads: List[threading.Thread] = []
-    
+
     @property
     def state(self) -> PipelineState:
         """Current pipeline state."""
         return self._state
-    
+
     def on_event(self, handler: Callable[[PipelineEvent], None]) -> None:
         """Register an event handler.
         
@@ -129,7 +129,7 @@ class ConversationPipeline:
             handler: Function to call with each pipeline event
         """
         self._event_handlers.append(handler)
-    
+
     def _emit(self, event_type: EventType, data=None) -> None:
         """Emit a pipeline event."""
         event = PipelineEvent(type=event_type, data=data)
@@ -138,7 +138,7 @@ class ConversationPipeline:
                 handler(event)
             except Exception:
                 pass  # Don't let handler errors crash pipeline
-    
+
     def _set_state(self, new_state: PipelineState) -> None:
         """Change pipeline state and emit event."""
         old_state = self._state
@@ -147,20 +147,20 @@ class ConversationPipeline:
             "old_state": old_state,
             "new_state": new_state,
         })
-    
+
     def start(self) -> None:
         """Start the conversation pipeline."""
         if self._state != PipelineState.IDLE:
             return
 
         self._stop_event.clear()
-        
+
         # Subscribe to audio stream
         self._audio_stream.subscribe(self._on_audio_frame)
         self._audio_stream.start()
-        
+
         self._set_state(PipelineState.LISTENING)
-    
+
     def stop(self) -> None:
         """Stop the conversation pipeline."""
         self._stop_event.set()
@@ -186,18 +186,18 @@ class ConversationPipeline:
         self._worker_threads = [t for t in self._worker_threads if t.is_alive()]
 
         self._set_state(PipelineState.IDLE)
-    
+
     def pause(self) -> None:
         """Pause the pipeline."""
         if self._state not in (PipelineState.IDLE, PipelineState.PAUSED):
             self._previous_state = self._state
             self._set_state(PipelineState.PAUSED)
-    
+
     def resume(self) -> None:
         """Resume from paused state."""
         if self._state == PipelineState.PAUSED:
             self._set_state(self._previous_state)
-    
+
     def start_recording(self) -> bool:
         """Start recording immediately (for push-to-talk).
         
@@ -208,10 +208,10 @@ class ConversationPipeline:
         """
         if self._state not in (PipelineState.LISTENING, PipelineState.IDLE):
             return False
-        
+
         self._start_recording()
         return True
-    
+
     def stop_recording(self) -> bool:
         """Stop recording and process (for push-to-talk).
         
@@ -220,10 +220,10 @@ class ConversationPipeline:
         """
         if self._state != PipelineState.RECORDING:
             return False
-        
+
         self._finish_recording()
         return True
-    
+
     def _on_audio_frame(self, frame: np.ndarray) -> None:
         """Handle incoming audio frame based on current state."""
         if self._stop_event.is_set():
@@ -235,46 +235,46 @@ class ConversationPipeline:
         elif self._state == PipelineState.SPEAKING:
             if self.config.interrupt_enabled:
                 self._check_interrupt(frame)
-    
+
     def _handle_listening(self, frame: np.ndarray) -> None:
         """Process frame while waiting for wake word."""
         keyword_index = self._wake_detector.process(frame)
-        
+
         if keyword_index >= 0:
             keyword = self._wake_detector.keywords[keyword_index]
             self._emit(EventType.WAKE_WORD_DETECTED, {"keyword": keyword})
             self._start_recording()
-    
+
     def _start_recording(self) -> None:
         """Transition to recording state."""
         self._set_state(PipelineState.RECORDING)
         self._emit(EventType.RECORDING_STARTED)
-        
+
         # Include lookback buffer (audio from before wake word)
         lookback = self._audio_stream.get_buffer(self.config.lookback_frames)
         self._recording_buffer = [lookback] if len(lookback) > 0 else []
-        
+
         # Reset VAD processor
         self._vad_processor.reset()
         self._recording_start_time = time.time()
-    
+
     def _handle_recording(self, frame: np.ndarray) -> None:
         """Process frame while recording user speech."""
         self._recording_buffer.append(frame)
-        
+
         # Check for timeout
         elapsed = time.time() - self._recording_start_time
         if elapsed > self.config.max_recording_duration:
             self._finish_recording()
             return
-        
+
         # Update VAD
         speech_ended = self._vad_processor.process(frame)
-        
+
         if speech_ended:
             self._emit(EventType.VAD_SPEECH_END)
             self._finish_recording()
-    
+
     def _finish_recording(self) -> None:
         """Transition from recording to processing."""
         self._emit(EventType.RECORDING_STOPPED)
@@ -283,18 +283,18 @@ class ConversationPipeline:
         if self._stop_event.is_set():
             self._set_state(PipelineState.LISTENING)
             return
-        
+
         # Concatenate all recorded audio
         if self._recording_buffer:
             audio = np.concatenate(self._recording_buffer)
         else:
             audio = np.array([], dtype=np.int16)
         self._recording_buffer = []
-        
+
         # Process in separate thread with timeout to not block audio
         def processing_with_timeout():
             self._process_speech(audio)
-        
+
         processing_thread = threading.Thread(
             target=processing_with_timeout,
             daemon=False,
@@ -302,7 +302,7 @@ class ConversationPipeline:
         processing_thread.start()
 
         self._worker_threads.append(processing_thread)
-        
+
         # Monitor timeout in separate thread
         def monitor_timeout():
             processing_thread.join(timeout=self.config.processing_timeout)
@@ -315,15 +315,15 @@ class ConversationPipeline:
                 # Force state back to listening
                 if not self._stop_event.is_set():
                     self._set_state(PipelineState.LISTENING)
-        
+
         threading.Thread(target=monitor_timeout, daemon=True).start()
-    
+
     def _process_speech(self, audio: np.ndarray) -> None:
         """Transcribe audio and generate response."""
         if self._stop_event.is_set():
             return
         self._emit(EventType.TRANSCRIPTION_STARTED)
-        
+
         # Transcribe
         try:
             result = self._stt_engine.transcribe(audio)
@@ -331,7 +331,7 @@ class ConversationPipeline:
             self._emit(EventType.ERROR, {"error": str(e), "stage": "stt"})
             self._set_state(PipelineState.LISTENING)
             return
-        
+
         self._emit(EventType.TRANSCRIPTION_COMPLETE, {
             "text": result.text,
             "confidence": result.confidence,
@@ -339,12 +339,12 @@ class ConversationPipeline:
 
         if self._stop_event.is_set():
             return
-        
+
         if not result.text.strip():
             # No speech detected
             self._set_state(PipelineState.LISTENING)
             return
-        
+
         # Get response
         self._emit(EventType.RESPONSE_STARTED)
         try:
@@ -353,23 +353,23 @@ class ConversationPipeline:
             self._emit(EventType.ERROR, {"error": str(e), "stage": "response"})
             self._set_state(PipelineState.LISTENING)
             return
-        
+
         self._emit(EventType.RESPONSE_TEXT, {"text": response_text})
         self._emit(EventType.RESPONSE_COMPLETE)
 
         if self._stop_event.is_set():
             return
-        
+
         # Speak response
         self._speak_response(response_text)
-    
+
     def _speak_response(self, text: str) -> None:
         """Synthesize and play response."""
         if self._stop_event.is_set():
             return
         self._set_state(PipelineState.SPEAKING)
         self._emit(EventType.TTS_STARTED, {"text": text})
-        
+
         try:
             for chunk in self._tts_engine.synthesize_stream(text):
                 if self._stop_event.is_set():
@@ -385,18 +385,18 @@ class ConversationPipeline:
                 })
                 # Play the audio chunk
                 self._audio_player.play(
-                    chunk.audio, 
+                    chunk.audio,
                     sample_rate=chunk.sample_rate,
                     blocking=True  # Wait for chunk to finish
                 )
         except Exception as e:
             self._emit(EventType.ERROR, {"error": str(e), "stage": "tts"})
-        
+
         self._emit(EventType.TTS_COMPLETE)
-        
+
         if self._state == PipelineState.SPEAKING:
             self._set_state(PipelineState.LISTENING)
-    
+
     def _check_interrupt(self, frame: np.ndarray) -> None:
         """Check if user is interrupting TTS playback."""
         # For interrupts, we could check for loud audio or wake word
@@ -408,9 +408,9 @@ class ConversationPipeline:
                 "interrupt": True,
             })
             self._start_recording()
-    
+
     # --- Synchronous API for testing ---
-    
+
     def process_text(self, text: str) -> str:
         """Process text input directly (bypasses audio/STT).
         

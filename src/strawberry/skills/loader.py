@@ -1,11 +1,11 @@
 """Skill discovery and loading from Python files."""
 
-import inspect
 import importlib.util
-from pathlib import Path
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Callable
+import inspect
 import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class SkillMethod:
     signature: str
     docstring: Optional[str]
     callable: Callable
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API."""
         return {
@@ -35,14 +35,14 @@ class SkillInfo:
     methods: List[SkillMethod] = field(default_factory=list)
     module_path: Optional[Path] = None
     instance: Optional[Any] = None  # Instantiated skill object
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API."""
         return {
             "class_name": self.name,
             "methods": [m.to_dict() for m in self.methods],
         }
-    
+
     def get_registration_data(self) -> List[Dict[str, Any]]:
         """Get data for Hub registration."""
         return [
@@ -79,7 +79,7 @@ class SkillLoader:
             pass
     ```
     """
-    
+
     def __init__(self, skills_path: Path):
         """Initialize skill loader.
         
@@ -89,7 +89,7 @@ class SkillLoader:
         self.skills_path = Path(skills_path)
         self._skills: Dict[str, SkillInfo] = {}
         self._instances: Dict[str, Any] = {}
-    
+
     def load_all(self) -> List[SkillInfo]:
         """Load all skills from the skills directory.
         
@@ -98,20 +98,20 @@ class SkillLoader:
         """
         self._skills.clear()
         self._instances.clear()
-        
+
         if not self.skills_path.exists():
             logger.warning(f"Skills directory does not exist: {self.skills_path}")
             return []
-        
+
         if not self.skills_path.is_dir():
             logger.warning(f"Skills path is not a directory: {self.skills_path}")
             return []
-        
+
         # Find all Python files
         for py_file in self.skills_path.glob("*.py"):
             if py_file.name.startswith("_"):
                 continue
-            
+
             try:
                 skills = self._load_file(py_file)
                 for skill in skills:
@@ -119,9 +119,9 @@ class SkillLoader:
                     logger.info(f"Loaded skill: {skill.name} ({len(skill.methods)} methods)")
             except Exception as e:
                 logger.error(f"Failed to load {py_file}: {e}")
-        
+
         return list(self._skills.values())
-    
+
     def _load_file(self, file_path: Path) -> List[SkillInfo]:
         """Load skills from a single Python file.
         
@@ -134,13 +134,13 @@ class SkillLoader:
         # Load module dynamically
         module_name = f"skills.{file_path.stem}"
         spec = importlib.util.spec_from_file_location(module_name, file_path)
-        
+
         if spec is None or spec.loader is None:
             raise ImportError(f"Could not load spec for {file_path}")
-        
+
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        
+
         # Find skill classes
         skills = []
         for name, obj in inspect.getmembers(module, inspect.isclass):
@@ -149,9 +149,9 @@ class SkillLoader:
                 skill_info = self._extract_skill_info(name, obj, file_path)
                 if skill_info.methods:  # Only include if it has methods
                     skills.append(skill_info)
-        
+
         return skills
-    
+
     def _extract_skill_info(self, name: str, cls: type, file_path: Path) -> SkillInfo:
         """Extract information from a skill class.
         
@@ -164,12 +164,12 @@ class SkillLoader:
             SkillInfo with methods
         """
         methods = []
-        
+
         for method_name, method in inspect.getmembers(cls, inspect.isfunction):
             # Skip private methods
             if method_name.startswith("_"):
                 continue
-            
+
             # Get signature
             try:
                 sig = inspect.signature(method)
@@ -182,24 +182,24 @@ class SkillLoader:
                 sig_str = f"{method_name}{new_sig}"
             except ValueError:
                 sig_str = f"{method_name}(...)"
-            
+
             # Get docstring
             docstring = inspect.getdoc(method)
-            
+
             methods.append(SkillMethod(
                 name=method_name,
                 signature=sig_str,
                 docstring=docstring,
                 callable=method,
             ))
-        
+
         # Create instance of the skill class
         try:
             instance = cls()
         except Exception as e:
             logger.warning(f"Failed to instantiate {name}: {e}")
             instance = None
-        
+
         return SkillInfo(
             name=name,
             class_obj=cls,
@@ -207,11 +207,11 @@ class SkillLoader:
             module_path=file_path,
             instance=instance,
         )
-    
+
     def get_skill(self, name: str) -> Optional[SkillInfo]:
         """Get a loaded skill by name."""
         return self._skills.get(name)
-    
+
     def get_instance(self, skill_name: str) -> Any:
         """Get or create an instance of a skill class.
         
@@ -222,11 +222,11 @@ class SkillLoader:
             if skill:
                 self._instances[skill_name] = skill.class_obj()
         return self._instances.get(skill_name)
-    
+
     def get_all_skills(self) -> List[SkillInfo]:
         """Get all loaded skills."""
         return list(self._skills.values())
-    
+
     def get_registration_data(self) -> List[Dict[str, Any]]:
         """Get data for registering all skills with Hub.
         
@@ -237,7 +237,7 @@ class SkillLoader:
         for skill in self._skills.values():
             data.extend(skill.get_registration_data())
         return data
-    
+
     def call_method(
         self,
         skill_name: str,
@@ -262,10 +262,10 @@ class SkillLoader:
         instance = self.get_instance(skill_name)
         if instance is None:
             raise ValueError(f"Skill not found: {skill_name}")
-        
+
         method = getattr(instance, method_name, None)
         if method is None or not callable(method):
             raise ValueError(f"Method not found: {skill_name}.{method_name}")
-        
+
         return method(*args, **kwargs)
 

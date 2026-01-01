@@ -1,8 +1,9 @@
 """Audio stream manager with multiple consumers."""
 
-from typing import Callable, List, Optional
-from collections import deque
 import threading
+from collections import deque
+from typing import Callable, List, Optional
+
 import numpy as np
 
 from .base import AudioBackend
@@ -14,9 +15,9 @@ class AudioStream:
     This is the core of the "no blip" architecture - one stream feeds
     multiple consumers (wake word, VAD, STT) without stopping/restarting.
     """
-    
+
     def __init__(
-        self, 
+        self,
         backend: AudioBackend,
         buffer_size: int = 100,
         suppress_errors: bool = False,
@@ -35,22 +36,22 @@ class AudioStream:
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self._suppress_errors = suppress_errors
-    
+
     @property
     def sample_rate(self) -> int:
         """Audio sample rate from backend."""
         return self.backend.sample_rate
-    
+
     @property
     def frame_length(self) -> int:
         """Frame length in samples from backend."""
         return self.backend.frame_length
-    
+
     @property
     def is_active(self) -> bool:
         """Check if stream is currently active."""
         return self._running and self.backend.is_active
-    
+
     def subscribe(self, callback: Callable[[np.ndarray], None]) -> None:
         """Add a subscriber to receive audio frames.
         
@@ -60,7 +61,7 @@ class AudioStream:
         with self._lock:
             if callback not in self._subscribers:
                 self._subscribers.append(callback)
-    
+
     def unsubscribe(self, callback: Callable[[np.ndarray], None]) -> None:
         """Remove a subscriber.
         
@@ -70,7 +71,7 @@ class AudioStream:
         with self._lock:
             if callback in self._subscribers:
                 self._subscribers.remove(callback)
-    
+
     def get_buffer(self, frames: int) -> np.ndarray:
         """Get the last N frames from the buffer.
         
@@ -87,22 +88,22 @@ class AudioStream:
             if not buffer_list:
                 return np.array([], dtype=np.int16)
             return np.concatenate(buffer_list[-frames:])
-    
+
     def clear_buffer(self) -> None:
         """Clear the rolling buffer."""
         with self._lock:
             self._buffer.clear()
-    
+
     def start(self) -> None:
         """Start streaming audio to all subscribers."""
         if self._running:
             return
-        
+
         self._running = True
         self.backend.start()
         self._thread = threading.Thread(target=self._stream_loop, daemon=True)
         self._thread.start()
-    
+
     def stop(self) -> None:
         """Stop the audio stream."""
         self._running = False
@@ -110,7 +111,7 @@ class AudioStream:
         if self._thread:
             self._thread.join(timeout=1.0)
             self._thread = None
-    
+
     def _stream_loop(self) -> None:
         """Main streaming loop - distributes frames to subscribers."""
         while self._running:
@@ -120,12 +121,12 @@ class AudioStream:
                 if not self._running:
                     break
                 raise
-            
+
             # Add to rolling buffer
             with self._lock:
                 self._buffer.append(frame)
                 subscribers = list(self._subscribers)
-            
+
             # Notify all subscribers (outside lock to prevent deadlock)
             for subscriber in subscribers:
                 try:
@@ -134,12 +135,12 @@ class AudioStream:
                     # Log but don't crash the stream
                     if not self._suppress_errors:
                         print(f"Subscriber error: {e}")
-    
+
     def __enter__(self):
         """Context manager entry - start stream."""
         self.start()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - stop stream."""
         self.stop()

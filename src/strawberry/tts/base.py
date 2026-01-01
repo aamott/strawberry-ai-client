@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Iterator
+
 import numpy as np
 
 
@@ -16,7 +17,7 @@ class AudioChunk:
     """
     audio: np.ndarray
     sample_rate: int
-    
+
     @property
     def duration_sec(self) -> float:
         """Duration of this chunk in seconds."""
@@ -28,13 +29,13 @@ class TTSEngine(ABC):
     
     All TTS backends must implement this interface.
     """
-    
+
     @property
     @abstractmethod
     def sample_rate(self) -> int:
         """Output audio sample rate in Hz."""
         pass
-    
+
     @abstractmethod
     def synthesize(self, text: str) -> AudioChunk:
         """Synthesize complete text to audio.
@@ -46,7 +47,7 @@ class TTSEngine(ABC):
             Complete audio chunk
         """
         pass
-    
+
     def synthesize_stream(self, text: str) -> Iterator[AudioChunk]:
         """Synthesize text with streaming output.
         
@@ -60,17 +61,17 @@ class TTSEngine(ABC):
             Audio chunks as they're generated
         """
         yield self.synthesize(text)
-    
+
     def cleanup(self) -> None:
         """Release any resources held by the engine.
         
         Override in subclasses that need cleanup.
         """
         pass
-    
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cleanup()
         return False

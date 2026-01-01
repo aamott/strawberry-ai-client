@@ -1,11 +1,11 @@
 """Conversation pipeline for Strawberry AI."""
 
-from .conversation import ConversationPipeline, PipelineState, PipelineConfig
-from .events import PipelineEvent, EventType
+from .conversation import ConversationPipeline, PipelineConfig, PipelineState
+from .events import EventType, PipelineEvent
 
 __all__ = [
     "ConversationPipeline",
-    "PipelineState", 
+    "PipelineState",
     "PipelineConfig",
     "PipelineEvent",
     "EventType",

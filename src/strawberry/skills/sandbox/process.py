@@ -22,7 +22,7 @@ class DenoProcessManager:
     - Handle timeout/resource limits via Deno flags
     - Provide stdin/stdout streams for bridge
     """
-    
+
     def __init__(
         self,
         deno_path: str = "deno",
@@ -34,20 +34,20 @@ class DenoProcessManager:
         self.host_script = host_script or self._get_default_host_script()
         self.timeout = timeout
         self.memory_limit_mb = memory_limit_mb
-        
+
         self._process: Optional[asyncio.subprocess.Process] = None
         self._stdin: Optional[asyncio.StreamWriter] = None
         self._stdout: Optional[asyncio.StreamReader] = None
-    
+
     def _get_default_host_script(self) -> Path:
         """Get the default host.ts script path."""
         return Path(__file__).parent / "host.ts"
-    
+
     @property
     def is_running(self) -> bool:
         """Check if the Deno process is running."""
         return self._process is not None and self._process.returncode is None
-    
+
     def _verify_deno(self) -> str:
         """Verify Deno is available and return the path."""
         # Try to find deno
@@ -58,7 +58,7 @@ class DenoProcessManager:
                 "Install Deno: curl -fsSL https://deno.land/install.sh | sh"
             )
         return deno
-    
+
     async def start(self) -> Tuple[asyncio.StreamWriter, asyncio.StreamReader]:
         """Start Deno process.
         
@@ -71,13 +71,13 @@ class DenoProcessManager:
         """
         if self.is_running:
             return self._stdin, self._stdout
-        
+
         # Verify Deno and host script
         deno_path = self._verify_deno()
-        
+
         if not self.host_script.exists():
             raise FileNotFoundError(f"Host script not found: {self.host_script}")
-        
+
         # Deno command with security flags
         cmd = [
             deno_path,
@@ -93,22 +93,22 @@ class DenoProcessManager:
             f"--v8-flags=--max-old-space-size={self.memory_limit_mb}",
             str(self.host_script),
         ]
-        
+
         logger.info(f"Starting Deno sandbox: {' '.join(cmd)}")
-        
+
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        
+
         self._stdin = self._process.stdin
         self._stdout = self._process.stdout
-        
+
         # Start stderr reader for debugging
         asyncio.create_task(self._read_stderr())
-        
+
         # Wait for ready signal
         try:
             ready_line = await asyncio.wait_for(
@@ -121,15 +121,15 @@ class DenoProcessManager:
             logger.error("Sandbox startup timeout")
             await self.kill()
             raise RuntimeError("Sandbox failed to start (timeout)")
-        
+
         logger.info("Deno sandbox ready")
         return self._stdin, self._stdout
-    
+
     async def _read_stderr(self):
         """Read and log stderr from Deno process."""
         if not self._process or not self._process.stderr:
             return
-        
+
         while True:
             try:
                 line = await self._process.stderr.readline()
@@ -138,7 +138,7 @@ class DenoProcessManager:
                 logger.debug(f"[Deno] {line.decode().strip()}")
             except Exception:
                 break
-    
+
     async def kill(self):
         """Kill the Deno process immediately."""
         if self._process:
@@ -155,7 +155,7 @@ class DenoProcessManager:
                 self._stdin = None
                 self._stdout = None
                 logger.info("Deno sandbox killed")
-    
+
     async def restart(self) -> Tuple[asyncio.StreamWriter, asyncio.StreamReader]:
         """Kill and restart the process."""
         await self.kill()

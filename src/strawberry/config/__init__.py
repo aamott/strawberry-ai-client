@@ -1,19 +1,19 @@
 """Configuration management for Strawberry AI."""
 
+from .loader import get_settings, load_config
 from .settings import (
-    Settings,
     AudioSettings,
-    WakeWordSettings,
-    VADSettings,
+    HubSettings,
+    Settings,
     STTSettings,
     TTSSettings,
-    HubSettings,
+    VADSettings,
+    WakeWordSettings,
 )
-from .loader import load_config, get_settings
 
 __all__ = [
     "Settings",
-    "AudioSettings", 
+    "AudioSettings",
     "WakeWordSettings",
     "VADSettings",
     "STTSettings",

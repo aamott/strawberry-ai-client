@@ -1,7 +1,7 @@
 """Entry point for Strawberry AI Spoke."""
 
-import sys
 import argparse
+import sys
 from pathlib import Path
 
 from .terminal import TerminalApp
@@ -29,15 +29,15 @@ def main() -> int:
         action="store_true",
         help="Enable debug output",
     )
-    
+
     args = parser.parse_args()
-    
+
     app = TerminalApp(
         config_path=args.config,
         voice_mode=args.voice,
         debug=args.debug,
     )
-    
+
     return app.run()
 
 

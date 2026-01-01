@@ -1,9 +1,10 @@
 """Internet search skill with real API integration and proper error handling."""
 
-import requests
-import os
-from typing import Dict, Any
 import logging
+import os
+from typing import Any, Dict
+
+import requests
 
 logger = logging.getLogger(__name__)
 

@@ -4,11 +4,12 @@ Requires: pip install pvorca
 Also requires a Picovoice access key.
 """
 
-from typing import Optional, Iterator
 import os
+from typing import Iterator, Optional
+
 import numpy as np
 
-from ..base import TTSEngine, AudioChunk
+from ..base import AudioChunk, TTSEngine
 
 
 class OrcaTTS(TTSEngine):
@@ -28,7 +29,7 @@ class OrcaTTS(TTSEngine):
     - Requires Picovoice license
     - Limited voice options
     """
-    
+
     def __init__(
         self,
         access_key: Optional[str] = None,
@@ -47,15 +48,15 @@ class OrcaTTS(TTSEngine):
         """
         if access_key is None:
             access_key = os.environ.get("PICOVOICE_API_KEY")
-        
+
         if not access_key:
             raise ValueError(
                 "Picovoice access key required. Set PICOVOICE_API_KEY "
                 "environment variable or pass access_key parameter."
             )
-        
+
         import pvorca
-        
+
         if model_path:
             self._orca = pvorca.create(
                 access_key=access_key,
@@ -63,13 +64,13 @@ class OrcaTTS(TTSEngine):
             )
         else:
             self._orca = pvorca.create(access_key=access_key)
-        
+
         self._sample_rate_val = self._orca.sample_rate
-    
+
     @property
     def sample_rate(self) -> int:
         return self._sample_rate_val
-    
+
     def synthesize(self, text: str) -> AudioChunk:
         """Synthesize complete text to audio.
         
@@ -82,9 +83,9 @@ class OrcaTTS(TTSEngine):
         # Use non-streaming API for complete synthesis
         pcm, _ = self._orca.synthesize(text)
         audio = np.array(pcm, dtype=np.int16)
-        
+
         return AudioChunk(audio=audio, sample_rate=self._sample_rate_val)
-    
+
     def synthesize_stream(self, text: str) -> Iterator[AudioChunk]:
         """Synthesize with streaming output.
         
@@ -100,7 +101,7 @@ class OrcaTTS(TTSEngine):
             Audio chunks
         """
         stream = self._orca.stream_open()
-        
+
         try:
             # Feed text to streaming synthesizer word by word
             # The stream buffers until it has enough context to synthesize
@@ -112,16 +113,16 @@ class OrcaTTS(TTSEngine):
                 if pcm is not None and len(pcm) > 0:
                     audio = np.array(pcm, dtype=np.int16)
                     yield AudioChunk(audio=audio, sample_rate=self._sample_rate_val)
-            
+
             # Flush any remaining audio
             pcm = stream.flush()
             if pcm is not None and len(pcm) > 0:
                 audio = np.array(pcm, dtype=np.int16)
                 yield AudioChunk(audio=audio, sample_rate=self._sample_rate_val)
-                
+
         finally:
             stream.close()
-    
+
     def cleanup(self) -> None:
         """Release Orca resources."""
         if self._orca is not None:

@@ -1,6 +1,5 @@
 """Markdown to HTML renderer for chat messages."""
 
-import re
 from typing import Optional
 
 try:
@@ -38,28 +37,28 @@ def render_markdown(text: str, theme: Optional[Theme] = None) -> str:
         text = text.replace(">", "&gt;")
         text = text.replace("\n", "<br>")
         return f"<p>{text}</p>"
-    
+
     # Configure markdown extensions
     extensions = [
         "nl2br",  # Newlines to <br>
         FencedCodeExtension(),
         TableExtension(),
     ]
-    
+
     if HAS_PYGMENTS:
         extensions.append(CodeHiliteExtension(
             css_class="codehilite",
             guess_lang=True,
             use_pygments=True,
         ))
-    
+
     # Render markdown
     md = markdown.Markdown(extensions=extensions)
     html = md.convert(text)
-    
+
     # Wrap in container and add styles
     css = get_markdown_css(theme)
-    
+
     return f"""
     <style>{css}</style>
     <div class="markdown-body">{html}</div>
@@ -82,7 +81,7 @@ def get_markdown_css(theme: Optional[Theme] = None) -> str:
     border_color = "#30363d"
     link_color = "#58a6ff"
     heading_color = "#e6edf3"
-    
+
     if theme:
         text_color = theme.text_primary
         bg_color = theme.bg_primary
@@ -90,7 +89,7 @@ def get_markdown_css(theme: Optional[Theme] = None) -> str:
         border_color = theme.border
         link_color = theme.accent
         heading_color = theme.text_primary
-    
+
     return f"""
         .markdown-body {{
             color: {text_color};

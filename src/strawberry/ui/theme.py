@@ -8,33 +8,33 @@ from typing import Dict
 class Theme:
     """Color theme for the application."""
     name: str
-    
+
     # Window
     bg_primary: str
     bg_secondary: str
     bg_tertiary: str
-    
+
     # Text
     text_primary: str
     text_secondary: str
     text_muted: str
-    
+
     # Accent
     accent: str
     accent_hover: str
     accent_text: str
-    
+
     # Messages
     user_bubble: str
     user_text: str
     ai_bubble: str
     ai_text: str
-    
+
     # Status
     success: str
     warning: str
     error: str
-    
+
     # Borders
     border: str
     border_focus: str
@@ -42,33 +42,33 @@ class Theme:
 
 DARK_THEME = Theme(
     name="dark",
-    
+
     # Window - Deep charcoal with subtle blue undertones
     bg_primary="#0d1117",
     bg_secondary="#161b22",
     bg_tertiary="#21262d",
-    
+
     # Text
     text_primary="#e6edf3",
     text_secondary="#8b949e",
     text_muted="#484f58",
-    
+
     # Accent - Strawberry red
     accent="#ff6b6b",
     accent_hover="#ff8585",
     accent_text="#ffffff",
-    
+
     # Messages
     user_bubble="#238636",
     user_text="#ffffff",
     ai_bubble="#30363d",
     ai_text="#e6edf3",
-    
+
     # Status
     success="#3fb950",
     warning="#d29922",
     error="#f85149",
-    
+
     # Borders
     border="#30363d",
     border_focus="#58a6ff",
@@ -77,33 +77,33 @@ DARK_THEME = Theme(
 
 LIGHT_THEME = Theme(
     name="light",
-    
+
     # Window
     bg_primary="#ffffff",
     bg_secondary="#f6f8fa",
     bg_tertiary="#eaeef2",
-    
+
     # Text
     text_primary="#1f2328",
     text_secondary="#656d76",
     text_muted="#8c959f",
-    
+
     # Accent - Strawberry red
     accent="#cf222e",
     accent_hover="#a40e26",
     accent_text="#ffffff",
-    
+
     # Messages
     user_bubble="#dafbe1",
     user_text="#1a7f37",
     ai_bubble="#f6f8fa",
     ai_text="#1f2328",
-    
+
     # Status
     success="#1a7f37",
     warning="#9a6700",
     error="#cf222e",
-    
+
     # Borders
     border="#d0d7de",
     border_focus="#0969da",

@@ -25,7 +25,7 @@ class ProxyGenerator:
     - Each method call bridges to the host for execution
     - Includes search_skills() and describe_function() helpers
     """
-    
+
     def __init__(self, skills: List[SkillInfo], mode: SkillMode = SkillMode.LOCAL):
         """Initialize proxy generator.
         
@@ -36,22 +36,22 @@ class ProxyGenerator:
         self.skills = skills
         self.mode = mode
         self._cache: Optional[str] = None
-    
+
     def invalidate(self):
         """Invalidate cached proxy code (call after skill changes)."""
         self._cache = None
-    
+
     def update_skills(self, skills: List[SkillInfo]):
         """Update skill list and invalidate cache."""
         self.skills = skills
         self._cache = None
-    
+
     def set_mode(self, mode: SkillMode):
         """Change skill mode and invalidate cache."""
         if self.mode != mode:
             self.mode = mode
             self._cache = None
-    
+
     def generate(self) -> str:
         """Generate Python proxy code based on current mode.
         
@@ -60,15 +60,15 @@ class ProxyGenerator:
         """
         if self._cache:
             return self._cache
-        
+
         if self.mode == SkillMode.REMOTE:
             return self._generate_remote_mode()
         else:
             return self._generate_local_mode()
-    
+
     def _generate_local_mode(self) -> str:
         """Generate LOCAL mode proxy code (device only)."""
-        
+
         # Build skill metadata
         skill_data = []
         for skill in self.skills:
@@ -84,10 +84,10 @@ class ProxyGenerator:
                 ]
             }
             skill_data.append(skill_dict)
-        
+
         skill_data_json = json.dumps(skill_data)
         skill_names = [s.name for s in self.skills]
-        
+
         # Generate the proxy code
         code = f'''# ============================================================================
 # Auto-generated proxy code for Strawberry AI Sandbox
@@ -235,11 +235,11 @@ device = _DeviceProxy()
 # Clean up module namespace - remove everything except what the LLM should use
 del json
 '''
-        
+
         self._cache = code
         logger.debug(f"Generated LOCAL mode proxy code ({len(code)} bytes)")
         return code
-    
+
     def _generate_remote_mode(self) -> str:
         """Generate REMOTE mode proxy code (device_manager).
         
@@ -366,7 +366,7 @@ class _DeviceManagerProxy:
 # Create the global device_manager instance
 device_manager = _DeviceManagerProxy()
 '''
-        
+
         self._cache = code
         logger.debug(f"Generated REMOTE mode proxy code ({len(code)} bytes)")
         return code

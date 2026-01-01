@@ -1,9 +1,10 @@
 """News skill with clear configuration status."""
 
-import requests
-import os
-from typing import Dict, Any
 import logging
+import os
+from typing import Any, Dict
+
+import requests
 
 logger = logging.getLogger(__name__)
 

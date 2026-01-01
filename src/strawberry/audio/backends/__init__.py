@@ -1,7 +1,7 @@
 """Audio backend implementations."""
 
-from .sounddevice_backend import SoundDeviceBackend
 from .mock import MockAudioBackend
+from .sounddevice_backend import SoundDeviceBackend
 
 __all__ = ["SoundDeviceBackend", "MockAudioBackend"]
 

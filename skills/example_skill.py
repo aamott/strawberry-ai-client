@@ -5,7 +5,7 @@ import datetime
 
 class TimeSkill:
     """Provides time and date information."""
-    
+
     def get_current_time(self) -> str:
         """Get the current time.
         
@@ -13,7 +13,7 @@ class TimeSkill:
             Current time as a formatted string (HH:MM:SS)
         """
         return datetime.datetime.now().strftime("%H:%M:%S")
-    
+
     def get_current_date(self) -> str:
         """Get the current date.
         
@@ -21,7 +21,7 @@ class TimeSkill:
             Current date as a formatted string (YYYY-MM-DD)
         """
         return datetime.datetime.now().strftime("%Y-%m-%d")
-    
+
     def get_day_of_week(self) -> str:
         """Get the current day of the week.
         
@@ -33,7 +33,7 @@ class TimeSkill:
 
 class CalculatorSkill:
     """Basic calculator operations."""
-    
+
     def add(self, a: float, b: float) -> float:
         """Add two numbers.
         
@@ -45,7 +45,7 @@ class CalculatorSkill:
             Sum of a and b
         """
         return a + b
-    
+
     def subtract(self, a: float, b: float) -> float:
         """Subtract b from a.
         
@@ -57,7 +57,7 @@ class CalculatorSkill:
             Difference (a - b)
         """
         return a - b
-    
+
     def multiply(self, a: float, b: float) -> float:
         """Multiply two numbers.
         
@@ -69,7 +69,7 @@ class CalculatorSkill:
             Product of a and b
         """
         return a * b
-    
+
     def divide(self, a: float, b: float) -> float:
         """Divide a by b.
         

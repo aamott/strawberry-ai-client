@@ -5,15 +5,15 @@ Provides `device_manager` for accessing skills across all connected devices.
 
 import asyncio
 import logging
-from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from ..hub import HubClient
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass 
+@dataclass
 class RemoteSkillResult:
     """Result from searching remote skills."""
     path: str  # "DeviceName.SkillClass.method"
@@ -34,7 +34,7 @@ class RemoteExecutionResult:
 
 class RemoteSkillProxy:
     """Proxy for calling a remote skill method."""
-    
+
     def __init__(
         self,
         device_manager: "DeviceManager",
@@ -46,7 +46,7 @@ class RemoteSkillProxy:
         self._device_name = device_name
         self._skill_name = skill_name
         self._method_name = method_name
-    
+
     def __call__(self, *args, **kwargs) -> Any:
         """Execute the remote skill call."""
         path = f"{self._device_name}.{self._skill_name}.{self._method_name}"
@@ -55,7 +55,7 @@ class RemoteSkillProxy:
 
 class RemoteSkillClassProxy:
     """Proxy for a skill class on a remote device."""
-    
+
     def __init__(
         self,
         device_manager: "DeviceManager",
@@ -65,7 +65,7 @@ class RemoteSkillClassProxy:
         self._device_manager = device_manager
         self._device_name = device_name
         self._skill_name = skill_name
-    
+
     def __getattr__(self, method_name: str) -> RemoteSkillProxy:
         if method_name.startswith('_'):
             raise AttributeError(f"Cannot access private method: {method_name}")
@@ -79,16 +79,16 @@ class RemoteSkillClassProxy:
 
 class RemoteDeviceProxy:
     """Proxy for a remote device."""
-    
+
     def __init__(self, device_manager: "DeviceManager", device_name: str):
         self._device_manager = device_manager
         self._device_name = device_name
         self._skills: Dict[str, RemoteSkillClassProxy] = {}
-    
+
     def __getattr__(self, skill_name: str) -> RemoteSkillClassProxy:
         if skill_name.startswith('_'):
             raise AttributeError(f"Cannot access private attribute: {skill_name}")
-        
+
         if skill_name not in self._skills:
             self._skills[skill_name] = RemoteSkillClassProxy(
                 self._device_manager,
@@ -106,7 +106,7 @@ class DeviceManager:
     - device_manager.describe_function(path) - Get function details
     - device_manager.DeviceName.SkillClass.method() - Call remote skill
     """
-    
+
     def __init__(self, hub_client: HubClient, local_device_name: str):
         """Initialize device manager.
         
@@ -120,16 +120,16 @@ class DeviceManager:
         self._skill_cache: Optional[List[RemoteSkillResult]] = None
         self._cache_timestamp: float = 0
         self._cache_ttl: float = 60.0  # 1 minute cache
-    
+
     def __getattr__(self, device_name: str) -> RemoteDeviceProxy:
         """Get proxy for a remote device."""
         if device_name.startswith('_'):
             raise AttributeError(f"Cannot access private attribute: {device_name}")
-        
+
         if device_name not in self._devices:
             self._devices[device_name] = RemoteDeviceProxy(self, device_name)
         return self._devices[device_name]
-    
+
     def search_skills(self, query: str = "") -> List[Dict[str, Any]]:
         """Search for skills across all connected devices.
         
@@ -140,9 +140,9 @@ class DeviceManager:
             List of matching skills with path, signature, summary, device
         """
         import time
-        
+
         # Check cache
-        if (self._skill_cache is not None and 
+        if (self._skill_cache is not None and
             time.time() - self._cache_timestamp < self._cache_ttl):
             skills = self._skill_cache
         else:
@@ -154,25 +154,25 @@ class DeviceManager:
             except Exception as e:
                 logger.error(f"Failed to fetch skills: {e}")
                 return []
-        
+
         # Filter by query
         if not query:
             results = [self._skill_to_dict(s) for s in skills]
         else:
             query_lower = query.lower()
             results = []
-            
+
             for skill in skills:
                 if (query_lower in skill.path.lower() or
                     query_lower in skill.signature.lower() or
                     query_lower in skill.summary.lower()):
                     results.append(self._skill_to_dict(skill))
-        
+
         # Prioritize local device (sort so local comes first)
         results.sort(key=lambda s: 0 if s["device"] == self._local_device_name else 1)
-        
+
         return results
-    
+
     def describe_function(self, path: str) -> str:
         """Get full function details.
         
@@ -185,9 +185,9 @@ class DeviceManager:
         parts = path.split(".")
         if len(parts) != 3:
             return f"Invalid path: {path}. Use format 'DeviceName.SkillClass.method_name'"
-        
+
         device_name, skill_name, method_name = parts
-        
+
         # Search for the skill
         skills = self.search_skills()
         for skill in skills:
@@ -198,9 +198,9 @@ class DeviceManager:
                 except Exception as e:
                     logger.error(f"Failed to fetch function details: {e}")
                     return f"def {skill['signature']}:\n    \"\"\"{skill['summary']}\"\"\""
-        
+
         return f"Function not found: {path}"
-    
+
     def _fetch_all_skills(self) -> List[RemoteSkillResult]:
         """Fetch all skills from Hub."""
         # Run async in sync context
@@ -211,7 +211,7 @@ class DeviceManager:
             )
         finally:
             loop.close()
-        
+
         results = []
         for skill in skills_data:
             results.append(RemoteSkillResult(
@@ -221,25 +221,25 @@ class DeviceManager:
                 device=skill['device_name'],
                 device_id=skill.get('device_id', ''),
             ))
-        
+
         return results
-    
+
     def _fetch_function_details(self, path: str) -> str:
         """Fetch full function details from Hub."""
         parts = path.split(".")
         if len(parts) != 3:
             return f"Invalid path: {path}"
-        
+
         device_name, skill_name, method_name = parts
-        
+
         # Search in cached skills
         if self._skill_cache:
             for skill in self._skill_cache:
                 if skill.path == path:
                     return f"def {skill.signature}:\n    \"\"\"{skill.summary}\"\"\""
-        
+
         return f"Function not found: {path}"
-    
+
     def _execute_remote(self, path: str, args: tuple, kwargs: dict) -> Any:
         """Execute a remote skill call via Hub.
         
@@ -254,9 +254,9 @@ class DeviceManager:
         parts = path.split(".")
         if len(parts) != 3:
             raise ValueError(f"Invalid skill path: {path}")
-        
+
         device_name, skill_name, method_name = parts
-        
+
         # Execute via Hub
         loop = asyncio.new_event_loop()
         try:
@@ -275,7 +275,7 @@ class DeviceManager:
             raise RuntimeError(f"Failed to execute {path}: {e}")
         finally:
             loop.close()
-    
+
     def _skill_to_dict(self, skill: RemoteSkillResult) -> Dict[str, Any]:
         """Convert RemoteSkillResult to dictionary."""
         return {
@@ -284,7 +284,7 @@ class DeviceManager:
             "summary": skill.summary,
             "device": skill.device,
         }
-    
+
     def invalidate_cache(self):
         """Invalidate the skill cache."""
         self._skill_cache = None

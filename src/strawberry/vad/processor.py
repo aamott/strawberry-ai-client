@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Optional
+
 import numpy as np
 
 from .base import VADBackend
@@ -47,10 +48,10 @@ class VADProcessor:
                 # Speech ended
                 break
     """
-    
+
     def __init__(
-        self, 
-        vad: VADBackend, 
+        self,
+        vad: VADBackend,
         config: Optional[VADConfig] = None,
         frame_duration_ms: int = 30,
     ):
@@ -64,12 +65,12 @@ class VADProcessor:
         self.vad = vad
         self.config = config or VADConfig()
         self._frame_duration = frame_duration_ms / 1000.0  # Convert to seconds
-        
+
         self._counter = 0.0
         self._session_duration = 0.0
         self._is_recording = False
         self._speech_detected = False  # Track if any speech was detected
-    
+
     def reset(self) -> None:
         """Reset for a new recording session.
         
@@ -79,7 +80,7 @@ class VADProcessor:
         self._session_duration = 0.0
         self._is_recording = True
         self._speech_detected = False
-    
+
     def process(self, frame: np.ndarray) -> bool:
         """Process an audio frame.
         
@@ -91,10 +92,10 @@ class VADProcessor:
         """
         if not self._is_recording:
             return True
-        
+
         is_speaking = self.vad.is_speech(frame)
         self._session_duration += self._frame_duration
-        
+
         if is_speaking:
             self._speech_detected = True
             # Refill buffer faster than it drains (reward speech)
@@ -109,17 +110,17 @@ class VADProcessor:
                 self._session_duration - self.config.long_talk_threshold
             )
             multiplier = 1.0 + (time_over_threshold * self.config.decay_multiplier_rate)
-            
+
             # Drain the buffer
             self._counter -= (self._frame_duration * self.config.base_decay * multiplier)
-        
+
         # Check if recording should end
         if self._counter <= 0:
             self._is_recording = False
             return True
-        
+
         return False
-    
+
     @property
     def counter(self) -> float:
         """Current buffer level.
@@ -127,22 +128,22 @@ class VADProcessor:
         Useful for debugging or UI visualization.
         """
         return self._counter
-    
+
     @property
     def session_duration(self) -> float:
         """How long the current recording has been running (seconds)."""
         return self._session_duration
-    
+
     @property
     def is_recording(self) -> bool:
         """Whether the processor is in recording state."""
         return self._is_recording
-    
+
     @property
     def speech_detected(self) -> bool:
         """Whether any speech was detected during this session."""
         return self._speech_detected
-    
+
     def force_stop(self) -> None:
         """Force stop recording (e.g., on timeout)."""
         self._is_recording = False

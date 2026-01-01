@@ -1,40 +1,40 @@
 """Pipeline events for UI and external consumers."""
 
 from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Optional, Any
 from datetime import datetime
+from enum import Enum, auto
+from typing import Any, Optional
 
 
 class EventType(Enum):
     """Types of pipeline events."""
-    
+
     # State changes
     STATE_CHANGED = auto()
-    
+
     # Wake word
     WAKE_WORD_DETECTED = auto()
-    
+
     # Recording
     RECORDING_STARTED = auto()
     RECORDING_STOPPED = auto()
     VAD_SPEECH_START = auto()
     VAD_SPEECH_END = auto()
-    
+
     # Transcription
     TRANSCRIPTION_STARTED = auto()
     TRANSCRIPTION_COMPLETE = auto()
-    
+
     # Response
     RESPONSE_STARTED = auto()
     RESPONSE_TEXT = auto()
     RESPONSE_COMPLETE = auto()
-    
+
     # TTS
     TTS_STARTED = auto()
     TTS_CHUNK = auto()
     TTS_COMPLETE = auto()
-    
+
     # Errors
     ERROR = auto()
 
@@ -51,7 +51,7 @@ class PipelineEvent:
     type: EventType
     data: Optional[Any] = None
     timestamp: datetime = field(default_factory=datetime.now)
-    
+
     def __repr__(self) -> str:
         return f"PipelineEvent({self.type.name}, data={self.data!r})"
 

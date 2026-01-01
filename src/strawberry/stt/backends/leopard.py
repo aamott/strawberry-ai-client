@@ -4,8 +4,9 @@ Requires: pip install pvleopard
 Also requires a Picovoice access key.
 """
 
-from typing import Optional
 import os
+from typing import Optional
+
 import numpy as np
 
 from ..base import STTEngine, TranscriptionResult
@@ -28,7 +29,7 @@ class LeopardSTT(STTEngine):
     - Requires Picovoice license
     - Model files can be large
     """
-    
+
     def __init__(
         self,
         access_key: Optional[str] = None,
@@ -47,15 +48,15 @@ class LeopardSTT(STTEngine):
         """
         if access_key is None:
             access_key = os.environ.get("PICOVOICE_API_KEY")
-        
+
         if not access_key:
             raise ValueError(
                 "Picovoice access key required. Set PICOVOICE_API_KEY "
                 "environment variable or pass access_key parameter."
             )
-        
+
         import pvleopard
-        
+
         if model_path:
             self._leopard = pvleopard.create(
                 access_key=access_key,
@@ -63,13 +64,13 @@ class LeopardSTT(STTEngine):
             )
         else:
             self._leopard = pvleopard.create(access_key=access_key)
-        
+
         self._sample_rate_val = self._leopard.sample_rate
-    
+
     @property
     def sample_rate(self) -> int:
         return self._sample_rate_val
-    
+
     def transcribe(self, audio: np.ndarray) -> TranscriptionResult:
         """Transcribe audio buffer.
         
@@ -80,7 +81,7 @@ class LeopardSTT(STTEngine):
             Transcription result with text and word-level details
         """
         transcript, words = self._leopard.process(audio)
-        
+
         # Calculate average confidence from word confidences
         if words:
             confidence = sum(w.confidence for w in words) / len(words)
@@ -96,21 +97,21 @@ class LeopardSTT(STTEngine):
         else:
             confidence = 0.0
             word_list = []
-        
+
         return TranscriptionResult(
             text=transcript,
             confidence=confidence,
             is_final=True,
             words=word_list,
         )
-    
+
     def transcribe_file(self, file_path: str) -> TranscriptionResult:
         """Transcribe audio file.
         
         Leopard has native file support which may be more efficient.
         """
         transcript, words = self._leopard.process_file(file_path)
-        
+
         if words:
             confidence = sum(w.confidence for w in words) / len(words)
             word_list = [
@@ -125,14 +126,14 @@ class LeopardSTT(STTEngine):
         else:
             confidence = 0.0
             word_list = []
-        
+
         return TranscriptionResult(
             text=transcript,
             confidence=confidence,
             is_final=True,
             words=word_list,
         )
-    
+
     def cleanup(self) -> None:
         """Release Leopard resources."""
         if self._leopard is not None:

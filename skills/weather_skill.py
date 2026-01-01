@@ -1,10 +1,11 @@
 """Weather skill with real API integration and proper error handling."""
 
-import requests
-import os
-from typing import Dict, Any
-from datetime import datetime
 import logging
+import os
+from datetime import datetime
+from typing import Any, Dict
+
+import requests
 
 logger = logging.getLogger(__name__)
 

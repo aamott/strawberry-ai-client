@@ -1,6 +1,7 @@
 """Mock wake word detector for testing."""
 
 from typing import List, Optional, Set
+
 import numpy as np
 
 from ..base import WakeWordDetector
@@ -12,7 +13,7 @@ class MockWakeWordDetector(WakeWordDetector):
     Can be configured to trigger on specific frame indices
     or programmatically via trigger_on_next().
     """
-    
+
     def __init__(
         self,
         keywords: List[str] = None,
@@ -37,19 +38,19 @@ class MockWakeWordDetector(WakeWordDetector):
         self._frame_length = frame_length
         self._frame_count = 0
         self._pending_triggers: List[int] = []  # Keyword indices to return
-    
+
     @property
     def keywords(self) -> List[str]:
         return self._keywords
-    
+
     @property
     def frame_length(self) -> int:
         return self._frame_length
-    
+
     @property
     def sample_rate(self) -> int:
         return self._sample_rate
-    
+
     def process(self, audio_frame: np.ndarray) -> int:
         """Process frame for wake word detection.
         
@@ -58,17 +59,17 @@ class MockWakeWordDetector(WakeWordDetector):
         """
         frame_idx = self._frame_count
         self._frame_count += 1
-        
+
         # Check for pending manual triggers
         if self._pending_triggers:
             return self._pending_triggers.pop(0)
-        
+
         # Check for frame-based triggers
         if frame_idx in self._trigger_frames:
             return 0  # Return first keyword index
-        
+
         return -1
-    
+
     def trigger_on_next(self, keyword_index: int = 0) -> None:
         """Queue a trigger for the next process() call.
         
@@ -76,16 +77,16 @@ class MockWakeWordDetector(WakeWordDetector):
             keyword_index: Index of keyword to simulate detecting
         """
         self._pending_triggers.append(keyword_index)
-    
+
     def set_trigger_frames(self, frames: Set[int]) -> None:
         """Set which frames should trigger detection."""
         self._trigger_frames = frames
-    
+
     def reset_frame_count(self) -> None:
         """Reset frame counter to 0."""
         self._frame_count = 0
         self._pending_triggers = []
-    
+
     @property
     def frame_count(self) -> int:
         """Number of frames processed so far."""

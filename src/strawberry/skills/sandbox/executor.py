@@ -2,14 +2,13 @@
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
-from .process import DenoProcessManager, DenoNotFoundError
 from .bridge import BridgeClient, BridgeError
+from .gatekeeper import Gatekeeper
+from .process import DenoNotFoundError, DenoProcessManager
 from .proxy_gen import ProxyGenerator
-from .gatekeeper import Gatekeeper, SkillNotAllowedError
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,7 @@ class SandboxExecutor:
         executor = SandboxExecutor(gatekeeper, proxy_gen)
         result = await executor.execute("print(device.TimeSkill.get_time())")
     """
-    
+
     def __init__(
         self,
         gatekeeper: Gatekeeper,
@@ -62,57 +61,57 @@ class SandboxExecutor:
         self.gatekeeper = gatekeeper
         self.proxy_generator = proxy_generator
         self.config = config or SandboxConfig()
-        
+
         self._process_manager: Optional[DenoProcessManager] = None
         self._bridge: Optional[BridgeClient] = None
         self._initialized = False
         self._lock = asyncio.Lock()
-    
+
     async def _ensure_initialized(self):
         """Ensure sandbox is initialized."""
         if self._initialized:
             return
-        
+
         async with self._lock:
             if self._initialized:
                 return
-            
+
             try:
                 self._process_manager = DenoProcessManager(
                     deno_path=self.config.deno_path,
                     timeout=self.config.timeout_seconds,
                     memory_limit_mb=self.config.memory_limit_mb,
                 )
-                
+
                 stdin, stdout = await self._process_manager.start()
-                
+
                 self._bridge = BridgeClient(
                     stdin=stdin,
                     stdout=stdout,
                     call_handler=self._handle_skill_call,
                 )
                 await self._bridge.start()
-                
+
                 self._initialized = True
                 logger.info("Sandbox initialized successfully")
-                
+
             except Exception as e:
                 logger.error(f"Failed to initialize sandbox: {e}")
                 await self._cleanup()
                 raise
-    
+
     async def _cleanup(self):
         """Clean up sandbox resources."""
         if self._bridge:
             await self._bridge.stop()
             self._bridge = None
-        
+
         if self._process_manager:
             await self._process_manager.kill()
             self._process_manager = None
-        
+
         self._initialized = False
-    
+
     def _handle_skill_call(self, path: str, args: List[Any], kwargs: Dict[str, Any]) -> Any:
         """Handle a skill call from the sandbox.
         
@@ -127,7 +126,7 @@ class SandboxExecutor:
             Result from skill execution
         """
         return self.gatekeeper.execute(path, args, kwargs)
-    
+
     async def execute(self, code: str) -> ExecutionResult:
         """Execute code in the sandbox.
         
@@ -141,14 +140,14 @@ class SandboxExecutor:
             # Sandbox disabled - use direct execution (INSECURE)
             logger.warning("Sandbox disabled - using direct execution (INSECURE)")
             return self._execute_direct(code)
-        
+
         try:
             # Initialize sandbox if needed
             await self._ensure_initialized()
-            
+
             # Get proxy code
             proxy_code = self.proxy_generator.generate()
-            
+
             # Execute with timeout
             try:
                 output = await asyncio.wait_for(
@@ -156,7 +155,7 @@ class SandboxExecutor:
                     timeout=self.config.timeout_seconds
                 )
                 return ExecutionResult(success=True, output=output.strip() if output else None)
-                
+
             except asyncio.TimeoutError:
                 logger.error(f"Sandbox execution timeout ({self.config.timeout_seconds}s)")
                 # Kill and restart sandbox
@@ -166,14 +165,14 @@ class SandboxExecutor:
                     error=f"Execution timeout ({self.config.timeout_seconds}s)",
                     timed_out=True,
                 )
-            
+
         except DenoNotFoundError as e:
             logger.error(f"Deno not found: {e}")
             return ExecutionResult(
                 success=False,
                 error="Sandbox unavailable (Deno not installed). Install: curl -fsSL https://deno.land/install.sh | sh"
             )
-            
+
         except BridgeError as e:
             logger.error(f"Bridge error: {e}")
             await self._cleanup()
@@ -181,21 +180,21 @@ class SandboxExecutor:
                 success=False,
                 error=f"Sandbox communication error: {e}"
             )
-            
+
         except RuntimeError as e:
             # Error from sandbox execution
             return ExecutionResult(
                 success=False,
                 error=self._sanitize_error(str(e))
             )
-            
+
         except Exception as e:
             logger.error(f"Unexpected sandbox error: {e}", exc_info=True)
             return ExecutionResult(
                 success=False,
                 error=f"Sandbox error: {self._sanitize_error(str(e))}"
             )
-    
+
     def _execute_direct(self, code: str) -> ExecutionResult:
         """Direct execution fallback (INSECURE - for development only).
         
@@ -204,33 +203,32 @@ class SandboxExecutor:
         """
         import io
         import sys
-        
+
         # Create device proxy for direct execution
-        from .proxy_gen import ProxyGenerator
-        
+
         # Build a simple device proxy
         class DirectSkillProxy:
             def __init__(self, loader, skill_name):
                 self._loader = loader
                 self._skill_name = skill_name
-            
+
             def __getattr__(self, method_name):
                 def method(*args, **kwargs):
                     return self._loader.get_skill(self._skill_name).instance.__class__.__dict__[method_name](
                         self._loader.get_skill(self._skill_name).instance, *args, **kwargs
                     )
                 return method
-        
+
         class DirectDeviceProxy:
             def __init__(self, loader):
                 self._loader = loader
-            
+
             def __getattr__(self, name):
                 skill = self._loader.get_skill(name)
                 if skill is None:
                     raise AttributeError(f"Skill '{name}' not found")
                 return DirectSkillProxy(self._loader, name)
-            
+
             def search_skills(self, query=""):
                 results = []
                 for skill in self._loader.get_all_skills():
@@ -245,7 +243,7 @@ class SandboxExecutor:
                                 "summary": (method.docstring or "").split("\n")[0],
                             })
                 return results
-            
+
             def describe_function(self, path):
                 parts = path.split(".")
                 if len(parts) != 2:
@@ -258,52 +256,52 @@ class SandboxExecutor:
                     if method.name == method_name:
                         return f"def {method.signature}:\n    \"\"\"{method.docstring or 'No description'}\"\"\""
                 return f"Method not found: {method_name}"
-        
+
         device = DirectDeviceProxy(self.gatekeeper.loader)
-        
+
         # Capture stdout
         stdout_capture = io.StringIO()
         old_stdout = sys.stdout
-        
+
         try:
             sys.stdout = stdout_capture
-            
+
             namespace = {
                 'device': device,
                 'print': print,
             }
-            
+
             exec(code, namespace)
-            
+
             output = stdout_capture.getvalue()
             return ExecutionResult(success=True, output=output.strip() if output else None)
-            
+
         except Exception as e:
             return ExecutionResult(success=False, error=str(e))
         finally:
             sys.stdout = old_stdout
-    
+
     def _sanitize_error(self, error: str) -> str:
         """Remove sensitive info from error messages."""
         import re
-        
+
         # Remove file paths
         error = re.sub(r'File "[^"]+",', 'File "<sandbox>",', error)
-        
+
         # Remove internal function references
         error = re.sub(r'in <module>|in \w+_proxy', 'in <code>', error)
-        
+
         # Limit length
         if len(error) > 500:
             error = error[:500] + "..."
-        
+
         return error
-    
+
     async def shutdown(self):
         """Shutdown the sandbox."""
         await self._cleanup()
         logger.info("Sandbox shutdown complete")
-    
+
     def refresh_skills(self):
         """Refresh skill proxies after skill changes."""
         self.proxy_generator.invalidate()

@@ -2,6 +2,7 @@
 
 import logging
 from typing import Optional
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,7 @@ class AudioPlayer:
     
     Handles playing TTS audio chunks through the system's default output device.
     """
-    
+
     def __init__(self, sample_rate: int = 22050, device: Optional[int] = None):
         """Initialize audio player.
         
@@ -24,13 +25,19 @@ class AudioPlayer:
         self._device = device
         self._sd = None
         self._play_called = False
-        
+
+        self._sd_import_attempted = False
+
+    def _ensure_sounddevice(self):
+        if self._sd_import_attempted:
+            return
+        self._sd_import_attempted = True
         try:
             import sounddevice as sd
             self._sd = sd
         except ImportError:
             logger.warning("sounddevice not available for audio playback")
-    
+
     def play(self, audio: np.ndarray, sample_rate: Optional[int] = None, blocking: bool = True):
         """Play audio samples.
         
@@ -39,22 +46,24 @@ class AudioPlayer:
             sample_rate: Sample rate (uses default if None)
             blocking: If True, wait for playback to complete
         """
+        self._ensure_sounddevice()
+
         if self._sd is None:
             logger.warning("Cannot play audio: sounddevice not available")
             return
-        
+
         if len(audio) == 0:
             logger.debug("Empty audio buffer, skipping playback")
             return
-        
+
         sr = sample_rate or self._sample_rate
-        
+
         # Convert int16 to float32 for playback
         if audio.dtype == np.int16:
             audio = audio.astype(np.float32) / 32768.0
-        
+
         logger.debug(f"Playing audio: {len(audio)} samples @ {sr}Hz, device={self._device}")
-        
+
         try:
             self._sd.play(audio, sr, device=self._device, blocking=blocking)
             self._play_called = True
@@ -68,7 +77,7 @@ class AudioPlayer:
                     self._play_called = True
                 except Exception as e2:
                     logger.error(f"Default device playback also failed: {e2}")
-    
+
     def stop(self):
         """Stop current playback."""
         if self._sd and self._play_called:
@@ -78,7 +87,7 @@ class AudioPlayer:
                 pass
             finally:
                 self._play_called = False
-    
+
     def wait(self):
         """Wait for current playback to finish."""
         if self._sd and self._play_called:
@@ -86,7 +95,7 @@ class AudioPlayer:
                 self._sd.wait()
             except Exception:
                 pass
-    
+
     @classmethod
     def list_devices(cls) -> list:
         """List available output devices."""
@@ -95,7 +104,7 @@ class AudioPlayer:
             return sd.query_devices()
         except ImportError:
             return []
-    
+
     @classmethod
     def get_default_output_device(cls) -> Optional[int]:
         """Get the default output device index."""

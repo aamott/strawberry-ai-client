@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Demonstration of the improved internet search skill."""
 
-from strawberry.skills.loader import SkillLoader
-from strawberry.skills.service import SkillService
 from pathlib import Path
+
+from strawberry.skills.service import SkillService
 
 
 def demo_improved_search():
@@ -11,14 +11,14 @@ def demo_improved_search():
     print("🌐 IMPROVED INTERNET SEARCH DEMONSTRATION")
     print("=" * 60)
     print()
-    
+
     service = SkillService(Path("skills"))
     service.load_skills()
-    
+
     # Demo 1: Schrödinger equation search (the original problem case)
     print("1. Searching for 'the formula of schrodinger's equation'...")
     print("-" * 60)
-    
+
     code1 = """
 # First, search the web
 results = device.InternetSearchSkill.search_web("the formula of schrodinger's equation")
@@ -34,16 +34,16 @@ direct_answer = device.InternetSearchSkill.extract_search_summary("the formula o
 print("Direct Answer:")
 print(direct_answer)
 """
-    
+
     result1 = service.execute_code(code1)
     print(f"Success: {result1.success}")
     print(f"Output:\n{result1.result}")
     print()
-    
+
     # Demo 2: Python programming search
     print("2. Searching for 'python programming'...")
     print("-" * 60)
-    
+
     code2 = """
 # Search for Python programming
 results = device.InternetSearchSkill.search_web("python programming")
@@ -58,12 +58,12 @@ summary = device.InternetSearchSkill.extract_search_summary("python programming"
 print("Summary:")
 print(summary)
 """
-    
+
     result2 = service.execute_code(code2)
     print(f"Success: {result2.success}")
     print(f"Output:\n{result2.result}")
     print()
-    
+
     # Demo 3: Show how this improves the LLM experience
     print("3. How this improves the LLM experience:")
     print("-" * 60)
@@ -78,11 +78,11 @@ print(summary)
     print("- LLM can say: 'The Schrödinger equation is iħ∂ψ/∂t = Ĥψ where...'")
     print("- LLM provides useful information directly instead of just search links")
     print()
-    
+
     # Demo 4: Complete agent loop simulation
     print("4. Complete agent loop simulation:")
     print("-" * 60)
-    
+
     # Simulate what the LLM would do
     agent_simulation = """
 # User asks: "What is the formula for Schrödinger's equation?"
@@ -114,7 +114,7 @@ print("Its basic form is: iħ∂ψ/∂t = Ĥψ")
 print("This equation describes how the quantum state of a physical system changes over time.")
 print("\\nWould you like more details or have any other questions?")
 """
-    
+
     result4 = service.execute_code(agent_simulation)
     print(f"Success: {result4.success}")
     print("Output:")
@@ -126,7 +126,7 @@ def main():
     """Run the demonstration."""
     try:
         demo_improved_search()
-        
+
         print("🎉 Improved search demonstration completed!")
         print()
         print("Key improvements:")
@@ -136,7 +136,7 @@ def main():
         print("✅ Maintains all existing functionality and safety")
         print()
         print("The LLM can now provide useful information instead of just search links!")
-        
+
     except Exception as e:
         print(f"❌ Error during demonstration: {e}")
         import traceback

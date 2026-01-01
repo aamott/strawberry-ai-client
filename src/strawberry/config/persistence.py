@@ -20,7 +20,6 @@ from dotenv import load_dotenv
 from .env_file import update_env_file
 from .yaml_file import YamlUpdate, apply_yaml_updates_preserve_comments
 
-
 DEFAULT_CONFIG_PATH = Path("config/config.yaml")
 DEFAULT_ENV_PATH = Path(".env")
 

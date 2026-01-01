@@ -3,11 +3,11 @@
 import os
 from pathlib import Path
 from typing import Optional
+
 import yaml
 from dotenv import load_dotenv
 
 from .settings import Settings
-
 
 # Global settings instance
 _settings: Optional[Settings] = None
@@ -42,22 +42,22 @@ def load_config(
         Loaded Settings instance
     """
     global _settings
-    
+
     # Load .env file if it exists
     if env_path is None:
         env_path = Path(".env")
     if env_path.exists():
         load_dotenv(env_path)
-    
+
     # Load config.yaml
     config_data = {}
     if config_path is None:
         config_path = Path("config/config.yaml")
-    
+
     if config_path.exists():
         with open(config_path) as f:
             config_data = yaml.safe_load(f) or {}
-    
+
     # Expand environment variables
     config_data = _expand_env_vars(config_data)
 
@@ -67,15 +67,15 @@ def load_config(
         if "hub" not in config_data:
             config_data["hub"] = {}
         config_data["hub"]["url"] = os.environ["STRAWBERRY_HUB_URL"]
-    
+
     if "STRAWBERRY_DEVICE_TOKEN" in os.environ:
         if "hub" not in config_data:
             config_data["hub"] = {}
         config_data["hub"]["token"] = os.environ["STRAWBERRY_DEVICE_TOKEN"]
-    
+
     # Create settings
     _settings = Settings(**config_data)
-    
+
     return _settings
 
 

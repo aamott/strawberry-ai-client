@@ -3,14 +3,15 @@
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Callable, Awaitable
+from typing import Any, Awaitable, Callable, Dict, List, Optional
+
 import httpx
 from tenacity import (
+    before_sleep_log,
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log,
 )
 
 try:
@@ -30,7 +31,7 @@ class HubConfig:
     url: str
     token: str
     timeout: float = 30.0
-    
+
     @classmethod
     def from_settings(cls, settings) -> Optional["HubConfig"]:
         """Create config from settings if Hub is configured."""
@@ -64,7 +65,7 @@ class HubError(Exception):
     def __init__(self, message: str, status_code: int = 0):
         super().__init__(message)
         self.status_code = status_code
-    
+
     @property
     def is_retryable(self) -> bool:
         """Check if this error should be retried."""
@@ -96,7 +97,7 @@ class HubClient:
     - Skill discovery
     - Device management
     """
-    
+
     def __init__(self, config: HubConfig):
         self.config = config
         self._client: Optional[httpx.AsyncClient] = None
@@ -105,7 +106,7 @@ class HubClient:
         self._skill_callback: Optional[Callable[[str, str, list, dict], Awaitable[Any]]] = None
         self._connection_callback: Optional[Callable[[bool], Awaitable[None]]] = None
         self._reconnect_delay = 1.0  # Start with 1 second
-    
+
     @property
     def client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client."""
@@ -116,27 +117,27 @@ class HubClient:
                 timeout=self.config.timeout,
             )
         return self._client
-    
+
     async def close(self):
         """Close the HTTP client and WebSocket connection."""
         # Close WebSocket
         await self.disconnect_websocket()
-        
+
         # Close HTTP client
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
-    
+
     async def __aenter__(self):
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
-    
+
     # =========================================================================
     # Health & Info
     # =========================================================================
-    
+
     async def health(self) -> bool:
         """Check if Hub is healthy."""
         try:
@@ -144,17 +145,17 @@ class HubClient:
             return response.status_code == 200
         except httpx.RequestError:
             return False
-    
+
     async def get_device_info(self) -> Dict[str, Any]:
         """Get information about the authenticated device."""
         response = await self.client.get("/auth/me")
         self._check_response(response)
         return response.json()
-    
+
     # =========================================================================
     # Chat / LLM
     # =========================================================================
-    
+
     @_retry_config
     async def chat(
         self,
@@ -178,25 +179,25 @@ class HubClient:
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": temperature,
         }
-        
+
         if model:
             payload["model"] = model
         if max_tokens:
             payload["max_tokens"] = max_tokens
-        
+
         response = await self.client.post("/v1/chat/completions", json=payload)
         self._check_response(response)
-        
+
         data = response.json()
         choice = data["choices"][0]
-        
+
         return ChatResponse(
             content=choice["message"]["content"],
             model=data.get("model", "unknown"),
             finish_reason=choice.get("finish_reason", "stop"),
             raw=data,
         )
-    
+
     async def chat_simple(self, user_message: str) -> str:
         """Simple chat - send a message and get a reply.
         
@@ -208,11 +209,11 @@ class HubClient:
         """
         response = await self.chat([ChatMessage(role="user", content=user_message)])
         return response.content
-    
+
     # =========================================================================
     # Skills
     # =========================================================================
-    
+
     @_retry_config
     async def register_skills(self, skills: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Register local skills with the Hub.
@@ -233,14 +234,14 @@ class HubClient:
         )
         self._check_response(response)
         return response.json()
-    
+
     @_retry_config
     async def heartbeat(self) -> Dict[str, Any]:
         """Send heartbeat to keep skills alive."""
         response = await self.client.post("/skills/heartbeat")
         self._check_response(response)
         return response.json()
-    
+
     @_retry_config
     async def list_skills(self, include_expired: bool = False) -> List[Dict[str, Any]]:
         """List all skills visible to this device.
@@ -257,7 +258,7 @@ class HubClient:
         )
         self._check_response(response)
         return response.json()["skills"]
-    
+
     @_retry_config
     async def search_skills(self, query: str = "") -> List[Dict[str, Any]]:
         """Search for skills across all devices.
@@ -274,11 +275,11 @@ class HubClient:
         )
         self._check_response(response)
         return response.json()["results"]
-    
+
     # =========================================================================
     # Remote Skill Execution
     # =========================================================================
-    
+
     @_retry_config
     async def execute_remote_skill(
         self,
@@ -310,34 +311,34 @@ class HubClient:
             "args": args or [],
             "kwargs": kwargs or {},
         }
-        
+
         response = await self.client.post(
             "/skills/execute",
             json=payload,
             timeout=60.0,  # Longer timeout for remote execution
         )
         self._check_response(response)
-        
+
         result = response.json()
         if not result.get("success"):
             raise HubError(result.get("error", "Remote execution failed"))
-        
+
         return result.get("result")
-    
+
     # =========================================================================
     # Devices
     # =========================================================================
-    
+
     async def list_devices(self) -> List[Dict[str, Any]]:
         """List all devices for the current user."""
         response = await self.client.get("/devices")
         self._check_response(response)
         return response.json()["devices"]
-    
+
     # =========================================================================
     # Helpers
     # =========================================================================
-    
+
     def _check_response(self, response: httpx.Response):
         """Check response for errors and raise HubError if needed.
         
@@ -358,11 +359,11 @@ class HubClient:
             except Exception:
                 detail = response.text
             raise HubError(f"Hub API error: {detail}", response.status_code)
-    
+
     # =========================================================================
     # WebSocket Connection
     # =========================================================================
-    
+
     def set_connection_callback(
         self,
         callback: Callable[[bool], Awaitable[None]]
@@ -384,21 +385,21 @@ class HubClient:
             callback: Async function(skill_name, method_name, args, kwargs) -> result
         """
         self._skill_callback = callback
-    
+
     async def connect_websocket(self):
         """Connect to Hub via WebSocket for receiving skill requests."""
         if not WEBSOCKETS_AVAILABLE:
             logger.warning("websockets library not available, WebSocket disabled")
             return
-        
+
         if self._ws_task and not self._ws_task.done():
             logger.debug("WebSocket already connected")
             return
-        
+
         # Start WebSocket connection task
         self._ws_task = asyncio.create_task(self._websocket_loop())
         logger.info("WebSocket connection task started")
-    
+
     async def disconnect_websocket(self):
         """Disconnect WebSocket connection."""
         if self._ws_task:
@@ -408,11 +409,11 @@ class HubClient:
             except asyncio.CancelledError:
                 pass
             self._ws_task = None
-        
+
         if self._websocket:
             await self._websocket.close()
             self._websocket = None
-    
+
     async def _websocket_loop(self):
         """Main WebSocket connection loop with reconnection."""
         while True:
@@ -420,21 +421,21 @@ class HubClient:
                 # Build WebSocket URL
                 ws_url = self.config.url.replace("http://", "ws://").replace("https://", "wss://")
                 ws_url = f"{ws_url}/ws/device?token={self.config.token}"
-                
+
                 logger.info(f"Connecting to WebSocket: {ws_url}")
-                
+
                 async with websockets.connect(ws_url) as websocket:
                     self._websocket = websocket
                     self._reconnect_delay = 1.0  # Reset delay on successful connection
                     logger.info("WebSocket connected")
-                    
+
                     # Notify connected
                     if self._connection_callback:
                         try:
                             await self._connection_callback(True)
                         except Exception as e:
                             logger.error(f"Error in connection callback: {e}")
-                    
+
                     # Handle incoming messages
                     async for message in websocket:
                         try:
@@ -443,27 +444,27 @@ class HubClient:
                             await self._handle_websocket_message(data)
                         except Exception as e:
                             logger.error(f"Error handling WebSocket message: {e}")
-            
+
             except asyncio.CancelledError:
                 logger.info("WebSocket connection cancelled")
                 break
-            
+
             except Exception as e:
                 logger.error(f"WebSocket connection error: {e}")
                 self._websocket = None
-                
+
                 # Notify disconnected
                 if self._connection_callback:
                     try:
                         await self._connection_callback(False)
                     except Exception as e:
                         logger.error(f"Error in connection callback: {e}")
-                
+
                 # Exponential backoff for reconnection
                 logger.info(f"Reconnecting in {self._reconnect_delay}s...")
                 await asyncio.sleep(self._reconnect_delay)
                 self._reconnect_delay = min(self._reconnect_delay * 2, 60.0)  # Max 60s
-    
+
     async def _handle_websocket_message(self, message: dict):
         """Handle incoming WebSocket message from Hub.
         
@@ -471,17 +472,17 @@ class HubClient:
             message: Parsed JSON message
         """
         msg_type = message.get("type")
-        
+
         if msg_type == "skill_request":
             await self._handle_skill_request(message)
-        
+
         elif msg_type == "pong":
             # Heartbeat response
             pass
-        
+
         else:
             logger.warning(f"Unknown WebSocket message type: {msg_type}")
-    
+
     async def _handle_skill_request(self, request: dict):
         """Handle skill execution request from Hub.
         
@@ -493,16 +494,16 @@ class HubClient:
         method_name = request.get("method_name")
         args = request.get("args", [])
         kwargs = request.get("kwargs", {})
-        
+
         logger.info(f"Received skill request {request_id}: {skill_name}.{method_name}")
-        
+
         # Execute skill via callback
         try:
             if not self._skill_callback:
                 raise RuntimeError("No skill callback registered")
-            
+
             result = await self._skill_callback(skill_name, method_name, args, kwargs)
-            
+
             # Send success response
             response = {
                 "type": "skill_response",
@@ -510,7 +511,7 @@ class HubClient:
                 "success": True,
                 "result": result,
             }
-        
+
         except Exception as e:
             logger.error(f"Skill execution error: {e}")
             # Send error response
@@ -520,7 +521,7 @@ class HubClient:
                 "success": False,
                 "error": str(e),
             }
-        
+
         # Send response back to Hub
         if self._websocket:
             import json
