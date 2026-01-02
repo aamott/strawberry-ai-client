@@ -100,7 +100,7 @@ class RemoteDeviceProxy:
 
 class DeviceManager:
     """Manages access to skills across all connected devices.
-    
+
     Provides:
     - device_manager.search_skills(query) - Search skills on all devices
     - device_manager.describe_function(path) - Get function details
@@ -109,7 +109,7 @@ class DeviceManager:
 
     def __init__(self, hub_client: HubClient, local_device_name: str):
         """Initialize device manager.
-        
+
         Args:
             hub_client: Hub client for API calls
             local_device_name: Name of the local device (for prioritization)
@@ -132,10 +132,10 @@ class DeviceManager:
 
     def search_skills(self, query: str = "") -> List[Dict[str, Any]]:
         """Search for skills across all connected devices.
-        
+
         Args:
             query: Search term (matches name, signature, docstring)
-            
+
         Returns:
             List of matching skills with path, signature, summary, device
         """
@@ -175,10 +175,10 @@ class DeviceManager:
 
     def describe_function(self, path: str) -> str:
         """Get full function details.
-        
+
         Args:
             path: "DeviceName.SkillClass.method_name"
-            
+
         Returns:
             Full signature with docstring
         """
@@ -242,12 +242,12 @@ class DeviceManager:
 
     def _execute_remote(self, path: str, args: tuple, kwargs: dict) -> Any:
         """Execute a remote skill call via Hub.
-        
+
         Args:
             path: "DeviceName.SkillClass.method_name"
             args: Positional arguments
             kwargs: Keyword arguments
-            
+
         Returns:
             Result from remote execution
         """
@@ -292,65 +292,73 @@ class DeviceManager:
 
 
 # Mode switching prompts
-REMOTE_MODE_PROMPT = '''You are Strawberry, a helpful AI assistant with access to skills across all connected devices.
+REMOTE_MODE_PROMPT = (
+    "You are Strawberry, a helpful AI assistant with access to skills across all "
+    "connected devices.\n"
+    "\n"
+    "## How Remote Skills Work\n"
+    "\n"
+    "When you write a ```python code block, I will execute it and show you the output. "
+    "Then you continue your response.\n"
+    "\n"
+    "## Available Functions\n"
+    "\n"
+    "```python\n"
+    "device_manager: DeviceManager  # Manages all connected devices\n"
+    "\n"
+    "device_manager.search_skills(query: str = \"\") -> List[dict]\n"
+    "# Search for skills across all devices\n"
+    "# Returns: [{\"path\": \"Device.Skill.method\", \"signature\": \"...\", "
+    "\"summary\": \"...\", \"device\": \"...\"}]\n"
+    "\n"
+    "device_manager.describe_function(path: str) -> str\n"
+    "# Get full function signature with docstring\n"
+    "# Path format: \"DeviceName.SkillClass.method_name\"\n"
+    "\n"
+    "device_manager.DeviceName.SkillClass.method(...)\n"
+    "# Call a skill on a specific device\n"
+    "```\n"
+    "\n"
+    "## Rules\n"
+    "\n"
+    "1. Always wrap code in ```python fences\n"
+    "2. Always use print() to see output\n"
+    "3. After I show you the output, respond naturally to the user\n"
+    "4. Search for skills first if you're not sure what's available"
+)
 
-## How Remote Skills Work
-
-When you write a ```python code block, I will execute it and show you the output. Then you continue your response.
-
-## Available Functions
-
-```python
-device_manager: DeviceManager  # Manages all connected devices
-
-device_manager.search_skills(query: str = "") -> List[dict]
-# Search for skills across all devices
-# Returns: [{"path": "Device.Skill.method", "signature": "...", "summary": "...", "device": "..."}]
-
-device_manager.describe_function(path: str) -> str
-# Get full function signature with docstring
-# Path format: "DeviceName.SkillClass.method_name"
-
-device_manager.DeviceName.SkillClass.method(...)
-# Call a skill on a specific device
-```
-
-## Rules
-
-1. Always wrap code in ```python fences
-2. Always use print() to see output
-3. After I show you the output, respond naturally to the user
-4. Search for skills first if you're not sure what's available'''
-
-LOCAL_MODE_PROMPT = '''You are Strawberry, a helpful AI assistant with access to skills on this device.
-
-## How Skills Work
-
-When you write a ```python code block, I will execute it and show you the output. Then you continue your response.
-
-## Available Functions
-
-```python
-device: Device  # Container for local skills
-
-device.search_skills(query: str = "") -> List[dict]
-# Search for skills by keyword
-# Returns: [{"path": "Skill.method", "signature": "...", "summary": "..."}]
-
-device.describe_function(path: str) -> str
-# Get full function signature with docstring
-# Path format: "SkillClass.method_name"
-
-device.SkillClass.method(...)
-# Call a skill directly
-```
-
-## Rules
-
-1. Always wrap code in ```python fences
-2. Always use print() to see output
-3. After I show you the output, respond naturally to the user
-4. Search for skills first if you're not sure what's available'''
+LOCAL_MODE_PROMPT = (
+    "You are Strawberry, a helpful AI assistant with access to skills on this device.\n"
+    "\n"
+    "## How Skills Work\n"
+    "\n"
+    "When you write a ```python code block, I will execute it and show you the output. "
+    "Then you continue your response.\n"
+    "\n"
+    "## Available Functions\n"
+    "\n"
+    "```python\n"
+    "device: Device  # Container for local skills\n"
+    "\n"
+    "device.search_skills(query: str = \"\") -> List[dict]\n"
+    "# Search for skills by keyword\n"
+    "# Returns: [{\"path\": \"Skill.method\", \"signature\": \"...\", \"summary\": \"...\"}]\n"
+    "\n"
+    "device.describe_function(path: str) -> str\n"
+    "# Get full function signature with docstring\n"
+    "# Path format: \"SkillClass.method_name\"\n"
+    "\n"
+    "device.SkillClass.method(...)\n"
+    "# Call a skill directly\n"
+    "```\n"
+    "\n"
+    "## Rules\n"
+    "\n"
+    "1. Always wrap code in ```python fences\n"
+    "2. Always use print() to see output\n"
+    "3. After I show you the output, respond naturally to the user\n"
+    "4. Search for skills first if you're not sure what's available"
+)
 
 SWITCHED_TO_REMOTE_PROMPT = '''<system>
 Automated Message: The device switched to online mode and now has access to skills on other devices.

@@ -9,7 +9,7 @@ from ..base import AudioChunk, TTSEngine
 
 class MockTTS(TTSEngine):
     """Mock TTS engine for testing.
-    
+
     Can be configured to return silence, sine waves, or custom audio.
     """
 
@@ -20,7 +20,7 @@ class MockTTS(TTSEngine):
         words_per_second: float = 2.5,  # For calculating duration
     ):
         """Initialize mock TTS.
-        
+
         Args:
             sample_rate: Output sample rate
             audio_generator: Custom function(text) -> np.ndarray
@@ -111,13 +111,13 @@ def generate_tone_audio(
     duration_per_char: float = 0.05,
 ) -> Callable[[str], np.ndarray]:
     """Create generator that produces tone audio based on text length.
-    
+
     Args:
         frequency: Tone frequency in Hz
         amplitude: Peak amplitude
         sample_rate: Sample rate
         duration_per_char: Duration per character in seconds
-        
+
     Returns:
         Function(text) -> np.ndarray for use with MockTTS
     """

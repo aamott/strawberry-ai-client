@@ -25,7 +25,7 @@ def test_transcription_result_defaults():
 
     assert result.text == "hello world"
     assert result.confidence == 1.0
-    assert result.is_final == True
+    assert result.is_final
     assert result.words is None
     assert result.language is None
 
@@ -56,7 +56,7 @@ def test_mock_stt_default_response():
     result = stt.transcribe(audio)
 
     assert result.text == "default response"
-    assert result.is_final == True
+    assert result.is_final
 
 
 def test_mock_stt_empty_default():

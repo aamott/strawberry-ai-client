@@ -24,10 +24,10 @@ class VoiceConfig:
 
 class VoiceController(QObject):
     """Controller for voice interaction.
-    
+
     Manages the conversation pipeline and emits Qt signals for UI updates.
     Uses thread-safe signal emission for cross-thread communication.
-    
+
     Signals:
         state_changed(str): Voice state changed (idle, listening, recording, etc.)
         level_changed(float): Audio level changed (0.0 to 1.0)
@@ -84,13 +84,34 @@ class VoiceController(QObject):
         self._level_timer.timeout.connect(self._update_level)
 
         # Connect internal signals to public signals (auto-queued)
-        self._emit_state.connect(self.state_changed.emit, Qt.ConnectionType.QueuedConnection)
-        self._emit_wake.connect(self.wake_word_detected.emit, Qt.ConnectionType.QueuedConnection)
-        self._emit_transcription.connect(self.transcription_ready.emit, Qt.ConnectionType.QueuedConnection)
-        self._emit_response.connect(self.response_ready.emit, Qt.ConnectionType.QueuedConnection)
-        self._emit_tts_started.connect(self.tts_started.emit, Qt.ConnectionType.QueuedConnection)
-        self._emit_tts_finished.connect(self.tts_finished.emit, Qt.ConnectionType.QueuedConnection)
-        self._emit_error.connect(self.error_occurred.emit, Qt.ConnectionType.QueuedConnection)
+        self._emit_state.connect(
+            self.state_changed.emit,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self._emit_wake.connect(
+            self.wake_word_detected.emit,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self._emit_transcription.connect(
+            self.transcription_ready.emit,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self._emit_response.connect(
+            self.response_ready.emit,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self._emit_tts_started.connect(
+            self.tts_started.emit,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self._emit_tts_finished.connect(
+            self.tts_finished.emit,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self._emit_error.connect(
+            self.error_occurred.emit,
+            Qt.ConnectionType.QueuedConnection,
+        )
 
     def set_response_handler(self, handler: Callable[[str], str]):
         """Set the response handler for processing transcriptions."""
@@ -98,7 +119,7 @@ class VoiceController(QObject):
 
     def start(self) -> bool:
         """Start voice interaction.
-        
+
         Returns:
             True if started successfully, False otherwise
         """
@@ -109,10 +130,6 @@ class VoiceController(QObject):
             # Import voice components
             from ..audio.backends.sounddevice_backend import SoundDeviceBackend
             from ..pipeline import ConversationPipeline, PipelineConfig
-            from ..stt.backends.mock import MockSTT
-            from ..tts.backends.mock import MockTTS
-            from ..vad.backends.mock import MockVAD
-            from ..wake.backends.mock import MockWakeWordDetector
 
             # Try to use real backends if available
             wake_detector = self._create_wake_detector()
@@ -186,7 +203,7 @@ class VoiceController(QObject):
 
     def push_to_talk_start(self):
         """Start push-to-talk recording.
-        
+
         Bypasses wake word and starts recording immediately.
         Call push_to_talk_stop() when user releases the button.
         """
@@ -212,7 +229,7 @@ class VoiceController(QObject):
 
     def push_to_talk_stop(self):
         """Stop push-to-talk recording and process.
-        
+
         Called when user releases the push-to-talk button.
         """
         if not self._push_to_talk_active:
@@ -291,7 +308,7 @@ class VoiceController(QObject):
 
     def _on_pipeline_event(self, event: PipelineEvent):
         """Handle pipeline events and emit Qt signals (thread-safe).
-        
+
         This method may be called from background threads, so we use
         internal signals with QueuedConnection to safely emit to the main thread.
         Also plays audio feedback for key events.

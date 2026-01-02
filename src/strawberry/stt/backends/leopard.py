@@ -14,17 +14,17 @@ from ..base import STTEngine, TranscriptionResult
 
 class LeopardSTT(STTEngine):
     """Speech-to-Text using Picovoice Leopard.
-    
+
     Leopard is an on-device speech-to-text engine that:
     - Runs entirely locally (no cloud API calls)
     - Supports multiple languages
     - Provides word-level timestamps
-    
+
     Pros:
     - Fast, offline operation
     - Good accuracy
     - Word-level confidence scores
-    
+
     Cons:
     - Requires Picovoice license
     - Model files can be large
@@ -36,12 +36,12 @@ class LeopardSTT(STTEngine):
         model_path: Optional[str] = None,
     ):
         """Initialize Leopard STT.
-        
+
         Args:
             access_key: Picovoice access key. If None, reads from
                        PICOVOICE_API_KEY environment variable.
             model_path: Path to custom model file. If None, uses default.
-            
+
         Raises:
             ImportError: If pvleopard is not installed
             ValueError: If access_key is not provided
@@ -73,10 +73,10 @@ class LeopardSTT(STTEngine):
 
     def transcribe(self, audio: np.ndarray) -> TranscriptionResult:
         """Transcribe audio buffer.
-        
+
         Args:
             audio: Audio samples (int16)
-            
+
         Returns:
             Transcription result with text and word-level details
         """
@@ -107,7 +107,7 @@ class LeopardSTT(STTEngine):
 
     def transcribe_file(self, file_path: str) -> TranscriptionResult:
         """Transcribe audio file.
-        
+
         Leopard has native file support which may be more efficient.
         """
         transcript, words = self._leopard.process_file(file_path)

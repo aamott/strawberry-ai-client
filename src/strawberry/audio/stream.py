@@ -11,7 +11,7 @@ from .base import AudioBackend
 
 class AudioStream:
     """Manages a single continuous audio stream with multiple consumers.
-    
+
     This is the core of the "no blip" architecture - one stream feeds
     multiple consumers (wake word, VAD, STT) without stopping/restarting.
     """
@@ -23,7 +23,7 @@ class AudioStream:
         suppress_errors: bool = False,
     ):
         """Initialize the audio stream manager.
-        
+
         Args:
             backend: Audio backend to use for capture
             buffer_size: Number of frames to keep in rolling buffer
@@ -54,7 +54,7 @@ class AudioStream:
 
     def subscribe(self, callback: Callable[[np.ndarray], None]) -> None:
         """Add a subscriber to receive audio frames.
-        
+
         Args:
             callback: Function to call with each audio frame
         """
@@ -64,7 +64,7 @@ class AudioStream:
 
     def unsubscribe(self, callback: Callable[[np.ndarray], None]) -> None:
         """Remove a subscriber.
-        
+
         Args:
             callback: Previously registered callback to remove
         """
@@ -74,12 +74,12 @@ class AudioStream:
 
     def get_buffer(self, frames: int) -> np.ndarray:
         """Get the last N frames from the buffer.
-        
+
         Useful for including audio from just before wake word detection.
-        
+
         Args:
             frames: Number of frames to retrieve
-            
+
         Returns:
             Concatenated audio samples
         """

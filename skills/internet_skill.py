@@ -22,7 +22,9 @@ class InternetSearchSkill:
             return {
                 "success": False,
                 "error": "Google search not configured",
-                "message": "Please set GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID environment variables",
+                "message": (
+                    "Please set GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID environment variables"
+                ),
                 "documentation": "https://developers.google.com/custom-search/v1/overview"
             }
 

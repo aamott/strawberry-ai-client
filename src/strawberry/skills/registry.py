@@ -22,7 +22,7 @@ class RegistrationResult:
 
 class SkillRegistry:
     """Manages skill loading and Hub registration.
-    
+
     Handles:
     - Loading skills from local Python files
     - Registering skills with the Hub
@@ -37,7 +37,7 @@ class SkillRegistry:
         heartbeat_interval: float = 300.0,  # 5 minutes
     ):
         """Initialize skill registry.
-        
+
         Args:
             skills_path: Path to skills directory
             hub_client: Optional Hub client for remote registration
@@ -53,7 +53,7 @@ class SkillRegistry:
 
     def load_skills(self) -> List[SkillInfo]:
         """Load all skills from the skills directory.
-        
+
         Returns:
             List of loaded SkillInfo objects
         """
@@ -61,7 +61,7 @@ class SkillRegistry:
 
     async def register_with_hub(self) -> RegistrationResult:
         """Register loaded skills with the Hub.
-        
+
         Returns:
             RegistrationResult with success status
         """
@@ -134,10 +134,10 @@ class SkillRegistry:
 
     async def search_skills(self, query: str = "") -> List[Dict[str, Any]]:
         """Search for skills locally and remotely.
-        
+
         Args:
             query: Search query string
-            
+
         Returns:
             List of matching skills
         """
@@ -185,12 +185,12 @@ class SkillRegistry:
         **kwargs
     ) -> Any:
         """Call a local skill method.
-        
+
         Args:
             skill_name: Name of the skill class
             method_name: Name of the method
             *args, **kwargs: Method arguments
-            
+
         Returns:
             Method return value
         """
@@ -198,7 +198,7 @@ class SkillRegistry:
 
     def format_skills_prompt(self) -> str:
         """Format loaded skills as a prompt for the LLM.
-        
+
         Returns:
             Formatted string describing available skills
         """

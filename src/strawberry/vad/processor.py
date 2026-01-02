@@ -11,10 +11,10 @@ from .base import VADBackend
 @dataclass
 class VADConfig:
     """Configuration for VAD processor.
-    
+
     The algorithm uses a "speech buffer" that fills during speech
     and drains during silence. Recording ends when the buffer empties.
-    
+
     Attributes:
         max_buffer: Maximum buffer level (hard cap)
         initial_buffer: Starting buffer level (grace period)
@@ -33,16 +33,16 @@ class VADConfig:
 
 class VADProcessor:
     """Voice Activity Detection with weighted counter algorithm.
-    
+
     This algorithm:
     - Builds momentum during speech (fills buffer)
     - Filters short noise bursts (they don't fill buffer enough)
     - Gets more aggressive at closing for long sessions
-    
+
     Usage:
         processor = VADProcessor(vad_backend, config)
         processor.reset()  # Start new recording session
-        
+
         for frame in audio_frames:
             if processor.process(frame):
                 # Speech ended
@@ -56,7 +56,7 @@ class VADProcessor:
         frame_duration_ms: int = 30,
     ):
         """Initialize VAD processor.
-        
+
         Args:
             vad: VAD backend for speech detection
             config: Algorithm configuration (uses defaults if None)
@@ -73,7 +73,7 @@ class VADProcessor:
 
     def reset(self) -> None:
         """Reset for a new recording session.
-        
+
         Call this when starting to record user speech.
         """
         self._counter = self.config.initial_buffer
@@ -83,10 +83,10 @@ class VADProcessor:
 
     def process(self, frame: np.ndarray) -> bool:
         """Process an audio frame.
-        
+
         Args:
             frame: Audio samples (int16)
-            
+
         Returns:
             True if speech has ended (stop recording), False to continue
         """
@@ -124,7 +124,7 @@ class VADProcessor:
     @property
     def counter(self) -> float:
         """Current buffer level.
-        
+
         Useful for debugging or UI visualization.
         """
         return self._counter

@@ -41,6 +41,25 @@ strawberry-gui
 strawberry-test
 ```
 
+## Linting (Ruff)
+
+If you use a virtual environment (recommended), run Ruff through the venv's Python
+to avoid PATH / permission issues:
+
+```bash
+# Apply auto-fixes
+.venv/bin/python -m ruff check --fix .
+
+# Verify lint is clean
+.venv/bin/python -m ruff check .
+```
+
+And run tests from the same venv:
+
+```bash
+.venv/bin/python -m strawberry.testing.runner
+```
+
 **Note:** If you encounter `ModuleNotFoundError: No module named 'PySide6'`, you need to install the UI dependencies:
 ```bash
 pip install -e ".[ui]"

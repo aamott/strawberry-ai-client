@@ -10,7 +10,7 @@ class SystemControlSkill:
 
     def get_system_info(self) -> Dict[str, Any]:
         """Get basic system information.
-        
+
         Returns:
             Dictionary with system information
         """
@@ -24,13 +24,13 @@ class SystemControlSkill:
 
     def set_system_volume(self, volume: int) -> str:
         """Set the system volume.
-        
+
         Args:
             volume: Volume level (0-100)
-            
+
         Returns:
             Confirmation message
-            
+
         Raises:
             ValueError: If volume is out of range
         """
@@ -42,7 +42,15 @@ class SystemControlSkill:
         try:
             if system == "Windows":
                 # Windows volume control
-                subprocess.run(["powershell", f"(New-Object -ComObject WScript.Shell).SendKeys([char]{volume})"])
+                subprocess.run(
+                    [
+                        "powershell",
+                        (
+                            "(New-Object -ComObject WScript.Shell).SendKeys"
+                            f"([char]{volume})"
+                        ),
+                    ]
+                )
             elif system == "Darwin":  # macOS
                 # macOS volume control
                 subprocess.run(["osascript", "-e", f"set volume output volume {volume}"])
@@ -56,7 +64,7 @@ class SystemControlSkill:
 
     def get_system_volume(self) -> int:
         """Get the current system volume.
-        
+
         Returns:
             Current volume level (0-100)
         """
@@ -65,7 +73,7 @@ class SystemControlSkill:
 
     def sleep_system(self) -> str:
         """Put the system to sleep.
-        
+
         Note:
             This method is simulated for safety during testing.
             In production, it would require appropriate permissions.
@@ -75,7 +83,7 @@ class SystemControlSkill:
 
     def restart_system(self) -> str:
         """Restart the system.
-        
+
         Note:
             This method is simulated for safety during testing.
             In production, it would require admin privileges.
@@ -85,7 +93,7 @@ class SystemControlSkill:
 
     def shutdown_system(self) -> str:
         """Shut down the system.
-        
+
         Note:
             This method is simulated for safety during testing.
             In production, it would require admin privileges.
@@ -99,13 +107,13 @@ class DisplayControlSkill:
 
     def set_brightness(self, brightness: int) -> str:
         """Set the display brightness.
-        
+
         Args:
             brightness: Brightness level (0-100)
-            
+
         Returns:
             Confirmation message
-            
+
         Raises:
             ValueError: If brightness is out of range
         """
@@ -117,10 +125,28 @@ class DisplayControlSkill:
         try:
             if system == "Windows":
                 # Windows brightness control
-                subprocess.run(["powershell", f"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, {brightness})"])
+                subprocess.run(
+                    [
+                        "powershell",
+                        (
+                            "(Get-WmiObject -Namespace root/WMI -Class "
+                            "WmiMonitorBrightnessMethods).WmiSetBrightness(1, "
+                            f"{brightness})"
+                        ),
+                    ]
+                )
             elif system == "Darwin":  # macOS
                 # macOS brightness control
-                subprocess.run(["osascript", "-e", "tell application \"System Events\" to key code 144 using control down"])
+                subprocess.run(
+                    [
+                        "osascript",
+                        "-e",
+                        (
+                            "tell application \"System Events\" to key code 144 "
+                            "using control down"
+                        ),
+                    ]
+                )
             elif system == "Linux":
                 # Linux brightness control
                 subprocess.run(["xrandr", "--output", "eDP-1", "--brightness", str(brightness/100)])
@@ -131,7 +157,7 @@ class DisplayControlSkill:
 
     def get_brightness(self) -> int:
         """Get the current display brightness.
-        
+
         Returns:
             Current brightness level (0-100)
         """

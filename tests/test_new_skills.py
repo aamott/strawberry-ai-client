@@ -60,7 +60,11 @@ class TestInternetSkills:
         assert any("Python" in result["title"] for result in results)
 
         # Test Schrödinger equation search
-        schrodinger_results = loader.call_method("InternetSearchSkill", "search_web", "schrödinger equation formula")
+        schrodinger_results = loader.call_method(
+            "InternetSearchSkill",
+            "search_web",
+            "schrödinger equation formula",
+        )
         assert len(schrodinger_results) > 0
         assert any("Schrödinger" in result["title"] for result in schrodinger_results)
         assert any("Wikipedia" in result["title"] for result in schrodinger_results)
@@ -80,7 +84,7 @@ class TestInternetSkills:
 
         info = loader.call_method("InternetSearchSkill", "get_website_info", "https://example.com")
         assert "example.com" in info["url"]
-        assert info["safe"] == True
+        assert info["safe"]
 
     def test_web_browser_methods(self, loader):
         """Test web browser navigation methods."""
@@ -97,17 +101,29 @@ class TestInternetSkills:
         loader.load_all()
 
         # Test Schrödinger equation formula summary
-        summary = loader.call_method("InternetSearchSkill", "extract_search_summary", "schrödinger equation formula")
+        summary = loader.call_method(
+            "InternetSearchSkill",
+            "extract_search_summary",
+            "schrödinger equation formula",
+        )
         assert "iħ∂ψ/∂t = Ĥψ" in summary
         assert "quantum mechanics" in summary
 
         # Test Python programming summary
-        python_summary = loader.call_method("InternetSearchSkill", "extract_search_summary", "python programming")
+        python_summary = loader.call_method(
+            "InternetSearchSkill",
+            "extract_search_summary",
+            "python programming",
+        )
         assert "high-level" in python_summary
         assert "programming language" in python_summary
 
         # Test unknown query
-        unknown_summary = loader.call_method("InternetSearchSkill", "extract_search_summary", "unknown topic xyz")
+        unknown_summary = loader.call_method(
+            "InternetSearchSkill",
+            "extract_search_summary",
+            "unknown topic xyz",
+        )
         assert "unknown topic xyz" in unknown_summary
 
 
@@ -169,7 +185,12 @@ class TestMediaControlSkills:
         assert len(results) > 0
 
         # Test playlist creation
-        result = loader.call_method("MusicLibrarySkill", "create_playlist", "My Playlist", ["Song 1", "Song 2"])
+        result = loader.call_method(
+            "MusicLibrarySkill",
+            "create_playlist",
+            "My Playlist",
+            ["Song 1", "Song 2"],
+        )
         assert "My Playlist" in result
         assert "2" in result
 
@@ -317,7 +338,13 @@ class TestSkillIntegration:
         service.load_skills()
 
         # Test response with internet search
-        response = '''Let me search the web:\n\n```python\nresults = device.InternetSearchSkill.search_web("python programming")\nprint(results)\n```'''
+        response = (
+            "Let me search the web:\n\n"
+            "```python\n"
+            'results = device.InternetSearchSkill.search_web("python programming")\n'
+            "print(results)\n"
+            "```"
+        )
 
         processed, tool_calls = service.process_response(response)
 
@@ -328,7 +355,13 @@ class TestSkillIntegration:
         assert "W3Schools" in processed
 
         # Test response with media control
-        response2 = '''Let me control the media:\n\n```python\nresult = device.MediaControlSkill.play()\nprint(result)\n```'''
+        response2 = (
+            "Let me control the media:\n\n"
+            "```python\n"
+            "result = device.MediaControlSkill.play()\n"
+            "print(result)\n"
+            "```"
+        )
 
         processed2, tool_calls2 = service.process_response(response2)
 

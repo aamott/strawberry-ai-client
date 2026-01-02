@@ -34,7 +34,7 @@ class PipelineState(Enum):
 @dataclass
 class PipelineConfig:
     """Configuration for the conversation pipeline.
-    
+
     Attributes:
         max_recording_duration: Maximum seconds to record
         lookback_frames: Frames to include from before wake word
@@ -51,7 +51,7 @@ class PipelineConfig:
 
 class ConversationPipeline:
     """Orchestrates the full voice conversation flow.
-    
+
     State machine:
         IDLE → LISTENING (on start)
         LISTENING → RECORDING (on wake word)
@@ -74,7 +74,7 @@ class ConversationPipeline:
         config: Optional[PipelineConfig] = None,
     ):
         """Initialize the conversation pipeline.
-        
+
         Args:
             audio_backend: Audio input backend
             wake_detector: Wake word detector
@@ -125,7 +125,7 @@ class ConversationPipeline:
 
     def on_event(self, handler: Callable[[PipelineEvent], None]) -> None:
         """Register an event handler.
-        
+
         Args:
             handler: Function to call with each pipeline event
         """
@@ -201,9 +201,9 @@ class ConversationPipeline:
 
     def start_recording(self) -> bool:
         """Start recording immediately (for push-to-talk).
-        
+
         Bypasses wake word detection and starts recording directly.
-        
+
         Returns:
             True if recording started, False otherwise
         """
@@ -215,7 +215,7 @@ class ConversationPipeline:
 
     def stop_recording(self) -> bool:
         """Stop recording and process (for push-to-talk).
-        
+
         Returns:
             True if recording was stopped, False otherwise
         """
@@ -415,12 +415,12 @@ class ConversationPipeline:
 
     def process_text(self, text: str) -> str:
         """Process text input directly (bypasses audio/STT).
-        
+
         Useful for testing and text-only mode.
-        
+
         Args:
             text: User input text
-            
+
         Returns:
             Response text
         """

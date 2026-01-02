@@ -49,11 +49,11 @@ def test_mock_vad_speech_frames():
     vad = MockVAD(speech_frames={0, 2, 4})
     frame = make_frame()
 
-    assert vad.is_speech(frame) == True   # Frame 0
-    assert vad.is_speech(frame) == False  # Frame 1
-    assert vad.is_speech(frame) == True   # Frame 2
-    assert vad.is_speech(frame) == False  # Frame 3
-    assert vad.is_speech(frame) == True   # Frame 4
+    assert vad.is_speech(frame)   # Frame 0
+    assert not vad.is_speech(frame)  # Frame 1
+    assert vad.is_speech(frame)   # Frame 2
+    assert not vad.is_speech(frame)  # Frame 3
+    assert vad.is_speech(frame)   # Frame 4
 
 
 def test_mock_vad_amplitude_threshold():
@@ -63,21 +63,22 @@ def test_mock_vad_amplitude_threshold():
     quiet_frame = np.array([100, -100, 50], dtype=np.int16)
     loud_frame = np.array([2000, -1500, 3000], dtype=np.int16)
 
-    assert vad.is_speech(quiet_frame) == False
-    assert vad.is_speech(loud_frame) == True
+    assert not vad.is_speech(quiet_frame)
+    assert vad.is_speech(loud_frame)
 
 
 def test_mock_vad_custom_detector():
     """MockVAD should use custom detector function."""
     # Detect speech if any sample > 500
-    detector = lambda frame: np.any(frame > 500)
+    def detector(frame):
+        return np.any(frame > 500)
     vad = MockVAD(detector=detector)
 
     no_speech = np.array([100, 200, 300], dtype=np.int16)
     has_speech = np.array([100, 600, 300], dtype=np.int16)
 
-    assert vad.is_speech(no_speech) == False
-    assert vad.is_speech(has_speech) == True
+    assert not vad.is_speech(no_speech)
+    assert vad.is_speech(has_speech)
 
 
 def test_mock_vad_frame_count():

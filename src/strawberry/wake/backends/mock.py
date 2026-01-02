@@ -9,7 +9,7 @@ from ..base import WakeWordDetector
 
 class MockWakeWordDetector(WakeWordDetector):
     """Mock wake word detector for testing.
-    
+
     Can be configured to trigger on specific frame indices
     or programmatically via trigger_on_next().
     """
@@ -23,7 +23,7 @@ class MockWakeWordDetector(WakeWordDetector):
         frame_length: int = 512,
     ):
         """Initialize mock detector.
-        
+
         Args:
             keywords: List of wake words (for interface compatibility)
             sensitivity: Detection sensitivity (unused in mock)
@@ -53,7 +53,7 @@ class MockWakeWordDetector(WakeWordDetector):
 
     def process(self, audio_frame: np.ndarray) -> int:
         """Process frame for wake word detection.
-        
+
         Returns:
             Keyword index if triggered, -1 otherwise
         """
@@ -72,7 +72,7 @@ class MockWakeWordDetector(WakeWordDetector):
 
     def trigger_on_next(self, keyword_index: int = 0) -> None:
         """Queue a trigger for the next process() call.
-        
+
         Args:
             keyword_index: Index of keyword to simulate detecting
         """

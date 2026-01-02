@@ -58,22 +58,22 @@ class SkillInfo:
 
 class SkillLoader:
     """Loads skill classes from Python files.
-    
+
     Skills are Python classes that:
     - End with 'Skill' in the name (e.g., MusicControlSkill)
     - Have public methods that can be called by the LLM
     - Methods starting with '_' are considered private and ignored
-    
+
     Example skill file (music_skill.py):
     ```python
     class MusicControlSkill:
         '''Controls music playback.'''
-        
+
         def play_song(self, name: str) -> bool:
             '''Play a song by name.'''
             # Implementation...
             return True
-        
+
         def stop(self) -> None:
             '''Stop playback.'''
             pass
@@ -82,7 +82,7 @@ class SkillLoader:
 
     def __init__(self, skills_path: Path):
         """Initialize skill loader.
-        
+
         Args:
             skills_path: Directory containing skill Python files
         """
@@ -92,7 +92,7 @@ class SkillLoader:
 
     def load_all(self) -> List[SkillInfo]:
         """Load all skills from the skills directory.
-        
+
         Returns:
             List of loaded SkillInfo objects
         """
@@ -124,10 +124,10 @@ class SkillLoader:
 
     def _load_file(self, file_path: Path) -> List[SkillInfo]:
         """Load skills from a single Python file.
-        
+
         Args:
             file_path: Path to Python file
-            
+
         Returns:
             List of SkillInfo objects found in the file
         """
@@ -154,12 +154,12 @@ class SkillLoader:
 
     def _extract_skill_info(self, name: str, cls: type, file_path: Path) -> SkillInfo:
         """Extract information from a skill class.
-        
+
         Args:
             name: Class name
             cls: Class object
             file_path: Source file path
-            
+
         Returns:
             SkillInfo with methods
         """
@@ -214,7 +214,7 @@ class SkillLoader:
 
     def get_instance(self, skill_name: str) -> Any:
         """Get or create an instance of a skill class.
-        
+
         Skill instances are cached for reuse.
         """
         if skill_name not in self._instances:
@@ -229,7 +229,7 @@ class SkillLoader:
 
     def get_registration_data(self) -> List[Dict[str, Any]]:
         """Get data for registering all skills with Hub.
-        
+
         Returns:
             List of skill method dictionaries ready for API
         """
@@ -246,16 +246,16 @@ class SkillLoader:
         **kwargs
     ) -> Any:
         """Call a method on a skill.
-        
+
         Args:
             skill_name: Name of the skill class
             method_name: Name of the method to call
             *args: Positional arguments
             **kwargs: Keyword arguments
-            
+
         Returns:
             Method return value
-            
+
         Raises:
             ValueError: If skill or method not found
         """

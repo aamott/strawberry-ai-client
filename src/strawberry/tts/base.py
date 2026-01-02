@@ -10,7 +10,7 @@ import numpy as np
 @dataclass
 class AudioChunk:
     """Chunk of synthesized audio.
-    
+
     Attributes:
         audio: Audio samples (int16)
         sample_rate: Sample rate in Hz
@@ -26,7 +26,7 @@ class AudioChunk:
 
 class TTSEngine(ABC):
     """Abstract base class for Text-to-Speech engines.
-    
+
     All TTS backends must implement this interface.
     """
 
@@ -39,10 +39,10 @@ class TTSEngine(ABC):
     @abstractmethod
     def synthesize(self, text: str) -> AudioChunk:
         """Synthesize complete text to audio.
-        
+
         Args:
             text: Text to synthesize
-            
+
         Returns:
             Complete audio chunk
         """
@@ -50,13 +50,13 @@ class TTSEngine(ABC):
 
     def synthesize_stream(self, text: str) -> Iterator[AudioChunk]:
         """Synthesize text with streaming output.
-        
+
         Default implementation returns single chunk from synthesize().
         Override for backends with native streaming support.
-        
+
         Args:
             text: Text to synthesize
-            
+
         Yields:
             Audio chunks as they're generated
         """
@@ -64,7 +64,7 @@ class TTSEngine(ABC):
 
     def cleanup(self) -> None:
         """Release any resources held by the engine.
-        
+
         Override in subclasses that need cleanup.
         """
         pass

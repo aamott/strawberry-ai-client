@@ -30,7 +30,9 @@ for i, result in enumerate(results, 1):
     print()
 
 # Then extract a useful summary
-direct_answer = device.InternetSearchSkill.extract_search_summary("the formula of schrodinger's equation")
+direct_answer = device.InternetSearchSkill.extract_search_summary(
+    "the formula of schrodinger's equation"
+)
 print("Direct Answer:")
 print(direct_answer)
 """

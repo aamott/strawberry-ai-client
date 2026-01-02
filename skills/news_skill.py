@@ -124,7 +124,10 @@ class NewsSkill:
                 "url": article['url'],
                 "source": article['source']['name'],
                 "published_at": article['publishedAt'],
-                "relevance": self._calculate_relevance(article['title'] + " " + article['description'], query)
+                "relevance": self._calculate_relevance(
+                    article["title"] + " " + article["description"],
+                    query,
+                ),
             } for article in data['articles'][:max_results]],
             "source": "NewsAPI",
             "query": query,

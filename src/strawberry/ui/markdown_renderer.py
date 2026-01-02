@@ -1,6 +1,9 @@
 """Markdown to HTML renderer for chat messages."""
 
+import importlib.util
 from typing import Optional
+
+from .theme import Theme
 
 try:
     import markdown
@@ -11,22 +14,16 @@ try:
 except ImportError:
     HAS_MARKDOWN = False
 
-try:
-    from pygments.formatters import HtmlFormatter
-    HAS_PYGMENTS = True
-except ImportError:
-    HAS_PYGMENTS = False
-
-from .theme import Theme
+HAS_PYGMENTS = importlib.util.find_spec("pygments") is not None
 
 
 def render_markdown(text: str, theme: Optional[Theme] = None) -> str:
     """Render markdown text to HTML.
-    
+
     Args:
         text: Markdown text
         theme: Optional theme for styling
-        
+
     Returns:
         HTML string
     """
@@ -67,16 +64,15 @@ def render_markdown(text: str, theme: Optional[Theme] = None) -> str:
 
 def get_markdown_css(theme: Optional[Theme] = None) -> str:
     """Get CSS for markdown rendering.
-    
+
     Args:
         theme: Optional theme for colors
-        
+
     Returns:
         CSS string
     """
     # Default colors
     text_color = "#e6edf3"
-    bg_color = "#0d1117"
     code_bg = "#161b22"
     border_color = "#30363d"
     link_color = "#58a6ff"
@@ -84,7 +80,6 @@ def get_markdown_css(theme: Optional[Theme] = None) -> str:
 
     if theme:
         text_color = theme.text_primary
-        bg_color = theme.bg_primary
         code_bg = theme.bg_secondary
         border_color = theme.border
         link_color = theme.accent
@@ -93,13 +88,13 @@ def get_markdown_css(theme: Optional[Theme] = None) -> str:
     return f"""
         .markdown-body {{
             color: {text_color};
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
                          Helvetica, Arial, sans-serif;
             font-size: 14px;
             line-height: 1.6;
             word-wrap: break-word;
         }}
-        
+
         .markdown-body h1, .markdown-body h2, .markdown-body h3,
         .markdown-body h4, .markdown-body h5, .markdown-body h6 {{
             color: {heading_color};
@@ -108,25 +103,25 @@ def get_markdown_css(theme: Optional[Theme] = None) -> str:
             margin-bottom: 0.5em;
             line-height: 1.25;
         }}
-        
+
         .markdown-body h1 {{ font-size: 1.5em; }}
         .markdown-body h2 {{ font-size: 1.3em; }}
         .markdown-body h3 {{ font-size: 1.1em; }}
-        
+
         .markdown-body p {{
             margin-top: 0;
             margin-bottom: 0.5em;
         }}
-        
+
         .markdown-body a {{
             color: {link_color};
             text-decoration: none;
         }}
-        
+
         .markdown-body a:hover {{
             text-decoration: underline;
         }}
-        
+
         .markdown-body code {{
             background-color: {code_bg};
             border-radius: 4px;
@@ -134,7 +129,7 @@ def get_markdown_css(theme: Optional[Theme] = None) -> str:
             font-family: "Consolas", "Monaco", "Courier New", monospace;
             font-size: 0.9em;
         }}
-        
+
         .markdown-body pre {{
             background-color: {code_bg};
             border: 1px solid {border_color};
@@ -143,13 +138,13 @@ def get_markdown_css(theme: Optional[Theme] = None) -> str:
             overflow-x: auto;
             margin: 0.5em 0;
         }}
-        
+
         .markdown-body pre code {{
             background-color: transparent;
             padding: 0;
             border-radius: 0;
         }}
-        
+
         .markdown-body blockquote {{
             border-left: 4px solid {border_color};
             color: {text_color};
@@ -157,39 +152,39 @@ def get_markdown_css(theme: Optional[Theme] = None) -> str:
             padding: 0 1em;
             opacity: 0.8;
         }}
-        
+
         .markdown-body ul, .markdown-body ol {{
             margin-top: 0;
             margin-bottom: 0.5em;
             padding-left: 2em;
         }}
-        
+
         .markdown-body li {{
             margin-bottom: 0.25em;
         }}
-        
+
         .markdown-body table {{
             border-collapse: collapse;
             margin: 0.5em 0;
             width: 100%;
         }}
-        
+
         .markdown-body th, .markdown-body td {{
             border: 1px solid {border_color};
             padding: 6px 12px;
         }}
-        
+
         .markdown-body th {{
             background-color: {code_bg};
             font-weight: 600;
         }}
-        
+
         .markdown-body hr {{
             border: none;
             border-top: 1px solid {border_color};
             margin: 1em 0;
         }}
-        
+
         /* Pygments syntax highlighting (dark theme) */
         .codehilite .hll {{ background-color: #49483e }}
         .codehilite .c {{ color: #75715e }} /* Comment */

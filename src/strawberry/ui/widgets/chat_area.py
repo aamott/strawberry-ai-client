@@ -13,7 +13,7 @@ from .tool_call_widget import ToolCallWidget
 
 class ChatArea(QScrollArea):
     """Scrollable area containing chat messages.
-    
+
     Automatically scrolls to bottom when new messages are added.
     """
 
@@ -50,11 +50,11 @@ class ChatArea(QScrollArea):
 
     def add_message(self, content: str, is_user: bool = True):
         """Add a new message to the chat.
-        
+
         Args:
             content: Message text
             is_user: True for user messages, False for AI
-            
+
         Returns:
             The created ChatBubble widget
         """
@@ -125,16 +125,19 @@ class ChatArea(QScrollArea):
         arguments: dict,
     ) -> ToolCallWidget:
         """Add a tool/skill call widget.
-        
+
         Args:
             tool_name: Name of the tool being called
             arguments: Tool arguments
-            
+
         Returns:
             The created ToolCallWidget (can be updated with results)
         """
         if self._last_assistant_turn is not None:
-            widget = self._last_assistant_turn.add_tool_call(tool_name=tool_name, arguments=arguments)
+            widget = self._last_assistant_turn.add_tool_call(
+                tool_name=tool_name,
+                arguments=arguments,
+            )
         else:
             widget = ToolCallWidget(
                 tool_name=tool_name,

@@ -10,7 +10,7 @@ import numpy as np
 @dataclass
 class TranscriptionResult:
     """Result from STT processing.
-    
+
     Attributes:
         text: The transcribed text
         confidence: Confidence score (0.0 to 1.0), if available
@@ -27,7 +27,7 @@ class TranscriptionResult:
 
 class STTEngine(ABC):
     """Abstract base class for Speech-to-Text engines.
-    
+
     All STT backends must implement this interface.
     """
 
@@ -40,10 +40,10 @@ class STTEngine(ABC):
     @abstractmethod
     def transcribe(self, audio: np.ndarray) -> TranscriptionResult:
         """Transcribe complete audio buffer.
-        
+
         Args:
             audio: Complete audio buffer (int16)
-            
+
         Returns:
             Transcription result
         """
@@ -51,13 +51,13 @@ class STTEngine(ABC):
 
     def transcribe_file(self, file_path: str) -> TranscriptionResult:
         """Transcribe audio from file.
-        
+
         Default implementation reads file and calls transcribe().
         Override for backends with native file support.
-        
+
         Args:
             file_path: Path to audio file
-            
+
         Returns:
             Transcription result
         """
@@ -70,7 +70,7 @@ class STTEngine(ABC):
 
     def cleanup(self) -> None:
         """Release any resources held by the engine.
-        
+
         Override in subclasses that need cleanup.
         """
         pass

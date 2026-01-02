@@ -7,14 +7,14 @@ import numpy as np
 
 class VADBackend(ABC):
     """Abstract base class for Voice Activity Detection.
-    
+
     All VAD backends must implement this interface to be pluggable.
     """
 
     @abstractmethod
     def __init__(self, sample_rate: int = 16000):
         """Initialize the VAD backend.
-        
+
         Args:
             sample_rate: Expected audio sample rate in Hz
         """
@@ -23,10 +23,10 @@ class VADBackend(ABC):
     @abstractmethod
     def is_speech(self, audio_frame: np.ndarray) -> bool:
         """Determine if audio frame contains speech.
-        
+
         Args:
             audio_frame: Audio samples (int16)
-            
+
         Returns:
             True if speech detected, False otherwise
         """
@@ -35,10 +35,10 @@ class VADBackend(ABC):
     @abstractmethod
     def get_probability(self, audio_frame: np.ndarray) -> float:
         """Get speech probability for audio frame.
-        
+
         Args:
             audio_frame: Audio samples (int16)
-            
+
         Returns:
             Probability of speech (0.0 to 1.0)
         """
@@ -46,7 +46,7 @@ class VADBackend(ABC):
 
     def cleanup(self) -> None:
         """Release any resources held by the backend.
-        
+
         Override in subclasses that need cleanup.
         """
         pass

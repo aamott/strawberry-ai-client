@@ -106,7 +106,13 @@ def _set_scalar_in_block(
     start_idx: int,
     end_idx: int,
 ) -> None:
-    line_idx = _find_block(lines, key=key, indent_level=indent_level, start_idx=start_idx, end_idx=end_idx)
+    line_idx = _find_block(
+        lines,
+        key=key,
+        indent_level=indent_level,
+        start_idx=start_idx,
+        end_idx=end_idx,
+    )
     formatted = _format_scalar(value)
 
     if line_idx is not None:
@@ -146,7 +152,13 @@ def apply_yaml_updates_preserve_comments(config_path: Path, updates: Iterable[Ya
         parent_end = len(lines)
 
         for depth, key in enumerate(upd.path[:-1]):
-            idx = _find_block(lines, key=key, indent_level=depth, start_idx=parent_start, end_idx=parent_end)
+            idx = _find_block(
+                lines,
+                key=key,
+                indent_level=depth,
+                start_idx=parent_start,
+                end_idx=parent_end,
+            )
             if idx is None:
                 insert_at = parent_end
                 while insert_at > parent_start and not lines[insert_at - 1].strip():

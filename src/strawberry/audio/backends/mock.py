@@ -11,7 +11,7 @@ from ..base import AudioBackend
 
 class MockAudioBackend(AudioBackend):
     """Mock audio backend for testing.
-    
+
     Generates synthetic audio frames without requiring real hardware.
     Can be configured to generate silence, noise, or custom patterns.
     """
@@ -23,7 +23,7 @@ class MockAudioBackend(AudioBackend):
         generator: Optional[Callable[[int, int], np.ndarray]] = None,
     ):
         """Initialize mock backend.
-        
+
         Args:
             sample_rate: Audio sample rate in Hz
             frame_length_ms: Length of each audio frame in milliseconds
@@ -43,7 +43,7 @@ class MockAudioBackend(AudioBackend):
 
     def inject_frame(self, frame: np.ndarray) -> None:
         """Inject a specific frame to be returned by next read.
-        
+
         Useful for testing specific audio patterns.
         """
         self._injected_frames.append(frame)
@@ -63,7 +63,7 @@ class MockAudioBackend(AudioBackend):
 
     def read_frame(self) -> np.ndarray:
         """Read a single audio frame.
-        
+
         Returns injected frames first, then generated frames.
         """
         if not self._active:
@@ -94,12 +94,12 @@ def generate_sine_wave(
     sample_rate: int = 16000,
 ) -> Callable[[int, int], np.ndarray]:
     """Create a generator function that produces sine wave audio.
-    
+
     Args:
         frequency: Frequency in Hz
         amplitude: Peak amplitude (0-32767 for int16)
         sample_rate: Audio sample rate
-        
+
     Returns:
         Generator function for use with MockAudioBackend
     """
@@ -114,10 +114,10 @@ def generate_sine_wave(
 
 def generate_noise(amplitude: int = 5000) -> Callable[[int, int], np.ndarray]:
     """Create a generator function that produces random noise.
-    
+
     Args:
         amplitude: Peak amplitude
-        
+
     Returns:
         Generator function for use with MockAudioBackend
     """

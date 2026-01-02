@@ -24,7 +24,7 @@ class SkillCallResult:
 
 class SkillService:
     """Manages skill loading, registration, and execution.
-    
+
     Responsibilities:
     - Load skills from Python files
     - Register skills with Hub
@@ -34,46 +34,50 @@ class SkillService:
     """
 
     # System prompt template for skills
-    SYSTEM_PROMPT_TEMPLATE = '''You are Strawberry, a helpful AI assistant with access to skills on this device.
-
-## How Skills Work
-
-When you write a ```python code block, I will execute it and show you the output. Then you continue your response.
-
-Example conversation:
-- User: "What time is it?"
-- You write: ```python
-result = device.TimeSkill.get_current_time()
-print(result)
-```
-- I execute it and reply: "3:45 PM"
-- You respond naturally: "The current time is 3:45 PM."
-
-## Available Skills
-
-{skill_descriptions}
-
-## Discovery Commands
-
-If you're not sure what skills exist:
-```python
-# Search for skills
-results = device.search_skills("music")
-print(results)
-```
-
-```python
-# Get function details
-info = device.describe_function("TimeSkill.get_current_time")
-print(info)
-```
-
-## Rules
-
-1. Always wrap code in ```python fences
-2. Always use print() to see output
-3. After I show you the output, respond naturally to the user (NO code block in your final response)
-4. Keep responses concise and friendly'''
+    SYSTEM_PROMPT_TEMPLATE = (
+        "You are Strawberry, a helpful AI assistant with access to skills on this device.\n"
+        "\n"
+        "## How Skills Work\n"
+        "\n"
+        "When you write a ```python code block, I will execute it and show you the output. "
+        "Then you continue your response.\n"
+        "\n"
+        "Example conversation:\n"
+        "- User: \"What time is it?\"\n"
+        "- You write: ```python\n"
+        "result = device.TimeSkill.get_current_time()\n"
+        "print(result)\n"
+        "```\n"
+        "- I execute it and reply: \"3:45 PM\"\n"
+        "- You respond naturally: \"The current time is 3:45 PM.\"\n"
+        "\n"
+        "## Available Skills\n"
+        "\n"
+        "{skill_descriptions}\n"
+        "\n"
+        "## Discovery Commands\n"
+        "\n"
+        "If you're not sure what skills exist:\n"
+        "```python\n"
+        "# Search for skills\n"
+        "results = device.search_skills(\"music\")\n"
+        "print(results)\n"
+        "```\n"
+        "\n"
+        "```python\n"
+        "# Get function details\n"
+        "info = device.describe_function(\"TimeSkill.get_current_time\")\n"
+        "print(info)\n"
+        "```\n"
+        "\n"
+        "## Rules\n"
+        "\n"
+        "1. Always wrap code in ```python fences\n"
+        "2. Always use print() to see output\n"
+        "3. After I show you the output, respond naturally to the user "
+        "(NO code block in your final response)\n"
+        "4. Keep responses concise and friendly"
+    )
 
     def __init__(
         self,
@@ -84,7 +88,7 @@ print(info)
         sandbox_config: Optional[SandboxConfig] = None,
     ):
         """Initialize skill service.
-        
+
         Args:
             skills_path: Path to skills directory
             hub_client: Hub client for registration (optional)
@@ -108,7 +112,7 @@ print(info)
 
     def load_skills(self) -> List[SkillInfo]:
         """Load all skills from the skills directory.
-        
+
         Returns:
             List of loaded skills
         """
@@ -131,7 +135,7 @@ print(info)
 
     async def register_with_hub(self) -> bool:
         """Register loaded skills with the Hub.
-        
+
         Returns:
             True if registration succeeded
         """
@@ -149,7 +153,7 @@ print(info)
             return True
 
         try:
-            result = await self.hub_client.register_skills(skills_data)
+            await self.hub_client.register_skills(skills_data)
             self._registered = True
             logger.info(f"Registered {len(skills_data)} skill methods with Hub")
             return True
@@ -193,7 +197,7 @@ print(info)
 
     def get_system_prompt(self) -> str:
         """Generate the system prompt with skill descriptions.
-        
+
         Returns:
             System prompt string for LLM
         """
@@ -226,13 +230,13 @@ print(info)
 
     def parse_skill_calls(self, response: str) -> List[str]:
         """Parse skill calls from LLM response.
-        
+
         Extracts Python code blocks that may contain skill calls.
         Also detects "bare" code lines that look like skill calls.
-        
+
         Args:
             response: LLM response text
-            
+
         Returns:
             List of code blocks to execute
         """
@@ -247,7 +251,10 @@ print(info)
         # 2. If no fenced blocks found, look for bare device.* calls
         if not code_blocks:
             # Match lines that look like: print(device.Something...) or device.Something...
-            bare_pattern = r'^[\s]*((?:print\s*\()?\s*device\.[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\)?)'
+            bare_pattern = (
+                r"^[\s]*((?:print\s*\()?\s*device\."
+                r"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\)?)"
+            )
             for line in response.split('\n'):
                 match = re.match(bare_pattern, line.strip())
                 if match:
@@ -261,10 +268,10 @@ print(info)
 
     async def execute_code_async(self, code: str) -> SkillCallResult:
         """Execute a code block containing skill calls (async, sandbox).
-        
+
         Args:
             code: Python code to execute
-            
+
         Returns:
             SkillCallResult with output or error
         """
@@ -281,13 +288,13 @@ print(info)
 
     def execute_code(self, code: str) -> SkillCallResult:
         """Execute a code block containing skill calls (sync, direct).
-        
+
         WARNING: This method uses direct exec() and is NOT secure.
         Use execute_code_async() with sandbox for production.
-        
+
         Args:
             code: Python code to execute
-            
+
         Returns:
             SkillCallResult with output or error
         """
@@ -322,10 +329,10 @@ print(info)
 
     async def process_response_async(self, response: str) -> Tuple[str, List[Dict[str, Any]]]:
         """Process LLM response, executing any skill calls (async, sandbox).
-        
+
         Args:
             response: LLM response text
-            
+
         Returns:
             Tuple of (final_response, list of tool_call_info)
         """
@@ -353,7 +360,13 @@ print(info)
                 results.append(f"Error: {result.error}")
 
         # Remove code blocks from response and append results
-        clean_response = re.sub(r'```(?:python|tool_code|code|py)?\s*.*?```', '', response, flags=re.DOTALL | re.IGNORECASE).strip()
+        fence_pattern = r"```(?:python|tool_code|code|py)?\s*.*?```"
+        clean_response = re.sub(
+            fence_pattern,
+            "",
+            response,
+            flags=re.DOTALL | re.IGNORECASE,
+        ).strip()
 
         if results:
             clean_response = clean_response + "\n\n" + "\n".join(results)
@@ -362,13 +375,13 @@ print(info)
 
     def process_response(self, response: str) -> Tuple[str, List[Dict[str, Any]]]:
         """Process LLM response, executing any skill calls (sync).
-        
+
         WARNING: Uses direct exec() - not secure for production.
         Use process_response_async() for secure sandbox execution.
-        
+
         Args:
             response: LLM response text
-            
+
         Returns:
             Tuple of (final_response, list of tool_call_info)
         """
@@ -396,7 +409,13 @@ print(info)
                 results.append(f"Error: {result.error}")
 
         # Remove code blocks from response and append results
-        clean_response = re.sub(r'```(?:python|tool_code|code|py)?\s*.*?```', '', response, flags=re.DOTALL | re.IGNORECASE).strip()
+        fence_pattern = r"```(?:python|tool_code|code|py)?\s*.*?```"
+        clean_response = re.sub(
+            fence_pattern,
+            "",
+            response,
+            flags=re.DOTALL | re.IGNORECASE,
+        ).strip()
 
         if results:
             clean_response = clean_response + "\n\n" + "\n".join(results)
@@ -424,7 +443,7 @@ print(info)
 
     def reload_skills(self) -> List[SkillInfo]:
         """Reload all skills and refresh sandbox.
-        
+
         Returns:
             List of reloaded skills
         """
@@ -446,16 +465,16 @@ print(info)
         kwargs: dict,
     ) -> Any:
         """Execute a skill method by name (for WebSocket requests).
-        
+
         Args:
             skill_name: Skill class name
             method_name: Method name to call
             args: Positional arguments
             kwargs: Keyword arguments
-            
+
         Returns:
             Result from skill execution
-            
+
         Raises:
             ValueError: If skill or method not found
             RuntimeError: If skill execution fails
@@ -480,7 +499,7 @@ print(info)
 
 class _DeviceProxy:
     """Proxy object for accessing skills from LLM-generated code.
-    
+
     Provides:
     - device.search_skills("query") - Find skills by keyword
     - device.describe_function("SkillName.method") - Get function details
@@ -492,10 +511,10 @@ class _DeviceProxy:
 
     def search_skills(self, query: str = "") -> List[Dict[str, Any]]:
         """Search for skills by keyword.
-        
+
         Args:
             query: Search term (matches name, signature, docstring)
-            
+
         Returns:
             List of matching skills with path, signature, summary
         """
@@ -527,10 +546,10 @@ class _DeviceProxy:
 
     def describe_function(self, path: str) -> str:
         """Get full function details including docstring.
-        
+
         Args:
             path: "SkillName.method_name"
-            
+
         Returns:
             Full function signature with docstring
         """

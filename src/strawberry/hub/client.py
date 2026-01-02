@@ -90,7 +90,7 @@ _retry_config = retry(
 
 class HubClient:
     """Client for communicating with the Strawberry AI Hub.
-    
+
     Provides methods for:
     - Chat completions (LLM requests)
     - Skill registration
@@ -165,13 +165,13 @@ class HubClient:
         max_tokens: Optional[int] = None,
     ) -> ChatResponse:
         """Send a chat completion request to the Hub.
-        
+
         Args:
             messages: List of chat messages
             model: Model to use (default: Hub's configured model)
             temperature: Sampling temperature
             max_tokens: Maximum tokens in response
-            
+
         Returns:
             ChatResponse with the assistant's reply
         """
@@ -200,10 +200,10 @@ class HubClient:
 
     async def chat_simple(self, user_message: str) -> str:
         """Simple chat - send a message and get a reply.
-        
+
         Args:
             user_message: The user's message
-            
+
         Returns:
             The assistant's reply text
         """
@@ -217,14 +217,14 @@ class HubClient:
     @_retry_config
     async def register_skills(self, skills: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Register local skills with the Hub.
-        
+
         Args:
             skills: List of skill definitions with:
                 - class_name: Skill class name
                 - function_name: Function name
                 - signature: Function signature string
                 - docstring: Optional docstring
-                
+
         Returns:
             Registration result from Hub
         """
@@ -245,10 +245,10 @@ class HubClient:
     @_retry_config
     async def list_skills(self, include_expired: bool = False) -> List[Dict[str, Any]]:
         """List all skills visible to this device.
-        
+
         Args:
             include_expired: Include skills that haven't sent heartbeat recently
-            
+
         Returns:
             List of skill definitions
         """
@@ -262,10 +262,10 @@ class HubClient:
     @_retry_config
     async def search_skills(self, query: str = "") -> List[Dict[str, Any]]:
         """Search for skills across all devices.
-        
+
         Args:
             query: Search query (matches function name, class name, docstring)
-            
+
         Returns:
             List of matching skills with path, signature, summary, device
         """
@@ -290,17 +290,17 @@ class HubClient:
         kwargs: Dict[str, Any] = None,
     ) -> Any:
         """Execute a skill on a remote device via Hub.
-        
+
         Args:
             device_name: Target device name
             skill_name: Skill class name
             method_name: Method name to call
             args: Positional arguments
             kwargs: Keyword arguments
-            
+
         Returns:
             Result from remote skill execution
-            
+
         Raises:
             HubError: If remote execution fails
         """
@@ -341,7 +341,7 @@ class HubClient:
 
     def _check_response(self, response: httpx.Response):
         """Check response for errors and raise HubError if needed.
-        
+
         Raises RetryableHubError for 5xx errors (server errors).
         Raises HubError for 4xx errors (client errors).
         """
@@ -369,7 +369,7 @@ class HubClient:
         callback: Callable[[bool], Awaitable[None]]
     ):
         """Set callback for connection status changes.
-        
+
         Args:
             callback: Async function(connected: bool)
         """
@@ -380,7 +380,7 @@ class HubClient:
         callback: Callable[[str, str, list, dict], Awaitable[Any]]
     ):
         """Set callback for handling incoming skill execution requests.
-        
+
         Args:
             callback: Async function(skill_name, method_name, args, kwargs) -> result
         """
@@ -467,7 +467,7 @@ class HubClient:
 
     async def _handle_websocket_message(self, message: dict):
         """Handle incoming WebSocket message from Hub.
-        
+
         Args:
             message: Parsed JSON message
         """
@@ -485,7 +485,7 @@ class HubClient:
 
     async def _handle_skill_request(self, request: dict):
         """Handle skill execution request from Hub.
-        
+
         Args:
             request: Skill request with request_id, skill_name, method_name, args, kwargs
         """

@@ -16,7 +16,7 @@ class BridgeError(Exception):
 
 class BridgeClient:
     """Handles JSON communication with Deno sandbox.
-    
+
     Protocol:
     - Python → Deno: {"type": "execute", "id": "...", "data": {...}}
     - Deno → Python: {"type": "call", "id": "...", "data": {...}}
@@ -31,7 +31,7 @@ class BridgeClient:
         call_handler: Callable[[str, list, dict], Any],
     ):
         """Initialize bridge client.
-        
+
         Args:
             stdin: Writer to Deno process stdin
             stdout: Reader from Deno process stdout
@@ -68,14 +68,14 @@ class BridgeClient:
 
     async def execute(self, code: str, proxy_code: str) -> str:
         """Execute code and return output.
-        
+
         Args:
             code: User code to execute
             proxy_code: Proxy injection code
-            
+
         Returns:
             stdout output from execution
-            
+
         Raises:
             BridgeError: On communication error
             RuntimeError: On execution error in sandbox

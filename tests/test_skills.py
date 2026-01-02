@@ -18,19 +18,19 @@ def skills_dir():
         skill_file.write_text('''
 class TestSkill:
     """A test skill."""
-    
+
     def greet(self, name: str) -> str:
         """Greet someone.
-        
+
         Args:
             name: Name to greet
         """
         return f"Hello, {name}!"
-    
+
     def add(self, a: int, b: int) -> int:
         """Add two numbers."""
         return a + b
-    
+
     def _private_method(self):
         """Should be ignored."""
         pass

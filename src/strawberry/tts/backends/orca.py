@@ -14,17 +14,17 @@ from ..base import AudioChunk, TTSEngine
 
 class OrcaTTS(TTSEngine):
     """Text-to-Speech using Picovoice Orca.
-    
+
     Orca is a streaming text-to-speech engine that:
     - Runs entirely on-device (no cloud API calls)
     - Supports streaming synthesis for low latency
     - Produces natural-sounding speech
-    
+
     Pros:
     - Fast, offline operation
     - Streaming output for immediate playback
     - Natural voice quality
-    
+
     Cons:
     - Requires Picovoice license
     - Limited voice options
@@ -36,12 +36,12 @@ class OrcaTTS(TTSEngine):
         model_path: Optional[str] = None,
     ):
         """Initialize Orca TTS.
-        
+
         Args:
             access_key: Picovoice access key. If None, reads from
                        PICOVOICE_API_KEY environment variable.
             model_path: Path to custom model file. If None, uses default.
-            
+
         Raises:
             ImportError: If pvorca is not installed
             ValueError: If access_key is not provided
@@ -73,10 +73,10 @@ class OrcaTTS(TTSEngine):
 
     def synthesize(self, text: str) -> AudioChunk:
         """Synthesize complete text to audio.
-        
+
         Args:
             text: Text to synthesize
-            
+
         Returns:
             Complete audio chunk
         """
@@ -88,15 +88,15 @@ class OrcaTTS(TTSEngine):
 
     def synthesize_stream(self, text: str) -> Iterator[AudioChunk]:
         """Synthesize with streaming output.
-        
+
         Yields audio chunks as they're generated for low-latency playback.
-        
+
         The Orca streaming API is designed for token-by-token synthesis from LLMs.
         For a complete text string, we feed it character by character or word by word.
-        
+
         Args:
             text: Text to synthesize
-            
+
         Yields:
             Audio chunks
         """

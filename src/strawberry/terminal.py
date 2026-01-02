@@ -35,7 +35,7 @@ class Colors:
 
 class TerminalApp:
     """Terminal-based interface for Strawberry AI.
-    
+
     Provides a simple chat interface with support for:
     - Text input/output
     - Hub LLM integration
@@ -51,7 +51,7 @@ class TerminalApp:
         response_handler: Optional[Callable[[str], str]] = None,
     ):
         """Initialize terminal app.
-        
+
         Args:
             config_path: Path to config file
             voice_mode: Enable voice interaction (requires backends)
@@ -90,7 +90,7 @@ class TerminalApp:
 
     def run(self) -> int:
         """Run the terminal application.
-        
+
         Returns:
             Exit code (0 for success)
         """
@@ -120,7 +120,8 @@ class TerminalApp:
 
         if self.voice_mode:
             print(f"{Colors.GREEN}Voice mode enabled{Colors.RESET}")
-            print(f"{Colors.DIM}Wake word: {', '.join(self.settings.wake_word.keywords)}{Colors.RESET}")
+            keywords = ", ".join(self.settings.wake_word.keywords)
+            print(f"{Colors.DIM}Wake word: {keywords}{Colors.RESET}")
         else:
             print(f"{Colors.YELLOW}Text mode (use --voice for voice interaction){Colors.RESET}")
 
@@ -163,7 +164,8 @@ class TerminalApp:
                     continue
                 elif user_input.lower() == "debug":
                     self.debug = not self.debug
-                    print(f"{Colors.YELLOW}Debug mode: {'on' if self.debug else 'off'}{Colors.RESET}")
+                    debug_state = "on" if self.debug else "off"
+                    print(f"{Colors.YELLOW}Debug mode: {debug_state}{Colors.RESET}")
                     continue
                 elif user_input.lower() == "clear":
                     self._conversation_history.clear()
@@ -215,7 +217,11 @@ class TerminalApp:
             # Porcupine requires specific frame_length (512 samples at 16kHz = 32ms)
             porcupine_frame_ms = int(wake.frame_length * 1000 / wake.sample_rate)
 
-            print(f"{Colors.DIM}Initializing audio (frame={porcupine_frame_ms}ms to match wake word)...{Colors.RESET}")
+            print(
+                f"{Colors.DIM}Initializing audio (frame={porcupine_frame_ms}ms "
+                f"to match wake word)..."
+                f"{Colors.RESET}"
+            )
             audio = SoundDeviceBackend(
                 sample_rate=wake.sample_rate,  # Use Porcupine's sample rate
                 frame_length_ms=porcupine_frame_ms,
@@ -251,7 +257,10 @@ class TerminalApp:
             # Register event handler
             pipeline.on_event(self._on_pipeline_event)
 
-            print(f"\n{Colors.GREEN}Ready! Say '{self.settings.wake_word.keywords[0]}' to start.{Colors.RESET}")
+            wake_word = self.settings.wake_word.keywords[0]
+            print(
+                f"\n{Colors.GREEN}Ready! Say '{wake_word}' to start.{Colors.RESET}"
+            )
             print(f"{Colors.DIM}Press Ctrl+C to stop.{Colors.RESET}\n")
 
             # Start pipeline
@@ -288,7 +297,7 @@ class TerminalApp:
 
     def _get_response(self, user_input: str) -> str:
         """Get response to user input (sync version for voice mode).
-        
+
         Override this or pass response_handler to customize.
         """
         if self._response_handler:
@@ -299,7 +308,7 @@ class TerminalApp:
 
     async def _get_response_async(self, user_input: str) -> str:
         """Get response to user input (async version).
-        
+
         Uses Hub for LLM chat if configured, otherwise falls back to local.
         """
         if self._response_handler:
@@ -317,7 +326,11 @@ class TerminalApp:
                 self._trim_history()
 
                 if self.debug:
-                    print(f"{Colors.DIM}Sending to Hub ({len(self._conversation_history)} messages)...{Colors.RESET}")
+                    msg_count = len(self._conversation_history)
+                    print(
+                        f"{Colors.DIM}Sending to Hub ({msg_count} messages)..."
+                        f"{Colors.RESET}"
+                    )
 
                 # Get response from Hub (use configurable temperature)
                 response = await self._hub_client.chat(
@@ -334,7 +347,10 @@ class TerminalApp:
                 self._trim_history()
 
                 if self.debug:
-                    print(f"{Colors.DIM}Model: {response.model}, Finish: {response.finish_reason}{Colors.RESET}")
+                    print(
+                        f"{Colors.DIM}Model: {response.model}, Finish: {response.finish_reason}"
+                        f"{Colors.RESET}"
+                    )
 
                 return response.content
 
@@ -391,7 +407,12 @@ class TerminalApp:
     def _print_help(self) -> None:
         """Print help message."""
         print(f"\n{Colors.BOLD}Commands:{Colors.RESET}")
-        print(f"  {Colors.CYAN}quit{Colors.RESET}, {Colors.CYAN}exit{Colors.RESET}, {Colors.CYAN}q{Colors.RESET}  - Exit the application")
+        print(
+            f"  {Colors.CYAN}quit{Colors.RESET},"
+            f" {Colors.CYAN}exit{Colors.RESET},"
+            f" {Colors.CYAN}q{Colors.RESET}"
+            "  - Exit the application"
+        )
         print(f"  {Colors.CYAN}help{Colors.RESET}            - Show this help message")
         print(f"  {Colors.CYAN}config{Colors.RESET}          - Show current configuration")
         print(f"  {Colors.CYAN}debug{Colors.RESET}           - Toggle debug mode")
@@ -403,7 +424,12 @@ class TerminalApp:
         print(f"\n{Colors.BOLD}Configuration:{Colors.RESET}")
         print(f"  Device: {self.settings.device.name} ({self.settings.device.id})")
         print(f"  Hub: {self.settings.hub.url}")
-        print(f"  Hub token: {'***' + self.settings.hub.token[-4:] if self.settings.hub.token else 'Not set'}")
+        hub_token = (
+            "***" + self.settings.hub.token[-4:]
+            if self.settings.hub.token
+            else "Not set"
+        )
+        print(f"  Hub token: {hub_token}")
         print(f"  Audio: {self.settings.audio.backend} @ {self.settings.audio.sample_rate}Hz")
         print(f"  Wake word: {self.settings.wake_word.keywords}")
         print(f"  VAD: {self.settings.vad.backend}")
@@ -414,7 +440,7 @@ class TerminalApp:
 
     def _trim_history(self) -> None:
         """Trim conversation history to prevent unbounded memory growth.
-        
+
         Keeps the most recent messages up to the configured max_history limit.
         """
         max_history = self.settings.conversation.max_history

@@ -25,7 +25,7 @@ class AssistantTurnWidget(QFrame):
     ):
         super().__init__(parent)
 
-        self.content = content
+        self._markdown = content
         self.timestamp = timestamp or datetime.now()
         self._theme = theme
 
@@ -61,8 +61,7 @@ class AssistantTurnWidget(QFrame):
         self._message.setOpenExternalLinks(True)
         self._message.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
 
-        html_content = render_markdown(self.content, self._theme)
-        self._message.setText(html_content)
+        self._render_message()
         bubble_layout.addWidget(self._message)
 
         self._tool_container = QWidget()
@@ -88,6 +87,21 @@ class AssistantTurnWidget(QFrame):
         outer_layout.addStretch()
 
         self._apply_style(bubble, sender, self._message, time_label)
+
+    def _render_message(self) -> None:
+        html_content = render_markdown(self._markdown, self._theme)
+        self._message.setText(html_content)
+
+    def set_markdown(self, content: str) -> None:
+        self._markdown = content
+        self._render_message()
+
+    def append_markdown(self, content: str) -> None:
+        if not self._markdown:
+            self._markdown = content
+        else:
+            self._markdown = f"{self._markdown}\n\n{content}"
+        self._render_message()
 
     def _apply_style(self, bubble: QFrame, sender: QLabel, message: QLabel, time_label: QLabel):
         if not self._theme:
@@ -121,3 +135,4 @@ class AssistantTurnWidget(QFrame):
 
     def set_theme(self, theme: Theme):
         self._theme = theme
+        self._render_message()

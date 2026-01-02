@@ -16,7 +16,7 @@ class DenoNotFoundError(Exception):
 
 class DenoProcessManager:
     """Manages the Deno subprocess hosting Pyodide.
-    
+
     Responsibilities:
     - Spawn/kill Deno process
     - Handle timeout/resource limits via Deno flags
@@ -61,10 +61,10 @@ class DenoProcessManager:
 
     async def start(self) -> Tuple[asyncio.StreamWriter, asyncio.StreamReader]:
         """Start Deno process.
-        
+
         Returns:
             (stdin, stdout) streams for communication
-            
+
         Raises:
             DenoNotFoundError: If Deno is not installed
             FileNotFoundError: If host script not found

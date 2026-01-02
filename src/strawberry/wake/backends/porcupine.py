@@ -13,14 +13,14 @@ from ..base import WakeWordDetector
 
 class PorcupineDetector(WakeWordDetector):
     """Wake word detection using Picovoice Porcupine.
-    
+
     Porcupine is a highly accurate, lightweight wake word engine.
     It runs entirely on-device without needing external services.
-    
-    Built-in keywords: alexa, americano, blueberry, bumblebee, 
-    computer, grapefruit, grasshopper, hey barista, hey google, 
+
+    Built-in keywords: alexa, americano, blueberry, bumblebee,
+    computer, grapefruit, grasshopper, hey barista, hey google,
     hey siri, jarvis, ok google, picovoice, porcupine, terminator
-    
+
     Custom keywords require training at https://console.picovoice.ai/
     """
 
@@ -31,7 +31,7 @@ class PorcupineDetector(WakeWordDetector):
         access_key: Optional[str] = None,
     ):
         """Initialize Porcupine detector.
-        
+
         Args:
             keywords: List of keywords to detect. Can be:
                       - Built-in keyword names (e.g., "jarvis", "computer")
@@ -39,7 +39,7 @@ class PorcupineDetector(WakeWordDetector):
             sensitivity: Detection sensitivity (0.0 to 1.0)
             access_key: Picovoice access key. If None, reads from
                        PICOVOICE_ACCESS_KEY environment variable.
-                       
+
         Raises:
             ImportError: If pvporcupine is not installed
             ValueError: If access_key is not provided and not in environment
@@ -105,10 +105,10 @@ class PorcupineDetector(WakeWordDetector):
 
     def process(self, audio_frame: np.ndarray) -> int:
         """Process audio frame for wake word.
-        
+
         Args:
             audio_frame: Audio samples (int16), must be exactly frame_length
-            
+
         Returns:
             Index of detected keyword, or -1 if none
         """

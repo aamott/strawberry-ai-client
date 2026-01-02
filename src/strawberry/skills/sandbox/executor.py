@@ -33,13 +33,13 @@ class SandboxConfig:
 
 class SandboxExecutor:
     """Executes LLM code in a secure Pyodide sandbox.
-    
+
     Architecture:
     - Spawns Deno process hosting Pyodide (Wasm)
     - Communicates via JSON over stdin/stdout
     - Injects proxy objects for skill calls
     - Enforces timeout and resource limits
-    
+
     Usage:
         executor = SandboxExecutor(gatekeeper, proxy_gen)
         result = await executor.execute("print(device.TimeSkill.get_time())")
@@ -52,7 +52,7 @@ class SandboxExecutor:
         config: Optional[SandboxConfig] = None,
     ):
         """Initialize sandbox executor.
-        
+
         Args:
             gatekeeper: Validates and executes skill calls
             proxy_generator: Generates proxy code for injection
@@ -114,14 +114,14 @@ class SandboxExecutor:
 
     def _handle_skill_call(self, path: str, args: List[Any], kwargs: Dict[str, Any]) -> Any:
         """Handle a skill call from the sandbox.
-        
+
         Called by the bridge when guest code calls device.Skill.method().
-        
+
         Args:
             path: "SkillClass.method_name"
             args: Positional arguments
             kwargs: Keyword arguments
-            
+
         Returns:
             Result from skill execution
         """
@@ -129,10 +129,10 @@ class SandboxExecutor:
 
     async def execute(self, code: str) -> ExecutionResult:
         """Execute code in the sandbox.
-        
+
         Args:
             code: Python code to execute
-            
+
         Returns:
             ExecutionResult with output or error
         """
@@ -170,7 +170,10 @@ class SandboxExecutor:
             logger.error(f"Deno not found: {e}")
             return ExecutionResult(
                 success=False,
-                error="Sandbox unavailable (Deno not installed). Install: curl -fsSL https://deno.land/install.sh | sh"
+                error=(
+                    "Sandbox unavailable (Deno not installed). Install: "
+                    "curl -fsSL https://deno.land/install.sh | sh"
+                ),
             )
 
         except BridgeError as e:
@@ -197,7 +200,7 @@ class SandboxExecutor:
 
     def _execute_direct(self, code: str) -> ExecutionResult:
         """Direct execution fallback (INSECURE - for development only).
-        
+
         This bypasses the sandbox and executes code directly.
         Only use when sandbox is disabled for debugging.
         """
@@ -214,9 +217,9 @@ class SandboxExecutor:
 
             def __getattr__(self, method_name):
                 def method(*args, **kwargs):
-                    return self._loader.get_skill(self._skill_name).instance.__class__.__dict__[method_name](
-                        self._loader.get_skill(self._skill_name).instance, *args, **kwargs
-                    )
+                    instance = self._loader.get_skill(self._skill_name).instance
+                    func = instance.__class__.__dict__[method_name]
+                    return func(instance, *args, **kwargs)
                 return method
 
         class DirectDeviceProxy:
@@ -254,7 +257,11 @@ class SandboxExecutor:
                     return f"Skill not found: {skill_name}"
                 for method in skill.methods:
                     if method.name == method_name:
-                        return f"def {method.signature}:\n    \"\"\"{method.docstring or 'No description'}\"\"\""
+                        doc = method.docstring or "No description"
+                        return (
+                            f"def {method.signature}:\n"
+                            f'    """{doc}"""'
+                        )
                 return f"Method not found: {method_name}"
 
         device = DirectDeviceProxy(self.gatekeeper.loader)

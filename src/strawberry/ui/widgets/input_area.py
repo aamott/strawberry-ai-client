@@ -47,7 +47,7 @@ class InputTextEdit(QTextEdit):
 
 class InputArea(QWidget):
     """Input area with text field, send button, and mic button.
-    
+
     Signals:
         message_submitted(str): Emitted when user submits a message
         mic_clicked: Emitted when mic button is clicked (toggle recording)
@@ -126,25 +126,25 @@ class InputArea(QWidget):
                 background-color: {self._theme.bg_secondary};
                 border-top: 1px solid {self._theme.border};
             }}
-            
+
             QPushButton#micRecordButton {{
                 background-color: {self._theme.bg_tertiary};
                 border: 2px solid {self._theme.border};
                 border-radius: 22px;
                 font-size: 18px;
             }}
-            
+
             QPushButton#micRecordButton:hover {{
                 background-color: {self._theme.accent};
                 border-color: {self._theme.accent};
             }}
-            
+
             QPushButton#micRecordButton[recording="true"] {{
                 background-color: {self._theme.error};
                 border-color: {self._theme.error};
                 animation: pulse 1s infinite;
             }}
-            
+
             QPushButton#micRecordButton[processing="true"] {{
                 background-color: {self._theme.warning};
                 border-color: {self._theme.warning};
@@ -199,7 +199,7 @@ class InputArea(QWidget):
 
     def set_mic_state(self, state: str):
         """Set the mic button state.
-        
+
         Args:
             state: One of MicState.IDLE, MicState.RECORDING, MicState.PROCESSING
         """

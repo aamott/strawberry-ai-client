@@ -91,10 +91,10 @@ SOUND_CONFIGS: dict[FeedbackSound, ToneConfig] = {
 
 class AudioFeedback:
     """Plays audio feedback sounds.
-    
+
     Uses sounddevice to play generated tones without blocking.
     Thread-safe for use from any thread.
-    
+
     Usage:
         feedback = AudioFeedback()
         feedback.play(FeedbackSound.WAKE_DETECTED)
@@ -106,7 +106,7 @@ class AudioFeedback:
         enabled: bool = True,
     ):
         """Initialize audio feedback.
-        
+
         Args:
             sample_rate: Output sample rate
             enabled: Whether feedback is enabled
@@ -127,10 +127,10 @@ class AudioFeedback:
 
     def _generate_tone(self, config: ToneConfig) -> np.ndarray:
         """Generate a tone or chord based on configuration.
-        
+
         Args:
             config: Tone configuration
-            
+
         Returns:
             Audio samples as float32 array
         """
@@ -155,7 +155,13 @@ class AudioFeedback:
                     elif config.wave_type == "square":
                         wave[delay_samples:] = np.sign(np.sin(2 * np.pi * freq * t_wave))
                     elif config.wave_type == "triangle":
-                        wave[delay_samples:] = 2 * np.abs(2 * (t_wave * freq - np.floor(t_wave * freq + 0.5))) - 1
+                        wave[delay_samples:] = (
+                            2
+                            * np.abs(
+                                2 * (t_wave * freq - np.floor(t_wave * freq + 0.5))
+                            )
+                            - 1
+                        )
             else:
                 # Simple wave, no stagger
                 if config.wave_type == "sine":
@@ -187,7 +193,7 @@ class AudioFeedback:
 
     def play(self, sound: FeedbackSound, blocking: bool = False):
         """Play a feedback sound.
-        
+
         Args:
             sound: The sound to play
             blocking: If True, wait for sound to complete
@@ -268,10 +274,10 @@ _feedback_instance: Optional[AudioFeedback] = None
 
 def get_feedback(enabled: bool = True) -> AudioFeedback:
     """Get or create the global audio feedback instance.
-    
+
     Args:
         enabled: Whether feedback should be enabled
-        
+
     Returns:
         AudioFeedback instance
     """

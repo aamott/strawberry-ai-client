@@ -11,15 +11,15 @@ from ..base import VADBackend
 
 class SileroVAD(VADBackend):
     """VAD using Silero model (runs locally, no API key needed).
-    
+
     Silero VAD is a lightweight, accurate VAD model that runs
     entirely on CPU without needing external services.
-    
+
     Pros:
     - Free, no API key needed
     - Fast (real-time capable)
     - Good accuracy
-    
+
     Cons:
     - Requires PyTorch (large dependency)
     - First run downloads model (~3MB)
@@ -31,11 +31,11 @@ class SileroVAD(VADBackend):
         threshold: float = 0.5,
     ):
         """Initialize Silero VAD.
-        
+
         Args:
             sample_rate: Audio sample rate (must be 8000 or 16000)
             threshold: Speech probability threshold (0.0 to 1.0)
-            
+
         Raises:
             ImportError: If torch is not installed
             ValueError: If sample_rate is not 8000 or 16000
@@ -69,10 +69,10 @@ class SileroVAD(VADBackend):
 
     def is_speech(self, audio_frame: np.ndarray) -> bool:
         """Detect speech in audio frame.
-        
+
         Args:
             audio_frame: Audio samples (int16)
-            
+
         Returns:
             True if speech probability >= threshold
         """
@@ -81,10 +81,10 @@ class SileroVAD(VADBackend):
 
     def get_probability(self, audio_frame: np.ndarray) -> float:
         """Get speech probability for audio frame.
-        
+
         Args:
             audio_frame: Audio samples (int16)
-            
+
         Returns:
             Probability of speech (0.0 to 1.0)
         """

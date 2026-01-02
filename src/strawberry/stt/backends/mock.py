@@ -9,7 +9,7 @@ from ..base import STTEngine, TranscriptionResult
 
 class MockSTT(STTEngine):
     """Mock STT engine for testing.
-    
+
     Can be configured to return specific transcriptions or
     use a custom transcription function.
     """
@@ -22,7 +22,7 @@ class MockSTT(STTEngine):
         responses: Optional[List[str]] = None,
     ):
         """Initialize mock STT.
-        
+
         Args:
             sample_rate: Simulated sample rate
             default_text: Default text to return if no other config

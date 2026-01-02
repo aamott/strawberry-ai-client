@@ -50,7 +50,7 @@ def create_strawberry_icon() -> QIcon:
 
 class StrawberryApp:
     """Main application with system tray integration.
-    
+
     Handles:
     - Application lifecycle
     - System tray icon and menu
@@ -73,7 +73,7 @@ class StrawberryApp:
 
     def run(self) -> int:
         """Run the application.
-        
+
         Returns:
             Exit code (0 for success)
         """

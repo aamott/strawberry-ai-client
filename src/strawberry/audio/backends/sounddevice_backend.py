@@ -10,7 +10,7 @@ from ..base import AudioBackend
 
 class SoundDeviceBackend(AudioBackend):
     """Audio backend using sounddevice library.
-    
+
     This is the default backend - cross-platform and reliable.
     """
 
@@ -21,7 +21,7 @@ class SoundDeviceBackend(AudioBackend):
         device: Optional[int] = None,
     ):
         """Initialize sounddevice backend.
-        
+
         Args:
             sample_rate: Audio sample rate in Hz
             frame_length_ms: Length of each audio frame in milliseconds
@@ -69,10 +69,10 @@ class SoundDeviceBackend(AudioBackend):
 
     def read_frame(self) -> np.ndarray:
         """Read a single audio frame.
-        
+
         Returns:
             numpy array of audio samples (int16)
-            
+
         Raises:
             RuntimeError: If stream is not active
         """

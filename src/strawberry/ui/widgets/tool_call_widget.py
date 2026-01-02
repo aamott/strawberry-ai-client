@@ -11,7 +11,7 @@ from ..theme import Theme
 
 class ToolCallWidget(QFrame):
     """Widget displaying a tool/skill call and its result.
-    
+
     Shows:
     - Tool name and arguments
     - Execution status (running, success, error)

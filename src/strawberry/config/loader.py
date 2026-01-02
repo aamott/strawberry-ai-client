@@ -33,11 +33,11 @@ def load_config(
     env_path: Optional[Path] = None,
 ) -> Settings:
     """Load configuration from YAML file and environment.
-    
+
     Args:
         config_path: Path to config.yaml (default: config/config.yaml)
         env_path: Path to .env file (default: .env)
-    
+
     Returns:
         Loaded Settings instance
     """
@@ -81,7 +81,7 @@ def load_config(
 
 def get_settings() -> Settings:
     """Get the current settings instance.
-    
+
     Loads default settings if not yet loaded.
     """
     global _settings

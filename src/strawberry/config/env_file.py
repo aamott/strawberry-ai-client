@@ -49,7 +49,7 @@ def read_env_file(env_path: Path) -> Tuple[Dict[str, str], List[EnvLine]]:
         return {}, []
 
     text = env_path.read_text(encoding="utf-8")
-    lines = [_parse_env_line(l) for l in text.splitlines(keepends=True)]
+    lines = [_parse_env_line(line) for line in text.splitlines(keepends=True)]
 
     values: Dict[str, str] = {}
     for ln in lines:

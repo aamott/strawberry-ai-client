@@ -13,7 +13,7 @@ from ..theme import Theme
 
 class ChatBubble(QFrame):
     """A chat message bubble.
-    
+
     Displays a message with sender info and timestamp.
     Supports user messages (right-aligned) and AI messages (left-aligned).
     """

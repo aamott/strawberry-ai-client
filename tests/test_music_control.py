@@ -190,7 +190,11 @@ class TestAdvancedMusicControlSkill:
         # Create a playlist first
         self.advanced_skill.create_playlist("test_playlist", ["song1"])
 
-        with patch.object(self.advanced_skill.base_control, 'play_music_file', return_value="Playing song1.mp3"):
+        with patch.object(
+            self.advanced_skill.base_control,
+            "play_music_file",
+            return_value="Playing song1.mp3",
+        ):
             result = self.advanced_skill.play_playlist("test_playlist")
             assert "Playing song1.mp3" in result
 

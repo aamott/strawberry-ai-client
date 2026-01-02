@@ -164,7 +164,7 @@ def test_pipeline_config_defaults():
 
     assert config.max_recording_duration == 30.0
     assert config.lookback_frames == 10
-    assert config.interrupt_enabled == True
+    assert config.interrupt_enabled
 
 
 def test_pipeline_uses_custom_config():

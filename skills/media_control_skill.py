@@ -29,13 +29,13 @@ class MediaControlSkill:
 
     def set_volume(self, volume: int) -> str:
         """Set the media volume.
-        
+
         Args:
             volume: Volume level (0-100)
-            
+
         Returns:
             Confirmation message
-            
+
         Raises:
             ValueError: If volume is out of range
         """
@@ -46,7 +46,7 @@ class MediaControlSkill:
 
     def get_volume(self) -> int:
         """Get the current volume level.
-        
+
         Returns:
             Current volume level (0-100)
         """
@@ -55,7 +55,7 @@ class MediaControlSkill:
 
     def get_current_track(self) -> dict:
         """Get information about the currently playing track.
-        
+
         Returns:
             Dictionary with track information
         """
@@ -75,15 +75,55 @@ class MediaControlSkill:
             if system == "Windows":
                 # Windows media control commands
                 if command == "play":
-                    subprocess.run(["powershell", "(New-Object -ComObject WScript.Shell).SendKeys('{MEDIA_PLAY_PAUSE}')"])
+                    subprocess.run(
+                        [
+                            "powershell",
+                            (
+                                "(New-Object -ComObject WScript.Shell).SendKeys"
+                                "('{MEDIA_PLAY_PAUSE}')"
+                            ),
+                        ]
+                    )
                 elif command == "pause":
-                    subprocess.run(["powershell", "(New-Object -ComObject WScript.Shell).SendKeys('{MEDIA_PLAY_PAUSE}')"])
+                    subprocess.run(
+                        [
+                            "powershell",
+                            (
+                                "(New-Object -ComObject WScript.Shell).SendKeys"
+                                "('{MEDIA_PLAY_PAUSE}')"
+                            ),
+                        ]
+                    )
                 elif command == "stop":
-                    subprocess.run(["powershell", "(New-Object -ComObject WScript.Shell).SendKeys('{MEDIA_STOP}')"])
+                    subprocess.run(
+                        [
+                            "powershell",
+                            (
+                                "(New-Object -ComObject WScript.Shell).SendKeys"
+                                "('{MEDIA_STOP}')"
+                            ),
+                        ]
+                    )
                 elif command == "next":
-                    subprocess.run(["powershell", "(New-Object -ComObject WScript.Shell).SendKeys('{MEDIA_NEXT_TRACK}')"])
+                    subprocess.run(
+                        [
+                            "powershell",
+                            (
+                                "(New-Object -ComObject WScript.Shell).SendKeys"
+                                "('{MEDIA_NEXT_TRACK}')"
+                            ),
+                        ]
+                    )
                 elif command == "previous":
-                    subprocess.run(["powershell", "(New-Object -ComObject WScript.Shell).SendKeys('{MEDIA_PREV_TRACK}')"])
+                    subprocess.run(
+                        [
+                            "powershell",
+                            (
+                                "(New-Object -ComObject WScript.Shell).SendKeys"
+                                "('{MEDIA_PREV_TRACK}')"
+                            ),
+                        ]
+                    )
                 elif command.startswith("volume"):
                     # Volume control would require more complex implementation
                     pass
@@ -96,7 +136,13 @@ class MediaControlSkill:
                 elif command == "next":
                     subprocess.run(["osascript", "-e", 'tell application "Spotify" to next track'])
                 elif command == "previous":
-                    subprocess.run(["osascript", "-e", 'tell application "Spotify" to previous track'])
+                    subprocess.run(
+                        [
+                            "osascript",
+                            "-e",
+                            'tell application "Spotify" to previous track',
+                        ]
+                    )
             elif system == "Linux":
                 # Linux uses playerctl or dbus
                 subprocess.run(["playerctl", command])
@@ -112,11 +158,11 @@ class MusicLibrarySkill:
 
     def search_songs(self, query: str, max_results: int = 10) -> list:
         """Search for songs in the music library.
-        
+
         Args:
             query: Search query
             max_results: Maximum number of results
-            
+
         Returns:
             List of matching songs
         """
@@ -132,11 +178,11 @@ class MusicLibrarySkill:
 
     def create_playlist(self, name: str, song_titles: list) -> str:
         """Create a new playlist.
-        
+
         Args:
             name: Playlist name
             song_titles: List of song titles to add
-            
+
         Returns:
             Confirmation message
         """
@@ -144,10 +190,10 @@ class MusicLibrarySkill:
 
     def play_playlist(self, name: str) -> str:
         """Play a specific playlist.
-        
+
         Args:
             name: Playlist name
-            
+
         Returns:
             Confirmation message
         """

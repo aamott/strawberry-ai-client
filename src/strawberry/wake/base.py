@@ -8,14 +8,14 @@ import numpy as np
 
 class WakeWordDetector(ABC):
     """Abstract base class for wake word detection.
-    
+
     All wake word backends must implement this interface.
     """
 
     @abstractmethod
     def __init__(self, keywords: List[str], sensitivity: float = 0.5):
         """Initialize the wake word detector.
-        
+
         Args:
             keywords: List of wake words to detect
             sensitivity: Detection sensitivity (0.0 to 1.0)
@@ -45,10 +45,10 @@ class WakeWordDetector(ABC):
     @abstractmethod
     def process(self, audio_frame: np.ndarray) -> int:
         """Process an audio frame for wake word detection.
-        
+
         Args:
             audio_frame: Audio samples (int16), must be frame_length samples
-            
+
         Returns:
             Index of detected keyword (0-based), or -1 if none detected
         """
@@ -56,7 +56,7 @@ class WakeWordDetector(ABC):
 
     def cleanup(self) -> None:
         """Release any resources held by the detector.
-        
+
         Override in subclasses that need cleanup.
         """
         pass

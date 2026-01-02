@@ -17,7 +17,7 @@ class MusicControlSkill:
 
     def __init__(self, music_folder: Optional[str] = None):
         """Initialize music control skill.
-        
+
         Args:
             music_folder: Path to music library folder (defaults to Music directory)
         """
@@ -47,7 +47,12 @@ class MusicControlSkill:
         music_files = []
 
         for ext in extensions:
-            music_files.extend(glob.glob(os.path.join(self.music_folder, '**', ext), recursive=True))
+            music_files.extend(
+                glob.glob(
+                    os.path.join(self.music_folder, "**", ext),
+                    recursive=True,
+                )
+            )
 
         return music_files
 
@@ -82,10 +87,10 @@ class MusicControlSkill:
 
     def play_music_file(self, file_path: str) -> str:
         """Play a specific music file using the system's default player.
-        
+
         Args:
             file_path: Path to the music file to play
-            
+
         Returns:
             Confirmation message or error
         """
@@ -116,11 +121,11 @@ class MusicControlSkill:
 
     def search_music(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
         """Search music library for tracks.
-        
+
         Args:
             query: Search query (matches against title, artist, album)
             max_results: Maximum number of results to return
-            
+
         Returns:
             List of matching tracks with metadata
         """
@@ -150,10 +155,10 @@ class MusicControlSkill:
 
     def play_song_by_title(self, title: str) -> str:
         """Play a song by its title.
-        
+
         Args:
             title: Title of the song to play
-            
+
         Returns:
             Confirmation message or error
         """
@@ -177,10 +182,10 @@ class MusicControlSkill:
 
     def set_music_folder(self, folder_path: str) -> str:
         """Set the music folder path.
-        
+
         Args:
             folder_path: Path to the music folder
-            
+
         Returns:
             Confirmation message
         """
@@ -194,7 +199,7 @@ class MusicControlSkill:
 
     def refresh_music_library(self) -> str:
         """Refresh the music library cache.
-        
+
         Returns:
             Confirmation message
         """
@@ -210,7 +215,8 @@ class AdvancedMusicControlSkill:
     def __init__(self, music_folder: Optional[str] = None):
         """Initialize advanced music control."""
         self.base_control = MusicControlSkill(music_folder)
-        self.playlists_file = os.path.join(music_folder or self.base_control._get_default_music_folder(), 'playlists.json')
+        base_folder = music_folder or self.base_control._get_default_music_folder()
+        self.playlists_file = os.path.join(base_folder, "playlists.json")
         self._playlists = self._load_playlists()
 
     def _load_playlists(self) -> Dict[str, List[str]]:
@@ -235,11 +241,11 @@ class AdvancedMusicControlSkill:
 
     def create_playlist(self, name: str, song_titles: List[str]) -> str:
         """Create a new playlist.
-        
+
         Args:
             name: Playlist name
             song_titles: List of song titles to add
-            
+
         Returns:
             Confirmation message
         """
@@ -258,10 +264,10 @@ class AdvancedMusicControlSkill:
 
     def play_playlist(self, name: str) -> str:
         """Play a playlist.
-        
+
         Args:
             name: Playlist name
-            
+
         Returns:
             Confirmation message or error
         """

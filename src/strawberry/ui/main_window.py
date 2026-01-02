@@ -21,7 +21,7 @@ from .widgets import ChatArea, InputArea, MicState, StatusBar, VoiceIndicator
 
 class MainWindow(QMainWindow):
     """Main application window with chat interface.
-    
+
     Signals:
         closing: Emitted when window is about to close
         minimized_to_tray: Emitted when minimized to system tray
@@ -304,7 +304,8 @@ class MainWindow(QMainWindow):
                 self._connected = healthy
 
                 if healthy:
-                    # Update status manually since callback might not have fired yet if we didn't use connect_websocket explicitly here
+                    # Update status manually since callback might not have fired yet if we didn't
+                    # use connect_websocket explicitly here
                     # But connect_websocket is called by app logic usually?
                     # Actually HubClient.health() is HTTP, not WebSocket.
                     # We should probably initialize WebSocket here or rely on explicit connect.
@@ -337,7 +338,8 @@ class MainWindow(QMainWindow):
 
         # Update indicator
         self._update_indicator_style(connected)
-        self._status_indicator.setToolTip(f"Hub Status: {'Connected' if connected else 'Disconnected'}")
+        status = "Connected" if connected else "Disconnected"
+        self._status_indicator.setToolTip(f"Hub Status: {status}")
         self._status_text.setText("Online" if connected else "Offline")
 
         # Update status bar
@@ -391,19 +393,21 @@ class MainWindow(QMainWindow):
 
     async def _send_message(self, message: str):
         """Send message to Hub using agent loop.
-        
+
         The agent loop allows the LLM to:
         1. Search for skills
         2. Call skills and see results
         3. Continue reasoning based on results
         4. Make more calls or provide final response
-        
+
         Loop ends when LLM responds without code blocks (max 5 iterations).
         """
         MAX_ITERATIONS = 5
 
         try:
             import re
+
+            assistant_turn = self._chat_area.add_assistant_turn("(Thinking...)")
 
             # Build initial messages with system prompt
             messages_to_send = []
@@ -456,7 +460,6 @@ class MainWindow(QMainWindow):
                     print("[Agent] No code blocks, ending loop")
                     break
 
-                # Create a notebook-style assistant turn for this iteration
                 iteration_display = re.sub(
                     r"```[pP]ython\s*.*?\s*```",
                     "",
@@ -465,7 +468,14 @@ class MainWindow(QMainWindow):
                 ).strip()
                 if not iteration_display:
                     iteration_display = "(Running tools...)"
-                self._chat_area.add_message(iteration_display, is_user=False)
+                if iteration == 0 and assistant_turn is not None:
+                    assistant_turn.set_markdown(
+                        f"**Step {iteration + 1}:**\n\n{iteration_display}"
+                    )
+                else:
+                    assistant_turn.append_markdown(
+                        f"**Step {iteration + 1}:**\n\n{iteration_display}"
+                    )
 
                 # Execute code blocks and display in UI
                 outputs = []
@@ -503,7 +513,10 @@ class MainWindow(QMainWindow):
 
                 # Format tool output clearly - tell LLM to continue
                 tool_output = chr(10).join(outputs) if outputs else "(no output)"
-                tool_message = f"[Code executed. Output:]\n{tool_output}\n\n[Now respond naturally to the user based on this result.]"
+                tool_message = (
+                    f"[Code executed. Output:]\n{tool_output}\n\n"
+                    "[Now respond naturally to the user based on this result.]"
+                )
                 messages_to_send.append(ChatMessage(role="user", content=tool_message))
 
                 print(f"[Agent] Tool output sent: {tool_output[:100]}...")
@@ -539,7 +552,10 @@ class MainWindow(QMainWindow):
                 # Trim history after adding response
                 self._trim_history()
 
-                self._chat_area.add_message(display_content, is_user=False)
+                if display_content:
+                    assistant_turn.append_markdown(f"**Final:**\n\n{display_content}")
+                else:
+                    assistant_turn.append_markdown("**Final:**\n\n(No response text)")
 
                 # Update status with iteration count
                 iter_info = f" ({len(all_tool_calls)} tool calls)" if all_tool_calls else ""
@@ -555,7 +571,7 @@ class MainWindow(QMainWindow):
 
     def _trim_history(self) -> None:
         """Trim conversation history to prevent unbounded memory growth.
-        
+
         Keeps the most recent messages up to the configured max_history limit.
         """
         max_history = self.settings.conversation.max_history
@@ -622,7 +638,7 @@ class MainWindow(QMainWindow):
 
     def _handle_voice_transcription(self, text: str) -> str:
         """Handle transcription from voice - get LLM response.
-        
+
         This is called from a background thread, so we use a thread-safe
         approach to get the response from the async Hub client.
         """
@@ -648,7 +664,7 @@ class MainWindow(QMainWindow):
 
     async def _get_voice_response_async(self, text: str) -> str:
         """Get response from Hub for voice transcription (async).
-        
+
         Creates a fresh HTTP client since we're in a different thread/loop.
         """
         import httpx
@@ -684,7 +700,9 @@ class MainWindow(QMainWindow):
 
                     # Update conversation history (thread-safe - just appending)
                     self._conversation_history.append(ChatMessage(role="user", content=text))
-                    self._conversation_history.append(ChatMessage(role="assistant", content=response_text))
+                    self._conversation_history.append(
+                        ChatMessage(role="assistant", content=response_text)
+                    )
 
                     return response_text
                 else:
@@ -866,7 +884,7 @@ class MainWindow(QMainWindow):
 
     def _on_mic_button_clicked(self):
         """Handle mic button click - toggle voice recording.
-        
+
         Click 1: Start recording (like wake word was detected)
         Click 2: Stop recording and process
         """

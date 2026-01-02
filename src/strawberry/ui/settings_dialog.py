@@ -32,13 +32,13 @@ from .theme import DARK_THEME, Theme, get_stylesheet
 
 class SettingsDialog(QDialog):
     """Settings configuration dialog.
-    
+
     Allows users to configure:
     - Device name
     - Hub connection (URL, token)
     - UI theme
     - Skills folder
-    
+
     Signals:
         settings_changed: Emitted when settings are saved
     """
@@ -260,11 +260,17 @@ class SettingsDialog(QDialog):
 
         self._env_table = QTableWidget(0, 2)
         self._env_table.setHorizontalHeaderLabels(["Key", "Value"])
-        self._env_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self._env_table.horizontalHeader().setSectionResizeMode(
+            0,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
         self._env_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self._env_table.verticalHeader().setVisible(False)
         self._env_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._env_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
+        self._env_table.setEditTriggers(
+            QTableWidget.EditTrigger.DoubleClicked
+            | QTableWidget.EditTrigger.EditKeyPressed
+        )
         advanced_layout.addWidget(self._env_table)
 
         btn_row = QHBoxLayout()

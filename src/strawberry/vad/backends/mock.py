@@ -9,7 +9,7 @@ from ..base import VADBackend
 
 class MockVAD(VADBackend):
     """Mock VAD backend for testing.
-    
+
     Can be configured to detect speech based on:
     - Specific frame indices (for deterministic testing)
     - Audio amplitude threshold
@@ -24,7 +24,7 @@ class MockVAD(VADBackend):
         detector: Optional[Callable[[np.ndarray], bool]] = None,
     ):
         """Initialize mock VAD.
-        
+
         Args:
             sample_rate: Expected audio sample rate
             speech_frames: Set of frame indices that should be detected as speech
@@ -68,7 +68,7 @@ class MockVAD(VADBackend):
 
     def get_probability(self, audio_frame: np.ndarray) -> float:
         """Get speech probability.
-        
+
         Note: Must call is_speech() first to update probability.
         """
         return self._probability

@@ -174,7 +174,10 @@ class TestRunner:
         if self.suite.failed == 0:
             print(f"✓ {self.suite.passed} passed ({self.suite.duration_ms:.0f}ms)")
         else:
-            print(f"✗ {self.suite.failed} failed, {self.suite.passed} passed ({self.suite.duration_ms:.0f}ms)")
+            print(
+                f"✗ {self.suite.failed} failed, {self.suite.passed} passed "
+                f"({self.suite.duration_ms:.0f}ms)"
+            )
 
             # List failed tests
             print("\nFailed tests:")

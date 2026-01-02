@@ -123,7 +123,7 @@ def get_stylesheet(theme: Theme) -> str:
         QMainWindow {{
             background-color: {theme.bg_primary};
         }}
-        
+
         /* Central Widget */
         QWidget {{
             background-color: {theme.bg_primary};
@@ -131,33 +131,33 @@ def get_stylesheet(theme: Theme) -> str:
             font-family: "Segoe UI", "SF Pro Display", "Ubuntu", sans-serif;
             font-size: 14px;
         }}
-        
+
         /* Scroll Area */
         QScrollArea {{
             background-color: {theme.bg_primary};
             border: none;
         }}
-        
+
         QScrollBar:vertical {{
             background-color: {theme.bg_secondary};
             width: 10px;
             border-radius: 5px;
         }}
-        
+
         QScrollBar::handle:vertical {{
             background-color: {theme.bg_tertiary};
             border-radius: 5px;
             min-height: 30px;
         }}
-        
+
         QScrollBar::handle:vertical:hover {{
             background-color: {theme.text_muted};
         }}
-        
+
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
             height: 0px;
         }}
-        
+
         /* Text Input */
         QTextEdit, QLineEdit {{
             background-color: {theme.bg_secondary};
@@ -167,11 +167,11 @@ def get_stylesheet(theme: Theme) -> str:
             padding: 12px;
             selection-background-color: {theme.accent};
         }}
-        
+
         QTextEdit:focus, QLineEdit:focus {{
             border-color: {theme.border_focus};
         }}
-        
+
         /* Buttons */
         QPushButton {{
             background-color: {theme.accent};
@@ -181,40 +181,40 @@ def get_stylesheet(theme: Theme) -> str:
             padding: 10px 20px;
             font-weight: 600;
         }}
-        
+
         QPushButton:hover {{
             background-color: {theme.accent_hover};
         }}
-        
+
         QPushButton:pressed {{
             background-color: {theme.accent};
         }}
-        
+
         QPushButton:disabled {{
             background-color: {theme.bg_tertiary};
             color: {theme.text_muted};
         }}
-        
+
         /* Secondary Button */
         QPushButton[secondary="true"] {{
             background-color: {theme.bg_tertiary};
             color: {theme.text_primary};
         }}
-        
+
         QPushButton[secondary="true"]:hover {{
             background-color: {theme.border};
         }}
-        
+
         /* Labels */
         QLabel {{
             color: {theme.text_primary};
             background-color: transparent;
         }}
-        
+
         QLabel[muted="true"] {{
             color: {theme.text_muted};
         }}
-        
+
         /* Menu */
         QMenu {{
             background-color: {theme.bg_secondary};
@@ -222,23 +222,23 @@ def get_stylesheet(theme: Theme) -> str:
             border-radius: 8px;
             padding: 4px;
         }}
-        
+
         QMenu::item {{
             padding: 8px 24px;
             border-radius: 4px;
         }}
-        
+
         QMenu::item:selected {{
             background-color: {theme.bg_tertiary};
         }}
-        
+
         /* Tab Widget */
         QTabWidget::pane {{
             background-color: {theme.bg_secondary};
             border: 1px solid {theme.border};
             border-radius: 8px;
         }}
-        
+
         QTabBar::tab {{
             background-color: {theme.bg_tertiary};
             color: {theme.text_secondary};
@@ -246,18 +246,18 @@ def get_stylesheet(theme: Theme) -> str:
             border-top-left-radius: 8px;
             border-top-right-radius: 8px;
         }}
-        
+
         QTabBar::tab:selected {{
             background-color: {theme.bg_secondary};
             color: {theme.text_primary};
         }}
-        
+
         /* Checkbox & Radio */
         QCheckBox, QRadioButton {{
             color: {theme.text_primary};
             spacing: 8px;
         }}
-        
+
         QCheckBox::indicator, QRadioButton::indicator {{
             width: 18px;
             height: 18px;
@@ -265,16 +265,16 @@ def get_stylesheet(theme: Theme) -> str:
             border-radius: 4px;
             background-color: {theme.bg_secondary};
         }}
-        
+
         QCheckBox::indicator:checked {{
             background-color: {theme.accent};
             border-color: {theme.accent};
         }}
-        
+
         QRadioButton::indicator {{
             border-radius: 9px;
         }}
-        
+
         /* ComboBox */
         QComboBox {{
             background-color: {theme.bg_secondary};
@@ -283,34 +283,34 @@ def get_stylesheet(theme: Theme) -> str:
             border-radius: 8px;
             padding: 8px 12px;
         }}
-        
+
         QComboBox:focus {{
             border-color: {theme.border_focus};
         }}
-        
+
         QComboBox::drop-down {{
             border: none;
             width: 24px;
         }}
-        
+
         QComboBox QAbstractItemView {{
             background-color: {theme.bg_secondary};
             border: 1px solid {theme.border};
             selection-background-color: {theme.bg_tertiary};
         }}
-        
+
         /* Splitter */
         QSplitter::handle {{
             background-color: {theme.border};
         }}
-        
+
         /* Status Bar */
         QStatusBar {{
             background-color: {theme.bg_secondary};
             color: {theme.text_secondary};
             border-top: 1px solid {theme.border};
         }}
-        
+
         /* ToolTip */
         QToolTip {{
             background-color: {theme.bg_tertiary};

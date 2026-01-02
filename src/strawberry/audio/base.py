@@ -8,13 +8,13 @@ import numpy as np
 
 class AudioBackend(ABC):
     """Abstract base class for audio input backends.
-    
+
     All audio backends must implement this interface to be pluggable.
     """
 
     def __init__(self, sample_rate: int = 16000, frame_length_ms: int = 30):
         """Initialize the audio backend.
-        
+
         Args:
             sample_rate: Audio sample rate in Hz (default 16000 for most STT)
             frame_length_ms: Length of each audio frame in milliseconds
@@ -50,10 +50,10 @@ class AudioBackend(ABC):
     @abstractmethod
     def read_frame(self) -> np.ndarray:
         """Read a single audio frame.
-        
+
         Returns:
             numpy array of audio samples (int16)
-            
+
         Raises:
             RuntimeError: If stream is not active
         """
@@ -61,7 +61,7 @@ class AudioBackend(ABC):
 
     def frames(self) -> Iterator[np.ndarray]:
         """Yield audio frames continuously.
-        
+
         Yields:
             numpy arrays of audio samples (int16)
         """

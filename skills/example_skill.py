@@ -8,7 +8,7 @@ class TimeSkill:
 
     def get_current_time(self) -> str:
         """Get the current time.
-        
+
         Returns:
             Current time as a formatted string (HH:MM:SS)
         """
@@ -16,7 +16,7 @@ class TimeSkill:
 
     def get_current_date(self) -> str:
         """Get the current date.
-        
+
         Returns:
             Current date as a formatted string (YYYY-MM-DD)
         """
@@ -24,7 +24,7 @@ class TimeSkill:
 
     def get_day_of_week(self) -> str:
         """Get the current day of the week.
-        
+
         Returns:
             Day name (e.g., "Monday")
         """
@@ -36,11 +36,11 @@ class CalculatorSkill:
 
     def add(self, a: float, b: float) -> float:
         """Add two numbers.
-        
+
         Args:
             a: First number
             b: Second number
-            
+
         Returns:
             Sum of a and b
         """
@@ -48,11 +48,11 @@ class CalculatorSkill:
 
     def subtract(self, a: float, b: float) -> float:
         """Subtract b from a.
-        
+
         Args:
             a: First number
             b: Second number
-            
+
         Returns:
             Difference (a - b)
         """
@@ -60,11 +60,11 @@ class CalculatorSkill:
 
     def multiply(self, a: float, b: float) -> float:
         """Multiply two numbers.
-        
+
         Args:
             a: First number
             b: Second number
-            
+
         Returns:
             Product of a and b
         """
@@ -72,14 +72,14 @@ class CalculatorSkill:
 
     def divide(self, a: float, b: float) -> float:
         """Divide a by b.
-        
+
         Args:
             a: Dividend
             b: Divisor
-            
+
         Returns:
             Quotient (a / b)
-            
+
         Raises:
             ValueError: If b is zero
         """

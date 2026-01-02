@@ -10,13 +10,13 @@ logger = logging.getLogger(__name__)
 
 class AudioPlayer:
     """Simple audio playback using sounddevice.
-    
+
     Handles playing TTS audio chunks through the system's default output device.
     """
 
     def __init__(self, sample_rate: int = 22050, device: Optional[int] = None):
         """Initialize audio player.
-        
+
         Args:
             sample_rate: Sample rate of audio to play
             device: Output device index (None for default)
@@ -40,7 +40,7 @@ class AudioPlayer:
 
     def play(self, audio: np.ndarray, sample_rate: Optional[int] = None, blocking: bool = True):
         """Play audio samples.
-        
+
         Args:
             audio: Audio samples (int16 or float32)
             sample_rate: Sample rate (uses default if None)

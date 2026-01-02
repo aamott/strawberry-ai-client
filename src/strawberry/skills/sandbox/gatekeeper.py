@@ -19,12 +19,12 @@ class SkillNotAllowedError(Exception):
 
 class Gatekeeper:
     """Validates and executes skill calls from the sandbox.
-    
+
     Security:
     - Only allows registered skill methods
     - Logs all calls for audit
     - Sanitizes errors before returning
-    
+
     Supports both local and remote modes:
     - Local: "SkillClass.method" → execute local skill
     - Remote: "remote:Device.Skill.method" → route to DeviceManager
@@ -33,7 +33,7 @@ class Gatekeeper:
 
     def __init__(self, loader: SkillLoader, device_manager: Optional["DeviceManager"] = None):
         """Initialize gatekeeper.
-        
+
         Args:
             loader: SkillLoader with registered skills
             device_manager: Optional DeviceManager for remote calls
@@ -69,10 +69,10 @@ class Gatekeeper:
 
     def is_allowed(self, path: str) -> bool:
         """Check if a skill path is allowed.
-        
+
         Args:
             path: "SkillClass.method_name"
-            
+
         Returns:
             True if allowed, False otherwise
         """
@@ -80,7 +80,7 @@ class Gatekeeper:
 
     def execute(self, path: str, args: List[Any], kwargs: Dict[str, Any]) -> Any:
         """Execute a skill call.
-        
+
         Args:
             path: Call path, one of:
                 - "SkillClass.method" (local)
@@ -89,10 +89,10 @@ class Gatekeeper:
                 - "device_manager.describe_function" (remote discovery)
             args: Positional arguments
             kwargs: Keyword arguments
-            
+
         Returns:
             Result from skill execution
-            
+
         Raises:
             SkillNotAllowedError: If path not in allow-list
             ValueError: If skill/method not found
@@ -146,7 +146,7 @@ class Gatekeeper:
 
     def _execute_remote(self, path: str, args: List[Any], kwargs: Dict[str, Any]) -> Any:
         """Execute a remote skill call via DeviceManager.
-        
+
         Args:
             path: "DeviceName.SkillClass.method"
             args: Positional arguments
@@ -178,7 +178,7 @@ class Gatekeeper:
 
     def _execute_device_manager(self, method: str, args: List[Any], kwargs: Dict[str, Any]) -> Any:
         """Execute a DeviceManager method (search_skills, describe_function).
-        
+
         Args:
             method: Method name (search_skills or describe_function)
             args: Positional arguments
@@ -202,10 +202,10 @@ class Gatekeeper:
 
     def _sanitize_error(self, error: str) -> str:
         """Remove sensitive info from error messages.
-        
+
         Args:
             error: Raw error message
-            
+
         Returns:
             Sanitized error message
         """

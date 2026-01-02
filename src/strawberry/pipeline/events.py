@@ -42,7 +42,7 @@ class EventType(Enum):
 @dataclass
 class PipelineEvent:
     """Event emitted by the conversation pipeline.
-    
+
     Attributes:
         type: Type of event
         data: Event-specific data

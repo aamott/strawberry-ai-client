@@ -65,12 +65,12 @@ class VoiceLevelBar(QWidget):
 
 class VoiceIndicator(QFrame):
     """Voice activity indicator with microphone button and level bars.
-    
+
     Shows:
     - Microphone toggle button
     - Audio level visualization
     - Current state (idle, listening, processing, speaking)
-    
+
     Signals:
         voice_toggled(bool): Emitted when voice mode is toggled
         push_to_talk_pressed: Emitted when PTT button is pressed
@@ -155,22 +155,22 @@ class VoiceIndicator(QFrame):
                 background-color: {self._theme.bg_secondary};
                 border-bottom: 1px solid {self._theme.border};
             }}
-            
+
             QPushButton#micButton {{
                 background-color: {self._theme.bg_tertiary};
                 border: none;
                 border-radius: 16px;
                 font-size: 16px;
             }}
-            
+
             QPushButton#micButton:checked {{
                 background-color: {self._theme.accent};
             }}
-            
+
             QPushButton#micButton:hover {{
                 background-color: {self._theme.border};
             }}
-            
+
             QPushButton#micButton:checked:hover {{
                 background-color: {self._theme.accent_hover};
             }}
