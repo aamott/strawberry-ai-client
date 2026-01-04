@@ -1,0 +1,100 @@
+# =============================================================================
+# Spoke TensorZero Configuration
+# Primary: Hub's LLM gateway (when online)
+# Fallback: Local Ollama (when offline)
+# =============================================================================
+
+[gateway]
+# Embedded gateway - no bind_address needed
+observability.enabled = false
+
+# -----------------------------------------------------------------------------
+# Models: Define the LLM backends
+# -----------------------------------------------------------------------------
+
+[models.hub_gateway]
+# Hub acts as an OpenAI-compatible endpoint
+routing = ["hub"]
+
+[models.hub_gateway.providers.hub]
+type = "openai"
+model_name = "strawberry-chat"  # Hub routes to its configured model
+api_base = "http://localhost:8000/api/v1"  # Default Hub URL
+api_key_location = "env::HUB_DEVICE_TOKEN"
+# Short timeout - fail fast to fallback
+[models.hub_gateway.providers.hub.timeouts]
+non_streaming = { total_ms = 800 }
+
+[models.google_gemini]
+routing = ["google"]
+
+[models.google_gemini.providers.google]
+type = "google_ai_studio_gemini"
+model_name = "gemini-2.0-flash"
+api_key_location = "env::GOOGLE_AI_STUDIO_API_KEY"
+
+[models.ollama_local]
+# Local Ollama as fallback
+routing = ["ollama"]
+
+[models.ollama_local.providers.ollama]
+type = "openai"  # Ollama has OpenAI-compatible API
+model_name = "llama3.2:3b"
+api_base = "http://localhost:11434/v1"
+api_key_location = "none"  # Ollama doesn't need authentication
+
+# -----------------------------------------------------------------------------
+# Tools: Define available tools for the LLM
+# -----------------------------------------------------------------------------
+
+[tools.search_skills]
+description = "Search for available skills by keyword. Returns grouped skills with signatures, summaries, sample devices, and device_count. Supports device_limit to request more sample devices."
+parameters = "tools/search_skills.json"
+
+[tools.describe_function]
+description = "Get full function signature with complete docstring for a skill method."
+parameters = "tools/describe_function.json"
+
+[tools.python_exec]
+description = "Execute Python code in a sandbox. Use for loops, conditionals, multi-step operations. Access skills via 'device' or 'device_manager'."
+parameters = "tools/python_exec.json"
+
+# -----------------------------------------------------------------------------
+# Functions: Define chat with fallback behavior
+# -----------------------------------------------------------------------------
+
+[functions.chat]
+type = "chat"
+tools = ["search_skills", "describe_function", "python_exec"]
+
+# Experimentation config: try hub first, fall back to gemini then local
+[functions.chat.experimentation]
+type = "uniform"
+candidate_variants = ["hub"]
+fallback_variants = ["gemini_variant", "local_ollama"]
+
+# Hub variant - primary choice when online
+[functions.chat.variants.hub]
+type = "chat_completion"
+model = "hub_gateway"
+# No retries before falling back (fail fast)
+[functions.chat.variants.hub.retries]
+num_retries = 0
+max_delay_s = 2
+
+# Gemini variant - first fallback
+[functions.chat.variants.gemini_variant]
+type = "chat_completion"
+model = "google_gemini"
+[functions.chat.variants.gemini_variant.retries]
+num_retries = 1
+max_delay_s = 2
+
+# Local Ollama variant - final fallback
+[functions.chat.variants.local_ollama]
+type = "chat_completion"
+model = "ollama_local"
+# Local should be reliable, but retry once
+[functions.chat.variants.local_ollama.retries]
+num_retries = 1
+max_delay_s = 1

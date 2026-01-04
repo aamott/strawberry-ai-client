@@ -1,5 +1,6 @@
 """Settings dialog for configuration."""
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Optional
@@ -200,8 +201,6 @@ class SettingsDialog(QDialog):
 
     def _create_env_tab(self) -> QWidget:
         """Create the environment variable settings tab."""
-        import os
-
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -365,7 +364,7 @@ class SettingsDialog(QDialog):
         # Info
         info_label = QLabel(
             "To get a Hub token, register your device at the Hub web interface "
-            "or use the /auth/register API endpoint."
+            "and create a device token (POST /api/devices/token)."
         )
         info_label.setWordWrap(True)
         info_label.setProperty("muted", True)
@@ -420,7 +419,11 @@ class SettingsDialog(QDialog):
 
         # Hub
         self._hub_url.setText(self.settings.hub.url)
-        self._hub_token.setText(os.environ.get("HUB_TOKEN", "") or (self.settings.hub.token or ""))
+        self._hub_token.setText(
+            os.environ.get("HUB_DEVICE_TOKEN", "")
+            or os.environ.get("HUB_TOKEN", "")
+            or (self.settings.hub.token or "")
+        )
 
         # Appearance
         index = self._theme_combo.findData(self.settings.ui.theme)
@@ -455,7 +458,6 @@ class SettingsDialog(QDialog):
 
     def _test_connection(self):
         """Test Hub connection with current settings."""
-        import asyncio
 
         from ..hub import HubClient, HubConfig
 
@@ -487,18 +489,24 @@ class SettingsDialog(QDialog):
             finally:
                 await client.close()
 
-        # Run async test
-        try:
-            loop = asyncio.get_event_loop()
-            success, message = loop.run_until_complete(test())
-        except RuntimeError:
-            # No event loop - create one
-            success, message = asyncio.run(test())
+        async def run_and_show() -> None:
+            success, message = await test()
+            if success:
+                QMessageBox.information(self, "Test Connection", f"✓ {message}")
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Test Connection",
+                    f"✗ Connection failed:\n{message}",
+                )
 
-        if success:
-            QMessageBox.information(self, "Test Connection", f"✓ {message}")
-        else:
-            QMessageBox.warning(self, "Test Connection", f"✗ Connection failed:\n{message}")
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(run_and_show())
+            return
+
+        # Fallback (no running loop)
+        loop.run_until_complete(run_and_show())
 
     def _on_save(self):
         """Save settings and close dialog."""
@@ -509,6 +517,8 @@ class SettingsDialog(QDialog):
             return value
 
         env_updates = {
+            "HUB_DEVICE_TOKEN": _clean_env_value(self._hub_token.text()),
+            # Backward compatibility: config/config.yaml may still reference ${HUB_TOKEN}
             "HUB_TOKEN": _clean_env_value(self._hub_token.text()),
             "PICOVOICE_API_KEY": _clean_env_value(self._env_picovoice_api_key.text()),
             "OPENAI_API_KEY": _clean_env_value(self._env_openai_api_key.text()),

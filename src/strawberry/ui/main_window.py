@@ -13,10 +13,21 @@ from ..config import Settings
 from ..config.persistence import persist_settings_and_env
 from ..hub import HubClient, HubConfig
 from ..hub.client import ChatMessage, HubError
+from ..llm import OfflineModeTracker, TensorZeroClient
+from ..llm.tensorzero_client import ChatMessage as TZChatMessage
 from ..skills import SkillService
+from ..storage import LocalSessionDB, SyncManager
 from .theme import DARK_THEME, THEMES, get_stylesheet
 from .voice_controller import VoiceController
-from .widgets import ChatArea, InputArea, MicState, StatusBar, VoiceIndicator
+from .widgets import (
+    ChatArea,
+    ChatHistorySidebar,
+    InputArea,
+    MicState,
+    OfflineModeBanner,
+    StatusBar,
+    VoiceIndicator,
+)
 
 
 class MainWindow(QMainWindow):
@@ -45,6 +56,13 @@ class MainWindow(QMainWindow):
         self._connected = False
         self._voice_controller: Optional[VoiceController] = None
         self._skill_service: Optional[SkillService] = None
+        self._current_session_id: Optional[str] = None
+
+        # Offline mode components
+        self._tensorzero_client: Optional[TensorZeroClient] = None
+        self._offline_tracker = OfflineModeTracker()
+        self._session_db: Optional[LocalSessionDB] = None
+        self._sync_manager: Optional[SyncManager] = None
 
         self._setup_window()
         self._setup_menu()
@@ -54,6 +72,12 @@ class MainWindow(QMainWindow):
         # Connect signals
         self.hub_connection_changed.connect(self._update_hub_status)
 
+        # Initialize offline mode components
+        self._init_local_storage()
+        self._init_tensorzero()
+
+        # Connect offline mode listener
+        self._offline_tracker.add_listener(self._on_offline_mode_changed)
 
         # Initialize skills and Hub connection
         self._init_skills()
@@ -151,13 +175,32 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
 
-        layout = QVBoxLayout(central)
+        # Main horizontal layout (sidebar + content)
+        main_layout = QHBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Chat history sidebar
+        self._chat_sidebar = ChatHistorySidebar(theme=self._theme)
+        self._chat_sidebar.session_selected.connect(self._on_session_selected)
+        self._chat_sidebar.new_chat_requested.connect(self._on_new_chat)
+        self._chat_sidebar.session_deleted.connect(self._on_session_deleted)
+        main_layout.addWidget(self._chat_sidebar)
+
+        # Content area (right side)
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
         # Header
         header = self._create_header()
         layout.addWidget(header)
+
+        # Offline mode banner (hidden by default)
+        self._offline_banner = OfflineModeBanner(theme=self._theme)
+        self._offline_banner.sync_requested.connect(self._on_sync_requested)
+        layout.addWidget(self._offline_banner)
 
         # Voice indicator (hidden by default)
         self._voice_indicator = VoiceIndicator(theme=self._theme)
@@ -181,6 +224,8 @@ class MainWindow(QMainWindow):
         # Status bar
         self._status_bar = StatusBar(theme=self._theme)
         layout.addWidget(self._status_bar)
+
+        main_layout.addWidget(content, 1)
 
     def _create_header(self) -> QWidget:
         """Create the header area."""
@@ -260,7 +305,7 @@ class MainWindow(QMainWindow):
             # Relative to config file or cwd
             skills_path = Path.cwd() / skills_path
 
-        self._skill_service = SkillService(skills_path)
+        self._skill_service = SkillService(skills_path, device_name=self.settings.device.name)
 
         # Load skills
         skills = self._skill_service.load_skills()
@@ -275,6 +320,67 @@ class MainWindow(QMainWindow):
                 f"No skills found in {skills_path}"
             )
 
+    def _init_local_storage(self):
+        """Initialize local session storage and sync manager."""
+        db_path = Path(self.settings.storage.db_path)
+        if not db_path.is_absolute():
+            db_path = Path.cwd() / db_path
+
+        self._session_db = LocalSessionDB(db_path)
+        self._sync_manager = SyncManager(self._session_db, self._hub_client)
+
+    def _init_tensorzero(self):
+        """Initialize TensorZero client for LLM routing."""
+        if self.settings.tensorzero.enabled:
+            # Embedded gateway uses config file, no URL/timeout needed
+            self._tensorzero_client = TensorZeroClient()
+
+    def _on_offline_mode_changed(self, is_offline: bool):
+        """Handle offline mode state change.
+
+        Args:
+            is_offline: True if now in offline mode
+        """
+        if is_offline:
+            pending_count = self._sync_manager.get_pending_count() if self._sync_manager else 0
+            self._offline_banner.set_offline(
+                model_name=self.settings.local_llm.model,
+                pending_count=pending_count,
+            )
+            self._status_bar.set_status(
+                self._offline_tracker.get_status_text(self.settings.local_llm.model)
+            )
+        else:
+            self._offline_banner.set_online()
+            self._status_bar.set_connected(True, self.settings.hub.url)
+            # Trigger sync when coming back online
+            if self._sync_manager:
+                asyncio.ensure_future(self._sync_manager.sync_all())
+
+    def _on_sync_requested(self):
+        """Handle manual sync request from offline banner."""
+        if self._sync_manager:
+            self._offline_banner.set_syncing(True)
+            asyncio.ensure_future(self._do_manual_sync())
+
+    async def _do_manual_sync(self):
+        """Perform manual sync and update UI."""
+        try:
+            if self._sync_manager:
+                success = await self._sync_manager.sync_all()
+                if success:
+                    self._chat_area.add_system_message("Sync completed successfully")
+                    # Update pending count
+                    pending = self._sync_manager.get_pending_count()
+                    self._offline_banner.update_pending_count(pending)
+                    self._offline_tracker.pending_sync_count = pending
+                else:
+                    self._chat_area.add_system_message("Sync failed - Hub not available")
+        except Exception as e:
+            self._chat_area.add_system_message(f"Sync error: {e}")
+        finally:
+            self._offline_banner.set_syncing(False)
+
     def _init_hub(self):
         """Initialize Hub connection."""
         if self.settings.hub.token:
@@ -285,6 +391,10 @@ class MainWindow(QMainWindow):
             )
             self._hub_client = HubClient(config)
 
+            # Update sync manager with hub client
+            if self._sync_manager:
+                self._sync_manager.set_hub_client(self._hub_client)
+
             # Set connection callback
             self._hub_client.set_connection_callback(self._on_hub_connection_callback)
 
@@ -293,7 +403,7 @@ class MainWindow(QMainWindow):
         else:
             self._status_bar.set_status("Hub not configured")
             self._chat_area.add_system_message(
-                "Hub token not configured. Set HUB_TOKEN in your .env file."
+                "Hub token not configured. Set HUB_DEVICE_TOKEN in your .env file."
             )
 
     async def _check_hub_connection(self):
@@ -345,6 +455,10 @@ class MainWindow(QMainWindow):
         # Update status bar
         self._status_bar.set_connected(connected, self.settings.hub.url if connected else None)
 
+        # Refresh sessions when connected
+        if connected:
+            asyncio.ensure_future(self._refresh_sessions())
+
     def _update_indicator_style(self, connected: bool):
         """Update indicator style sheet."""
         color = "#4caf50" if connected else "#f44336"  # Green or Red
@@ -373,6 +487,12 @@ class MainWindow(QMainWindow):
                 )
                 # Start heartbeat
                 await self._skill_service.start_heartbeat()
+
+                # Notify that remote skills are now available
+                self._chat_area.add_system_message(
+                    "Remote skills from connected devices are now available. "
+                    "Use search_skills() to discover them."
+                )
         else:
             self._chat_area.add_system_message(
                 "Failed to register skills with Hub (running in local mode)"
@@ -384,12 +504,28 @@ class MainWindow(QMainWindow):
         # Add user message to chat
         self._chat_area.add_message(message, is_user=True)
 
-        # Send to Hub
-        if self._hub_client and self._connected:
+        # Store message locally first
+        if self._session_db and self._current_session_id:
+            msg = self._session_db.add_message(self._current_session_id, "user", message)
+            # Queue for sync
+            if self._sync_manager:
+                asyncio.ensure_future(
+                    self._sync_manager.queue_add_message(
+                        self._current_session_id, msg.id, "user", message
+                    )
+                )
+
+        # Send via TensorZero (handles Hub/local fallback) or direct Hub
+        if self._tensorzero_client:
+            self._input_area.set_sending(True)
+            asyncio.ensure_future(self._send_message_via_tensorzero(message))
+        elif self._hub_client and self._connected:
             self._input_area.set_sending(True)
             asyncio.ensure_future(self._send_message(message))
         else:
-            self._chat_area.add_system_message("Not connected to Hub")
+            self._chat_area.add_system_message(
+                "No LLM available. Configure TensorZero or Hub connection."
+            )
 
     async def _send_message(self, message: str):
         """Send message to Hub using agent loop.
@@ -480,7 +616,7 @@ class MainWindow(QMainWindow):
                 # Execute code blocks and display in UI
                 outputs = []
                 for code in code_blocks:
-                    result = self._skill_service.execute_code(code)
+                    result = await self._skill_service.execute_code_async(code)
 
                     # Track tool call
                     tool_call_info = {
@@ -569,6 +705,194 @@ class MainWindow(QMainWindow):
             self._input_area.set_sending(False)
             self._input_area.set_focus()
 
+    async def _send_message_via_tensorzero(self, message: str):
+        """Send message via TensorZero with Hub/local fallback and tool call support.
+
+        Uses TensorZero gateway which handles fallback between Hub and local Ollama.
+        Supports agent loop with TensorZero native tool calls.
+        """
+        MAX_ITERATIONS = 5
+
+        try:
+            assistant_turn = self._chat_area.add_assistant_turn("(Thinking...)")
+
+            # Build messages for TensorZero
+            tz_messages = []
+
+            # Add conversation history
+            for msg in self._conversation_history:
+                tz_messages.append(TZChatMessage(role=msg.role, content=msg.content))
+
+            # Add current message
+            tz_messages.append(TZChatMessage(role="user", content=message))
+
+            # Add to local history
+            self._conversation_history.append(
+                ChatMessage(role="user", content=message)
+            )
+            self._trim_history()
+
+            # Get system prompt
+            system_prompt = None
+            if self._skill_service:
+                system_prompt = self._skill_service.get_system_prompt()
+
+            # Agent loop for tool calls
+            all_tool_calls = []
+            final_response = None
+            tool_results = []  # Initialize for first iteration
+
+            for iteration in range(MAX_ITERATIONS):
+                print(f"[TZ Agent] Iteration {iteration + 1}/{MAX_ITERATIONS}")
+
+                # Send to TensorZero
+                if iteration == 0 or not tool_results:
+                    response = await self._tensorzero_client.chat(
+                        messages=tz_messages,
+                        system_prompt=system_prompt,
+                        temperature=self.settings.llm.temperature,
+                    )
+                else:
+                    # Continue with tool results
+                    response = await self._tensorzero_client.chat_with_tool_results(
+                        messages=tz_messages,
+                        tool_results=tool_results,
+                        system_prompt=system_prompt,
+                        temperature=self.settings.llm.temperature,
+                    )
+
+                # Track offline mode based on response
+                self._offline_tracker.on_response(response)
+
+                content_preview = response.content[:100] if response.content else ""
+                tool_count = len(response.tool_calls)
+                print(f"[TZ Agent] Response: {content_preview}... Tools: {tool_count}")
+
+                # Check for tool calls
+                if not response.tool_calls:
+                    # No tool calls - agent is done
+                    final_response = response
+                    print("[TZ Agent] No tool calls, ending loop")
+                    break
+
+                # Display intermediate response if any
+                if response.content and iteration == 0 and assistant_turn:
+                    assistant_turn.set_markdown(f"**Step {iteration + 1}:**\n\n{response.content}")
+                elif response.content:
+                    step_md = f"\n\n**Step {iteration + 1}:**\n\n{response.content}"
+                    assistant_turn.append_markdown(step_md)
+
+                # Execute tool calls
+                tool_results = []
+                for tool_call in response.tool_calls:
+                    tool_name = tool_call.name or "unknown_tool"
+                    tool_args = tool_call.arguments or {}
+                    if tool_name == "unknown_tool":
+                        print("[TZ Agent] Skipping malformed tool call (missing tool name)")
+                    else:
+                        print(f"[TZ Agent] Executing tool: {tool_name}")
+
+                    # Execute tool via skill service
+                    if tool_name == "unknown_tool":
+                        result = {
+                            "error": (
+                                "Malformed tool call from model (missing tool name). "
+                                "Please call a valid tool."
+                            ),
+                        }
+                    elif self._skill_service:
+                        result = await self._skill_service.execute_tool_async(
+                            tool_name,
+                            tool_args,
+                        )
+                        # Provide guidance for unknown tools
+                        if "Unknown tool" in result.get("error", ""):
+                            result["error"] += (
+                                " Use python_exec to call skills. Example: "
+                                'python_exec({"code": "print(device.SkillName.method())"})'
+                            )
+                    else:
+                        result = {"error": "Skill service not available"}
+
+                    # Track tool call
+                    tool_call_info = {
+                        "iteration": iteration + 1,
+                        "name": tool_call.name,
+                        "arguments": tool_call.arguments,
+                        "result": result,
+                    }
+                    all_tool_calls.append(tool_call_info)
+
+                    # Display tool call in UI
+                    widget = self._chat_area.add_tool_call(
+                        tool_name=tool_name,
+                        arguments=tool_args,
+                    )
+                    if "result" in result:
+                        widget.set_success(str(result["result"]))
+                    else:
+                        widget.set_error(result.get("error", "Unknown error"))
+
+                    # Build tool result for TensorZero
+                    tool_results.append({
+                        "id": tool_call.id,
+                        "name": tool_name,
+                        "result": result.get("result", result.get("error", "")),
+                    })
+
+                # Add assistant response to messages for next iteration
+                tz_messages.append(TZChatMessage(role="assistant", content=response.content))
+
+                final_response = response
+
+            # Update pending sync count
+            if self._sync_manager:
+                self._offline_tracker.pending_sync_count = self._sync_manager.get_pending_count()
+
+            # Process final response
+            display_content = final_response.content if final_response else "No response"
+
+            # Store assistant response locally
+            if self._session_db and self._current_session_id and final_response:
+                msg = self._session_db.add_message(
+                    self._current_session_id, "assistant", final_response.content
+                )
+                if self._sync_manager:
+                    asyncio.ensure_future(
+                        self._sync_manager.queue_add_message(
+                            self._current_session_id, msg.id, "assistant", final_response.content
+                        )
+                    )
+
+            # Add to conversation history
+            if final_response:
+                self._conversation_history.append(
+                    ChatMessage(role="assistant", content=final_response.content)
+                )
+                self._trim_history()
+
+            # Update UI with final response
+            if display_content:
+                if all_tool_calls:
+                    assistant_turn.append_markdown(f"\n\n**Final:**\n\n{display_content}")
+                else:
+                    assistant_turn.set_markdown(display_content)
+
+            # Update status with model/variant info
+            if final_response:
+                is_fb = final_response.is_fallback
+                variant_info = f" (via {final_response.variant})" if is_fb else ""
+                tool_info = f" ({len(all_tool_calls)} tools)" if all_tool_calls else ""
+                self._status_bar.set_info(f"Model: {final_response.model}{variant_info}{tool_info}")
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._chat_area.add_system_message(f"Error: {e}")
+        finally:
+            self._input_area.set_sending(False)
+            self._input_area.set_focus()
+
     def _trim_history(self) -> None:
         """Trim conversation history to prevent unbounded memory growth.
 
@@ -582,8 +906,142 @@ class MainWindow(QMainWindow):
         """Start a new chat (clear history)."""
         self._conversation_history.clear()
         self._chat_area.clear_messages()
+        self._current_session_id = None
+        self._chat_sidebar.select_session(None)
         self._chat_area.add_system_message("New conversation started")
         self._input_area.set_focus()
+
+        # Create new local session
+        asyncio.ensure_future(self._create_local_session())
+
+    async def _create_local_session(self):
+        """Create a new local session and queue for Hub sync."""
+        try:
+            if self._session_db:
+                session = self._session_db.create_session()
+                self._current_session_id = session.id
+
+                # Queue for Hub sync
+                if self._sync_manager:
+                    await self._sync_manager.queue_create_session(session.id)
+
+                # Refresh session list
+                await self._refresh_sessions()
+        except Exception as e:
+            print(f"Failed to create local session: {e}")
+
+    async def _create_hub_session(self):
+        """Create a new session on the Hub (legacy, used when no local storage)."""
+        try:
+            session = await self._hub_client.create_session()
+            self._current_session_id = session["id"]
+            await self._refresh_sessions()
+        except Exception as e:
+            print(f"Failed to create session: {e}")
+
+    def _on_session_selected(self, session_id: str):
+        """Load a session when selected from sidebar."""
+        if session_id == getattr(self, "_current_session_id", None):
+            return
+
+        self._current_session_id = session_id
+        self._conversation_history.clear()
+        self._chat_area.clear_messages()
+
+        # Load from local storage first
+        if self._session_db:
+            asyncio.ensure_future(self._load_local_session_messages(session_id))
+        elif self._hub_client and self._connected:
+            asyncio.ensure_future(self._load_session_messages(session_id))
+
+    async def _load_local_session_messages(self, session_id: str):
+        """Load messages for a session from local storage."""
+        try:
+            messages = self._session_db.get_messages(session_id)
+            for msg in messages:
+                chat_msg = ChatMessage(role=msg.role, content=msg.content)
+                self._conversation_history.append(chat_msg)
+
+                if msg.role == "user":
+                    self._chat_area.add_user_message(msg.content)
+                elif msg.role == "assistant":
+                    self._chat_area.add_assistant_message(msg.content)
+        except Exception as e:
+            self._chat_area.add_system_message(f"Failed to load messages: {e}")
+
+    async def _load_session_messages(self, session_id: str):
+        """Load messages for a session from the Hub."""
+        try:
+            messages = await self._hub_client.get_session_messages(session_id)
+            for msg in messages:
+                chat_msg = ChatMessage(role=msg["role"], content=msg["content"])
+                self._conversation_history.append(chat_msg)
+
+                if msg["role"] == "user":
+                    self._chat_area.add_user_message(msg["content"])
+                elif msg["role"] == "assistant":
+                    self._chat_area.add_assistant_message(msg["content"])
+        except Exception as e:
+            self._chat_area.add_system_message(f"Failed to load messages: {e}")
+
+    def _on_session_deleted(self, session_id: str):
+        """Delete a session."""
+        if self._session_db:
+            asyncio.ensure_future(self._delete_local_session(session_id))
+        elif self._hub_client and self._connected:
+            asyncio.ensure_future(self._delete_hub_session(session_id))
+
+    async def _delete_local_session(self, session_id: str):
+        """Delete a session from local storage and queue Hub sync."""
+        try:
+            if self._sync_manager:
+                await self._sync_manager.queue_delete_session(session_id)
+            else:
+                self._session_db.delete_session(session_id)
+
+            # If deleting current session, start new chat
+            if session_id == getattr(self, "_current_session_id", None):
+                self._on_new_chat()
+            await self._refresh_sessions()
+        except Exception as e:
+            print(f"Failed to delete session: {e}")
+
+    async def _delete_hub_session(self, session_id: str):
+        """Delete a session on the Hub."""
+        try:
+            await self._hub_client.delete_session(session_id)
+            # If deleting current session, start new chat
+            if session_id == getattr(self, "_current_session_id", None):
+                self._on_new_chat()
+            await self._refresh_sessions()
+        except Exception as e:
+            print(f"Failed to delete session: {e}")
+
+    async def _refresh_sessions(self):
+        """Refresh the session list from local storage (with Hub merge if available)."""
+        try:
+            sessions_data = []
+
+            # Get local sessions
+            if self._session_db:
+                local_sessions = self._session_db.list_sessions()
+                for session in local_sessions:
+                    sessions_data.append({
+                        "id": session.id,
+                        "hub_id": session.hub_id,
+                        "title": session.title,
+                        "message_count": self._session_db.get_session_message_count(session.id),
+                        "last_activity": session.last_activity,
+                        "sync_status": session.sync_status.value,
+                    })
+
+            # If no local storage but Hub connected, use Hub sessions
+            elif self._hub_client and self._connected:
+                sessions_data = await self._hub_client.list_sessions()
+
+            self._chat_sidebar.set_sessions(sessions_data)
+        except Exception as e:
+            print(f"Failed to refresh sessions: {e}")
 
     def _toggle_voice_mode(self, enabled: bool):
         """Toggle voice mode on/off."""
@@ -682,9 +1140,9 @@ class MainWindow(QMainWindow):
                 ]
                 messages.append({"role": "user", "content": text})
 
-                # Use the correct endpoint: /v1/chat/completions (OpenAI-compatible)
+                # Use the correct endpoint: /api/v1/chat/completions (OpenAI-compatible)
                 response = await client.post(
-                    "/v1/chat/completions",
+                    "/api/v1/chat/completions",
                     json={
                         "messages": messages,
                         "temperature": 0.7,
@@ -767,6 +1225,10 @@ class MainWindow(QMainWindow):
         dialog.settings_changed.connect(self._apply_settings_changes)
         dialog.exec()
 
+    def open_settings_dialog(self) -> None:
+        """Open the settings dialog."""
+        self._on_settings()
+
     def _apply_settings_changes(self, changes: dict):
         """Apply settings changes from dialog."""
         # Persist changes first (best effort). Non-secrets go to config/config.yaml.
@@ -795,9 +1257,11 @@ class MainWindow(QMainWindow):
         if "env" in changes:
             env_updates.update(changes["env"] or {})
 
-        # Ensure Hub token is stored as HUB_TOKEN for config.yaml's ${HUB_TOKEN} pattern
+        # Ensure Hub token is stored as HUB_DEVICE_TOKEN (TensorZero + Hub auth)
+        # and also as HUB_TOKEN for backward compatibility with config.yaml's ${HUB_TOKEN} pattern
         if "hub" in changes and "token" in changes["hub"]:
             token = changes["hub"].get("token")
+            env_updates["HUB_DEVICE_TOKEN"] = token
             env_updates["HUB_TOKEN"] = token
 
         try:
@@ -821,9 +1285,11 @@ class MainWindow(QMainWindow):
             old_token = self.settings.hub.token
 
             self.settings.hub.url = changes["hub"].get("url", self.settings.hub.url)
-            # Hub token is sourced from env (HUB_TOKEN); keep settings.hub.token in sync
-            self.settings.hub.token = os.environ.get("HUB_TOKEN") or changes["hub"].get(
-                "token", self.settings.hub.token
+            # Hub token is sourced from env; prefer HUB_DEVICE_TOKEN
+            self.settings.hub.token = (
+                os.environ.get("HUB_DEVICE_TOKEN")
+                or os.environ.get("HUB_TOKEN")
+                or changes["hub"].get("token", self.settings.hub.token)
             )
 
             # Reconnect if Hub settings changed
@@ -927,6 +1393,18 @@ class MainWindow(QMainWindow):
         # Cleanup Hub client
         if self._hub_client:
             asyncio.ensure_future(self._hub_client.close())
+
+        # Cleanup TensorZero client
+        if self._tensorzero_client:
+            asyncio.ensure_future(self._tensorzero_client.close())
+
+        # Cleanup local storage
+        if self._session_db:
+            self._session_db.close()
+
+        # Stop background sync
+        if self._sync_manager:
+            self._sync_manager.stop_background_sync()
 
         event.accept()
 

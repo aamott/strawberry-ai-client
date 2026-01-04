@@ -5,22 +5,61 @@ Provides `device_manager` for accessing skills across all connected devices.
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Coroutine, Dict, List, Optional, TypeVar
 
 from ..hub import HubClient
 
 logger = logging.getLogger(__name__)
 
+# Thread pool for running async code from sync context
+_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="remote_skill_")
+
+T = TypeVar("T")
+
+
+def _run_async(coro: Coroutine[Any, Any, T]) -> T:
+    """Run an async coroutine from a sync context.
+
+    This avoids creating new event loops repeatedly by:
+    1. Using the running loop if available (via run_coroutine_threadsafe)
+    2. Using asyncio.run() if no loop is running (creates one efficiently)
+
+    Args:
+        coro: Coroutine to execute
+
+    Returns:
+        Result from the coroutine
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop - safe to use asyncio.run()
+        return asyncio.run(coro)
+
+    # Running loop in this thread: do NOT block it.
+    # Instead, run the coroutine to completion on a separate thread with its own loop.
+    def _runner() -> T:
+        return asyncio.run(coro)
+
+    return _executor.submit(_runner).result(timeout=30.0)
+
 
 @dataclass
 class RemoteSkillResult:
-    """Result from searching remote skills."""
-    path: str  # "DeviceName.SkillClass.method"
+    """Result from searching remote skills.
+
+    Skills are grouped by (class, method, signature) with a list of devices.
+    """
+    path: str  # "SkillClass.method" (without device prefix)
     signature: str
     summary: str
-    device: str  # Device name
-    device_id: str  # Device ID
+    docstring: str  # Full docstring
+    devices: List[str]  # Normalized device names
+    device_names: List[str]  # Display names
+    device_count: int  # Total number of devices with this skill
+    is_local: bool  # True if available on local device
 
 
 @dataclass
@@ -120,6 +159,7 @@ class DeviceManager:
         self._skill_cache: Optional[List[RemoteSkillResult]] = None
         self._cache_timestamp: float = 0
         self._cache_ttl: float = 60.0  # 1 minute cache
+        self._cache_device_limit: int = 10
 
     def __getattr__(self, device_name: str) -> RemoteDeviceProxy:
         """Get proxy for a remote device."""
@@ -130,11 +170,12 @@ class DeviceManager:
             self._devices[device_name] = RemoteDeviceProxy(self, device_name)
         return self._devices[device_name]
 
-    def search_skills(self, query: str = "") -> List[Dict[str, Any]]:
+    def search_skills(self, query: str = "", device_limit: int = 10) -> List[Dict[str, Any]]:
         """Search for skills across all connected devices.
 
         Args:
             query: Search term (matches name, signature, docstring)
+            device_limit: Number of sample devices to return per skill
 
         Returns:
             List of matching skills with path, signature, summary, device
@@ -142,15 +183,19 @@ class DeviceManager:
         import time
 
         # Check cache
-        if (self._skill_cache is not None and
-            time.time() - self._cache_timestamp < self._cache_ttl):
+        if (
+            self._skill_cache is not None
+            and time.time() - self._cache_timestamp < self._cache_ttl
+            and device_limit <= self._cache_device_limit
+        ):
             skills = self._skill_cache
         else:
             # Fetch from Hub
             try:
-                skills = self._fetch_all_skills()
+                skills = self._fetch_all_skills(device_limit=device_limit)
                 self._skill_cache = skills
                 self._cache_timestamp = time.time()
+                self._cache_device_limit = device_limit
             except Exception as e:
                 logger.error(f"Failed to fetch skills: {e}")
                 return []
@@ -168,8 +213,8 @@ class DeviceManager:
                     query_lower in skill.summary.lower()):
                     results.append(self._skill_to_dict(skill))
 
-        # Prioritize local device (sort so local comes first)
-        results.sort(key=lambda s: 0 if s["device"] == self._local_device_name else 1)
+        # Prioritize local skills (already sorted by Hub, but ensure local first)
+        results.sort(key=lambda s: 0 if s.get("is_local") else 1)
 
         return results
 
@@ -177,66 +222,63 @@ class DeviceManager:
         """Get full function details.
 
         Args:
-            path: "DeviceName.SkillClass.method_name"
+            path: "SkillClass.method_name" (skill path without device)
 
         Returns:
             Full signature with docstring
         """
         parts = path.split(".")
-        if len(parts) != 3:
-            return f"Invalid path: {path}. Use format 'DeviceName.SkillClass.method_name'"
+        if len(parts) != 2:
+            return f"Invalid path: {path}. Use format 'SkillClass.method_name'"
 
-        device_name, skill_name, method_name = parts
-
-        # Search for the skill
+        # Search for the skill in cache
         skills = self.search_skills()
         for skill in skills:
             if skill["path"] == path:
-                # Fetch full docstring from Hub
-                try:
-                    return self._fetch_function_details(path)
-                except Exception as e:
-                    logger.error(f"Failed to fetch function details: {e}")
-                    return f"def {skill['signature']}:\n    \"\"\"{skill['summary']}\"\"\""
+                # Return full docstring from cached data
+                return self._fetch_function_details(path)
 
         return f"Function not found: {path}"
 
-    def _fetch_all_skills(self) -> List[RemoteSkillResult]:
-        """Fetch all skills from Hub."""
-        # Run async in sync context
-        loop = asyncio.new_event_loop()
-        try:
-            skills_data = loop.run_until_complete(
-                self._hub_client.list_skills()
-            )
-        finally:
-            loop.close()
+    def _fetch_all_skills(self, device_limit: int = 10) -> List[RemoteSkillResult]:
+        """Fetch all skills from Hub.
+
+        Returns grouped skills with device lists.
+        """
+        skills_data = _run_async(
+            self._hub_client.search_skills(query="", device_limit=device_limit)
+        )
 
         results = []
         for skill in skills_data:
             results.append(RemoteSkillResult(
-                path=f"{skill['device_name']}.{skill['class_name']}.{skill['function_name']}",
+                path=skill.get('path', ''),
                 signature=skill.get('signature', ''),
-                summary=(skill.get('docstring', '') or '').split('\n')[0],
-                device=skill['device_name'],
-                device_id=skill.get('device_id', ''),
+                summary=skill.get('summary', ''),
+                docstring=skill.get('docstring', ''),
+                devices=skill.get('devices', []),
+                device_names=skill.get('device_names', []),
+                device_count=skill.get('device_count', 0),
+                is_local=skill.get('is_local', False),
             ))
 
         return results
 
     def _fetch_function_details(self, path: str) -> str:
-        """Fetch full function details from Hub."""
-        parts = path.split(".")
-        if len(parts) != 3:
-            return f"Invalid path: {path}"
+        """Fetch full function details from Hub.
 
-        device_name, skill_name, method_name = parts
-
+        Uses the full docstring from the cached skill data.
+        """
         # Search in cached skills
         if self._skill_cache:
             for skill in self._skill_cache:
                 if skill.path == path:
-                    return f"def {skill.signature}:\n    \"\"\"{skill.summary}\"\"\""
+                    # Use full docstring if available, otherwise fall back to summary
+                    doc = skill.docstring if skill.docstring else skill.summary
+                    devices_info = f"Available on: {', '.join(skill.devices[:5])}"
+                    if skill.device_count > 5:
+                        devices_info += f" (+{skill.device_count - 5} more)"
+                    return f"def {skill.signature}:\n    \"\"\"{doc}\"\"\"\n\n# {devices_info}"
 
         return f"Function not found: {path}"
 
@@ -258,9 +300,8 @@ class DeviceManager:
         device_name, skill_name, method_name = parts
 
         # Execute via Hub
-        loop = asyncio.new_event_loop()
         try:
-            result = loop.run_until_complete(
+            result = _run_async(
                 self._hub_client.execute_remote_skill(
                     device_name=device_name,
                     skill_name=skill_name,
@@ -273,8 +314,6 @@ class DeviceManager:
         except Exception as e:
             logger.error(f"Remote skill execution failed: {e}")
             raise RuntimeError(f"Failed to execute {path}: {e}")
-        finally:
-            loop.close()
 
     def _skill_to_dict(self, skill: RemoteSkillResult) -> Dict[str, Any]:
         """Convert RemoteSkillResult to dictionary."""
@@ -282,7 +321,10 @@ class DeviceManager:
             "path": skill.path,
             "signature": skill.signature,
             "summary": skill.summary,
-            "device": skill.device,
+            "devices": skill.devices,
+            "device_names": skill.device_names,
+            "device_count": skill.device_count,
+            "is_local": skill.is_local,
         }
 
     def invalidate_cache(self):
@@ -308,12 +350,12 @@ REMOTE_MODE_PROMPT = (
     "\n"
     "device_manager.search_skills(query: str = \"\") -> List[dict]\n"
     "# Search for skills across all devices\n"
-    "# Returns: [{\"path\": \"Device.Skill.method\", \"signature\": \"...\", "
-    "\"summary\": \"...\", \"device\": \"...\"}]\n"
+    "# Returns: [{\"path\": \"Skill.method\", \"signature\": \"...\", "
+    "\"summary\": \"...\", \"devices\": [\"device1\", ...], \"device_count\": N}]\n"
     "\n"
     "device_manager.describe_function(path: str) -> str\n"
     "# Get full function signature with docstring\n"
-    "# Path format: \"DeviceName.SkillClass.method_name\"\n"
+    "# Path format: \"SkillClass.method_name\"\n"
     "\n"
     "device_manager.DeviceName.SkillClass.method(...)\n"
     "# Call a skill on a specific device\n"

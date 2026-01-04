@@ -185,7 +185,7 @@ class HubClient:
         if max_tokens:
             payload["max_tokens"] = max_tokens
 
-        response = await self.client.post("/v1/chat/completions", json=payload)
+        response = await self.client.post("/api/v1/chat/completions", json=payload)
         self._check_response(response)
 
         data = response.json()
@@ -260,18 +260,19 @@ class HubClient:
         return response.json()["skills"]
 
     @_retry_config
-    async def search_skills(self, query: str = "") -> List[Dict[str, Any]]:
+    async def search_skills(self, query: str = "", device_limit: int = 10) -> List[Dict[str, Any]]:
         """Search for skills across all devices.
 
         Args:
             query: Search query (matches function name, class name, docstring)
+            device_limit: Number of sample devices to return per skill (Hub-side)
 
         Returns:
             List of matching skills with path, signature, summary, device
         """
         response = await self.client.get(
             "/skills/search",
-            params={"query": query},
+            params={"query": query, "device_limit": device_limit},
         )
         self._check_response(response)
         return response.json()["results"]
@@ -334,6 +335,94 @@ class HubClient:
         response = await self.client.get("/devices")
         self._check_response(response)
         return response.json()["devices"]
+
+    # =========================================================================
+    # Sessions (Chat History)
+    # =========================================================================
+
+    async def create_session(self) -> Dict[str, Any]:
+        """Create a new chat session.
+
+        Returns:
+            Session info with id, created_at, etc.
+        """
+        response = await self.client.post("/sessions", json={})
+        self._check_response(response)
+        return response.json()
+
+    async def list_sessions(
+        self, limit: int = 50, days: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """List chat sessions for the current user.
+
+        Args:
+            limit: Maximum number of sessions to return
+            days: If provided, only return sessions from the last N days
+
+        Returns:
+            List of session info dicts
+        """
+        params: Dict[str, Any] = {"limit": limit}
+        if days is not None:
+            params["days"] = days
+        response = await self.client.get("/sessions", params=params)
+        self._check_response(response)
+        return response.json()["sessions"]
+
+    async def get_session(self, session_id: str) -> Dict[str, Any]:
+        """Get a specific session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Session info dict
+        """
+        response = await self.client.get(f"/sessions/{session_id}")
+        self._check_response(response)
+        return response.json()
+
+    async def get_session_messages(self, session_id: str) -> List[Dict[str, Any]]:
+        """Get all messages for a session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            List of message dicts with role, content, created_at
+        """
+        response = await self.client.get(f"/sessions/{session_id}/messages")
+        self._check_response(response)
+        return response.json()["messages"]
+
+    async def add_session_message(
+        self, session_id: str, role: str, content: str
+    ) -> Dict[str, Any]:
+        """Add a message to a session.
+
+        Args:
+            session_id: Session ID
+            role: Message role (user, assistant, system)
+            content: Message content
+
+        Returns:
+            Created message info
+        """
+        response = await self.client.post(
+            f"/sessions/{session_id}/messages",
+            json={"role": role, "content": content},
+        )
+        self._check_response(response)
+        return response.json()
+
+    async def delete_session(self, session_id: str) -> None:
+        """Delete a session and all its messages.
+
+        Args:
+            session_id: Session ID to delete
+        """
+        response = await self.client.delete(f"/sessions/{session_id}")
+        self._check_response(response)
 
     # =========================================================================
     # Helpers

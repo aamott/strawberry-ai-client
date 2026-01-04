@@ -44,7 +44,14 @@ class Gatekeeper:
         self._update_allow_list()
 
     def set_device_manager(self, device_manager: "DeviceManager"):
-        """Set or update the device manager for remote calls."""
+        """Set or update the device manager for remote calls.
+
+        TODO: This method exists but is not currently called anywhere.
+        The online/offline mode switching is handled differently:
+        - SkillService uses _DeviceProxy (local) or _DeviceManagerProxy (online)
+        - Mode is determined at initialization, not switched dynamically
+        - Consider removing or integrating this if dynamic mode switching is needed.
+        """
         self.device_manager = device_manager
 
     def _update_allow_list(self):

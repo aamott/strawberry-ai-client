@@ -45,7 +45,10 @@ def load_config(
 
     # Load .env file if it exists
     if env_path is None:
-        env_path = Path(".env")
+        # Default to the ai-pc-spoke project root rather than current working directory.
+        # This makes GUI launches (where CWD may differ) reliably pick up keys like
+        # WEATHER_API_KEY.
+        env_path = (Path(__file__).resolve().parents[3] / ".env")
     if env_path.exists():
         load_dotenv(env_path)
 

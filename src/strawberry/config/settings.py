@@ -79,6 +79,21 @@ class SkillsSettings(BaseModel):
     sandbox: SandboxSettings = Field(default_factory=SandboxSettings)
 
 
+class TensorZeroSettings(BaseModel):
+    """TensorZero gateway settings."""
+    enabled: bool = True  # Use TensorZero for LLM routing
+    gateway_url: str = "http://127.0.0.1:3000"
+    timeout_seconds: float = 60.0
+
+
+class LocalLLMSettings(BaseModel):
+    """Local LLM fallback settings."""
+    enabled: bool = True
+    provider: Literal["ollama"] = "ollama"
+    model: str = "llama3.2:3b"
+    url: str = "http://localhost:11434/v1"
+
+
 class LLMConfig(BaseModel):
     """Large Language Model configuration."""
     temperature: float = 0.7
@@ -109,6 +124,14 @@ class UISettings(BaseModel):
     show_waveform: bool = True
 
 
+class StorageSettings(BaseModel):
+    """Local storage settings."""
+    db_path: str = "./data/sessions.db"
+    max_local_sessions: int = 100
+    auto_sync: bool = True
+    sync_interval_seconds: float = 30.0
+
+
 class Settings(BaseModel):
     """Root configuration model."""
     device: DeviceSettings = Field(default_factory=DeviceSettings)
@@ -123,6 +146,9 @@ class Settings(BaseModel):
     ui: UISettings = Field(default_factory=UISettings)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     conversation: ConversationConfig = Field(default_factory=ConversationConfig)
+    tensorzero: TensorZeroSettings = Field(default_factory=TensorZeroSettings)
+    local_llm: LocalLLMSettings = Field(default_factory=LocalLLMSettings)
+    storage: StorageSettings = Field(default_factory=StorageSettings)
 
     class Config:
         extra = "ignore"  # Ignore unknown fields in config file

@@ -187,14 +187,28 @@ class TestHubClientSkills:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "results": [
-                {"path": "Device.MusicSkill.play", "signature": "play()", "device": "Device"},
+                {
+                    "path": "MusicSkill.play",
+                    "signature": "play()",
+                    "summary": "Play music",
+                    "docstring": "Play music",
+                    "devices": ["device1"],
+                    "device_names": ["Device 1"],
+                    "device_count": 1,
+                    "is_local": False,
+                },
             ],
             "total": 1,
         }
         mock_client.get = AsyncMock(return_value=mock_response)
         mock_client.is_closed = False
 
-        results = await hub_client.search_skills("music")
+        results = await hub_client.search_skills("music", device_limit=10)
+
+        mock_client.get.assert_awaited_with(
+            "/skills/search",
+            params={"query": "music", "device_limit": 10},
+        )
 
         assert len(results) == 1
-        assert results[0]["path"] == "Device.MusicSkill.play"
+        assert results[0]["path"] == "MusicSkill.play"

@@ -141,6 +141,10 @@ class StrawberryApp:
         new_chat_action.triggered.connect(self._new_chat)
         menu.addAction(new_chat_action)
 
+        settings_action = QAction("Settings...", menu)
+        settings_action.triggered.connect(self._open_settings)
+        menu.addAction(settings_action)
+
         menu.addSeparator()
 
         # Quit action
@@ -166,6 +170,12 @@ class StrawberryApp:
         if self._window:
             self._window._on_new_chat()
             self._show_window()
+
+    def _open_settings(self):
+        """Open the settings dialog."""
+        if self._window:
+            self._show_window()
+            self._window.open_settings_dialog()
 
     def _quit(self):
         """Quit the application."""

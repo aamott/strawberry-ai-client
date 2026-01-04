@@ -23,30 +23,37 @@ from strawberry.skills.remote import (
 def mock_hub_client():
     """Create a mock Hub client."""
     client = Mock()
-    client.list_skills = AsyncMock(return_value=[
+    # New grouped format: skills grouped by (class, method) with device list
+    client.search_skills = AsyncMock(return_value=[
         {
-            "device_name": "TV",
-            "device_id": "tv-123",
-            "class_name": "MediaSkill",
-            "function_name": "set_volume",
+            "path": "MediaSkill.set_volume",
             "signature": "set_volume(volume: int) -> None",
+            "summary": "Set the TV volume (0-100).",
             "docstring": "Set the TV volume (0-100).",
+            "devices": ["tv"],
+            "device_names": ["TV"],
+            "device_count": 1,
+            "is_local": False,
         },
         {
-            "device_name": "Speaker",
-            "device_id": "speaker-456",
-            "class_name": "MediaSkill",
-            "function_name": "play",
+            "path": "MediaSkill.play",
             "signature": "play(url: str) -> bool",
+            "summary": "Play media from URL.",
             "docstring": "Play media from URL.",
+            "devices": ["speaker"],
+            "device_names": ["Speaker"],
+            "device_count": 1,
+            "is_local": False,
         },
         {
-            "device_name": "MyDevice",
-            "device_id": "local-789",
-            "class_name": "TimeSkill",
-            "function_name": "get_time",
+            "path": "TimeSkill.get_time",
             "signature": "get_time() -> str",
+            "summary": "Get the current time.",
             "docstring": "Get the current time.",
+            "devices": ["mydevice"],
+            "device_names": ["MyDevice"],
+            "device_count": 1,
+            "is_local": True,
         },
     ])
     client.execute_remote_skill = AsyncMock(return_value="Success!")
@@ -77,11 +84,11 @@ class TestDeviceManager:
         results = device_manager.search_skills()
 
         assert len(results) == 3
-        # Local device should be prioritized (first in results)
-        local_skills = [r for r in results if r["device"] == "MyDevice"]
+        # Local skills should be prioritized (first in results)
+        local_skills = [r for r in results if r.get("is_local")]
         assert len(local_skills) == 1
         # Check local skill comes before other devices
-        local_idx = next(i for i, r in enumerate(results) if r["device"] == "MyDevice")
+        local_idx = next(i for i, r in enumerate(results) if r.get("is_local"))
         assert local_idx == 0  # Should be first
 
     def test_search_skills_with_query(self, device_manager):
@@ -89,7 +96,7 @@ class TestDeviceManager:
         results = device_manager.search_skills("volume")
 
         assert len(results) == 1
-        assert results[0]["path"] == "TV.MediaSkill.set_volume"
+        assert results[0]["path"] == "MediaSkill.set_volume"
 
     def test_search_skills_cache(self, device_manager, mock_hub_client):
         """Should cache skill results."""
@@ -99,8 +106,8 @@ class TestDeviceManager:
         # Second call should use cache
         device_manager.search_skills()
 
-        # list_skills should only be called once
-        assert mock_hub_client.list_skills.call_count == 1
+        # search_skills should only be called once
+        assert mock_hub_client.search_skills.call_count == 1
 
     def test_invalidate_cache(self, device_manager, mock_hub_client):
         """Should invalidate cache."""
@@ -108,25 +115,25 @@ class TestDeviceManager:
         device_manager.invalidate_cache()
         device_manager.search_skills()
 
-        # list_skills should be called twice
-        assert mock_hub_client.list_skills.call_count == 2
+        # search_skills should be called twice
+        assert mock_hub_client.search_skills.call_count == 2
 
     def test_describe_function_valid(self, device_manager):
         """Should return function description."""
-        result = device_manager.describe_function("TV.MediaSkill.set_volume")
+        result = device_manager.describe_function("MediaSkill.set_volume")
 
         assert "set_volume" in result
         assert "volume" in result
 
     def test_describe_function_invalid_path(self, device_manager):
-        """Should return error for invalid path."""
-        result = device_manager.describe_function("Invalid.Path")
+        """Should return error for invalid path (needs 2 parts)."""
+        result = device_manager.describe_function("Invalid")
 
         assert "Invalid path" in result
 
     def test_describe_function_not_found(self, device_manager):
         """Should return error for unknown function."""
-        result = device_manager.describe_function("Unknown.Skill.method")
+        result = device_manager.describe_function("Unknown.method")
 
         assert "not found" in result
 

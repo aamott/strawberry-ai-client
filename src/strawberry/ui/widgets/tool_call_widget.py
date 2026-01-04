@@ -22,14 +22,14 @@ class ToolCallWidget(QFrame):
     def __init__(
         self,
         tool_name: str,
-        arguments: Dict[str, Any],
+        arguments: Optional[Dict[str, Any]],
         theme: Optional[Theme] = None,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
 
         self.tool_name = tool_name
-        self.arguments = arguments
+        self.arguments: Dict[str, Any] = arguments or {}
         self._theme = theme
         self._expanded = True
         self._status = "pending"  # pending, running, success, error

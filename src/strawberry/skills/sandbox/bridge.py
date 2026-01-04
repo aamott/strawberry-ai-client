@@ -1,4 +1,11 @@
-"""Bridge communication with Deno sandbox."""
+"""Bridge communication with Deno sandbox.
+
+TODO: Robustness improvements (from code review):
+- Add max message size enforcement (e.g., 10MB limit) to prevent memory spikes
+- Add a failure budget (e.g., N decode errors → restart sandbox)
+- Add readline timeout to handle hung processes
+- Document that multi-line JSON is unsupported by design
+"""
 
 import asyncio
 import json
@@ -7,6 +14,10 @@ import uuid
 from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+# TODO: Enforce these limits
+MAX_MESSAGE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_DECODE_ERRORS = 5  # Restart sandbox after this many consecutive errors
 
 
 class BridgeError(Exception):
@@ -108,14 +119,22 @@ class BridgeClient:
             raise
 
     async def _send(self, message: dict):
-        """Send JSON message to Deno."""
+        """Send JSON message to Deno.
+
+        TODO: Enforce MAX_MESSAGE_SIZE on outgoing messages.
+        """
         line = json.dumps(message) + "\n"
         self.stdin.write(line.encode())
         await self.stdin.drain()
         logger.debug(f"[Bridge TX] {message['type']} id={message['id']}")
 
     async def _read_loop(self):
-        """Read and handle messages from Deno."""
+        """Read and handle messages from Deno.
+
+        TODO: Add readline timeout (e.g., asyncio.wait_for with 60s timeout).
+        TODO: Track consecutive decode errors and restart sandbox if > MAX_DECODE_ERRORS.
+        TODO: Enforce MAX_MESSAGE_SIZE on incoming messages.
+        """
         while self._running:
             try:
                 line = await self.stdout.readline()
@@ -149,7 +168,9 @@ class BridgeClient:
         elif msg_type == "complete":
             # Execution complete
             if msg_id in self._pending:
-                self._pending[msg_id].set_result(data.get("output", ""))
+                future = self._pending[msg_id]
+                if not future.done():
+                    future.set_result(data.get("output", ""))
                 del self._pending[msg_id]
             else:
                 logger.warning(f"Bridge: Unknown request id: {msg_id}")
@@ -158,7 +179,9 @@ class BridgeClient:
             # Execution error
             if msg_id in self._pending:
                 error_msg = data.get("error", "Unknown error")
-                self._pending[msg_id].set_exception(RuntimeError(error_msg))
+                future = self._pending[msg_id]
+                if not future.done():
+                    future.set_exception(RuntimeError(error_msg))
                 del self._pending[msg_id]
             else:
                 logger.warning(f"Bridge: Unknown request id: {msg_id}")

@@ -26,7 +26,7 @@ pip install -e ".[all]"
    ```
    Then edit `.env` with your actual API keys and settings.
 
-2. **Device Configuration**: Edit `config/config.yaml` for device-specific settings like device name, skills path, etc.
+2. **Device Configuration**: Edit `config/config.yaml` for device-specific settings like device name, skills path, etc. and `config/tensorzero.toml` for LLM configuration.
 
 ## Running
 
@@ -40,6 +40,22 @@ strawberry-gui
 # Run tests
 strawberry-test
 ```
+
+## TODO (Backend Selection + UI Docs)
+
+The Spoke codebase is designed to support pluggable backends (audio / VAD / STT / TTS), but
+the user-facing selection/wiring is not complete yet.
+
+- **Backend selection wiring**
+  - **Audio input**: wire `settings.audio.backend` to instantiate `sounddevice` vs `pvrecorder` (pvrecorder backend not implemented yet)
+  - **VAD**: wire `settings.vad.backend` (`silero` vs `cobra`) (cobra backend not implemented yet)
+  - **STT**: wire `settings.stt.backend` (`leopard` vs `google`) (google backend not implemented yet)
+  - **TTS**: wire `settings.tts.backend` (`orca` vs `google`) (google backend not implemented yet)
+- **Config validation**
+  - Fail fast with a clear error if the selected backend requires optional deps that aren’t installed
+  - Keep `pip install -e ".[picovoice,google,silero,ui]"` as the recommended “full features” path
+- **UI docs**
+  - UI changes frequently; treat `ai-pc-spoke/src/strawberry/ui/` as the source of truth
 
 ## Linting (Ruff)
 

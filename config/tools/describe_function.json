@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "Get the full function signature and complete docstring for a skill method. Use this when you need detailed information about a skill's parameters and behavior.",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Path to the function. Format: 'SkillName.method_name' (offline) or 'device_name.SkillName.method_name' (online)"
+    }
+  },
+  "required": ["path"],
+  "additionalProperties": false
+}

@@ -1,5 +1,6 @@
 """Skill service for managing skill lifecycle and LLM integration."""
 
+import ast
 import asyncio
 import logging
 import re
@@ -37,46 +38,38 @@ class SkillService:
     SYSTEM_PROMPT_TEMPLATE = (
         "You are Strawberry, a helpful AI assistant with access to skills on this device.\n"
         "\n"
-        "## How Skills Work\n"
+        "## Available Tools\n"
         "\n"
-        "When you write a ```python code block, I will execute it and show you the output. "
-        "Then you continue your response.\n"
+        "You have exactly 3 tools:\n"
+        "1. search_skills(query) - Find skills by keyword\n"
+        "2. describe_function(path) - Get full signature for a skill method\n"
+        "3. python_exec(code) - Execute Python code that calls skills\n"
         "\n"
-        "Example conversation:\n"
-        "- User: \"What time is it?\"\n"
-        "- You write: ```python\n"
-        "result = device.TimeSkill.get_current_time()\n"
-        "print(result)\n"
-        "```\n"
-        "- I execute it and reply: \"3:45 PM\"\n"
-        "- You respond naturally: \"The current time is 3:45 PM.\"\n"
+        "## How to Call Skills\n"
+        "\n"
+        "To execute a local skill, use python_exec with code that calls\n"
+        "device.<SkillName>.<method>().\n"
+        "When connected to the Hub, remote skills are available via "
+        "device_manager.<Device>.<SkillName>.<method>().\n"
+        "\n"
+        "Examples:\n"
+        "- Time: python_exec({{\"code\": \"print(device.TimeSkill.get_current_time())\"}})\n"
+        "- Weather: python_exec({{\"code\": \"print(device.WeatherSkill."
+        "get_current_weather('Seattle'))\"}})\n"
+        "- Calculate: python_exec({{\"code\": \"print(device.CalculatorSkill.add(a=5, b=3))\"}})\n"
+        "- Remote: python_exec({{\"code\": \"print(device_manager.living_room_pc."
+        "MediaControlSkill.set_volume(level=20))\"}})\n"
         "\n"
         "## Available Skills\n"
         "\n"
         "{skill_descriptions}\n"
         "\n"
-        "## Discovery Commands\n"
-        "\n"
-        "If you're not sure what skills exist:\n"
-        "```python\n"
-        "# Search for skills\n"
-        "results = device.search_skills(\"music\")\n"
-        "print(results)\n"
-        "```\n"
-        "\n"
-        "```python\n"
-        "# Get function details\n"
-        "info = device.describe_function(\"TimeSkill.get_current_time\")\n"
-        "print(info)\n"
-        "```\n"
-        "\n"
         "## Rules\n"
         "\n"
-        "1. Always wrap code in ```python fences\n"
-        "2. Always use print() to see output\n"
-        "3. After I show you the output, respond naturally to the user "
-        "(NO code block in your final response)\n"
-        "4. Keep responses concise and friendly"
+        "1. Use python_exec to call skills - do NOT call skill methods directly as tools.\n"
+        "2. Do NOT output code blocks or ```tool_outputs``` - use actual tool calls.\n"
+        "3. Keep responses concise and friendly.\n"
+        "4. If you need a skill result, call python_exec with the appropriate code."
     )
 
     def __init__(
@@ -86,6 +79,7 @@ class SkillService:
         heartbeat_interval: float = 300.0,  # 5 minutes
         use_sandbox: bool = True,
         sandbox_config: Optional[SandboxConfig] = None,
+        device_name: Optional[str] = None,
     ):
         """Initialize skill service.
 
@@ -95,11 +89,13 @@ class SkillService:
             heartbeat_interval: Seconds between heartbeats
             use_sandbox: Whether to use secure sandbox (default True)
             sandbox_config: Sandbox configuration (optional)
+            device_name: Name of this device (for Hub registration)
         """
         self.skills_path = Path(skills_path)
         self.hub_client = hub_client
         self.heartbeat_interval = heartbeat_interval
         self.use_sandbox = use_sandbox
+        self.device_name = device_name or "local"
 
         self._loader = SkillLoader(skills_path)
         self._heartbeat_task: Optional[asyncio.Task] = None
@@ -252,7 +248,7 @@ class SkillService:
         if not code_blocks:
             # Match lines that look like: print(device.Something...) or device.Something...
             bare_pattern = (
-                r"^[\s]*((?:print\s*\()?\s*device\."
+                r"^[\s]*((?:print\s*\()?\s*(?:device|device_manager)\."
                 r"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\)?)"
             )
             for line in response.split('\n'):
@@ -277,6 +273,10 @@ class SkillService:
         """
         if self._sandbox:
             result = await self._sandbox.execute(code)
+            # If sandbox failed due to Deno not installed, fall back to direct execution
+            if not result.success and "Deno not installed" in (result.error or ""):
+                logger.warning("Sandbox unavailable, falling back to direct execution")
+                return self.execute_code(code)
             return SkillCallResult(
                 success=result.success,
                 result=result.output,
@@ -301,27 +301,73 @@ class SkillService:
         import io
         import sys
 
-        # Create device proxy
+        # Create device proxy (local skills)
         device = _DeviceProxy(self._loader)
+
+        try:
+            parsed = ast.parse(code)
+            for node in ast.walk(parsed):
+                if isinstance(node, ast.Import | ast.ImportFrom):
+                    return SkillCallResult(
+                        success=False,
+                        error="Import statements are not allowed in python_exec",
+                    )
+        except SyntaxError as e:
+            return SkillCallResult(success=False, error=f"SyntaxError: {e}")
 
         # Capture stdout
         stdout_capture = io.StringIO()
         old_stdout = sys.stdout
 
+        safe_builtins: dict[str, object] = {
+            "print": print,
+            "str": str,
+            "int": int,
+            "float": float,
+            "bool": bool,
+            "dict": dict,
+            "list": list,
+            "tuple": tuple,
+            "set": set,
+            "len": len,
+            "range": range,
+            "min": min,
+            "max": max,
+            "sum": sum,
+            "abs": abs,
+            "round": round,
+            "enumerate": enumerate,
+            "zip": zip,
+            "sorted": sorted,
+            "any": any,
+            "all": all,
+            "Exception": Exception,
+            "ValueError": ValueError,
+            "TypeError": TypeError,
+        }
+
         try:
             sys.stdout = stdout_capture
 
-            # Execute in restricted namespace
-            namespace = {
-                'device': device,
-                'print': print,
+            exec_globals: dict[str, object] = {
+                "__builtins__": safe_builtins,
+                "device": device,
             }
 
-            exec(code, namespace)
+            # Expose device_manager for Hub-connected remote calls.
+            # This must not do any network I/O here; remote calls happen when user code calls it.
+            if self.hub_client:
+                from .remote import DeviceManager
 
-            output = stdout_capture.getvalue()
-            return SkillCallResult(success=True, result=output.strip() if output else None)
+                device_manager = DeviceManager(
+                    hub_client=self.hub_client,
+                    local_device_name=normalize_device_name(self.device_name),
+                )
+                exec_globals["device_manager"] = device_manager
 
+            exec(code, exec_globals, {})
+            output = stdout_capture.getvalue().strip()
+            return SkillCallResult(success=True, result=output)
         except Exception as e:
             return SkillCallResult(success=False, error=str(e))
         finally:
@@ -496,6 +542,210 @@ class SkillService:
             logger.error(f"Skill execution failed: {skill_name}.{method_name} - {e}")
             raise RuntimeError(f"Skill execution failed: {e}")
 
+    # =========================================================================
+    # TensorZero Tool Call Execution
+    # =========================================================================
+
+    def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a TensorZero tool call.
+
+        Args:
+            tool_name: Name of the tool (search_skills, describe_function, python_exec)
+            arguments: Tool arguments
+
+        Returns:
+            Dict with "result" or "error" key
+        """
+        try:
+            if tool_name == "search_skills":
+                query = arguments.get("query", "")
+                device_limit = int(arguments.get("device_limit", 10) or 10)
+                result = self._execute_search_skills(query, device_limit=device_limit)
+                return {"result": result}
+
+            elif tool_name == "describe_function":
+                path = arguments.get("path", "")
+                result = self._execute_describe_function(path)
+                return {"result": result}
+
+            elif tool_name == "python_exec":
+                code = arguments.get("code", "")
+                result = self.execute_code(code)
+                if result.success:
+                    return {"result": result.result or "(no output)"}
+                else:
+                    return {"error": result.error}
+
+            else:
+                return {"error": f"Unknown tool: {tool_name}"}
+
+        except Exception as e:
+            import traceback
+            return {"error": f"{type(e).__name__}: {e}\n{traceback.format_exc()}"}
+
+    async def execute_tool_async(
+        self, tool_name: str, arguments: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Execute a TensorZero tool call (async version for sandbox).
+
+        Args:
+            tool_name: Name of the tool (search_skills, describe_function, python_exec)
+            arguments: Tool arguments
+
+        Returns:
+            Dict with "result" or "error" key
+        """
+        try:
+            if tool_name == "search_skills":
+                query = arguments.get("query", "")
+                device_limit = int(arguments.get("device_limit", 10) or 10)
+                if self.hub_client:
+                    import json
+
+                    results = await self.hub_client.search_skills(
+                        query=query,
+                        device_limit=device_limit,
+                    )
+                    return {"result": json.dumps(results, indent=2)}
+
+                result = self._execute_search_skills(query, device_limit=device_limit)
+                return {"result": result}
+
+            elif tool_name == "describe_function":
+                path = arguments.get("path", "")
+                if self.hub_client:
+                    query = ""
+                    if path:
+                        query = path.split(".")[0]
+
+                    results = await self.hub_client.search_skills(
+                        query=query,
+                        device_limit=10,
+                    )
+
+                    for skill in results:
+                        if skill.get("path") == path:
+                            signature = skill.get("signature", "")
+                            doc = skill.get("docstring", "") or skill.get("summary", "")
+                            devices = skill.get("devices", [])
+                            device_count = int(skill.get("device_count", 0) or 0)
+
+                            devices_info = ""
+                            if devices:
+                                devices_info = (
+                                    "\n\n# Available on: " + ", ".join(devices[:5])
+                                )
+                                if device_count > 5:
+                                    devices_info += f" (+{device_count - 5} more)"
+
+                            return {
+                                "result": (
+                                    f"def {signature}:\n    \"\"\"{doc}\"\"\""
+                                    + devices_info
+                                )
+                            }
+
+                    return {"error": f"Function not found: {path}"}
+
+                result = self._execute_describe_function(path)
+                return {"result": result}
+
+            elif tool_name == "python_exec":
+                code = arguments.get("code", "")
+                result = await self.execute_code_async(code)
+                if result.success:
+                    return {"result": result.result or "(no output)"}
+                else:
+                    return {"error": result.error}
+
+            else:
+                # Try to handle skill method calls directly
+                # The model might call "multiply" instead of python_exec
+                result = await self._try_execute_skill_method_async(
+                    tool_name, arguments
+                )
+                if result is not None:
+                    return result
+                return {"error": f"Unknown tool: {tool_name}"}
+
+        except Exception as e:
+            import traceback
+            return {"error": f"{type(e).__name__}: {e}\n{traceback.format_exc()}"}
+
+    async def _try_execute_skill_method_async(
+        self, method_name: str, arguments: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Try to execute a skill method by name.
+
+        The model sometimes calls skill methods directly instead of using python_exec.
+        This method tries to find and execute the method.
+
+        Args:
+            method_name: Method name (e.g., "multiply", "get_current_time")
+            arguments: Method arguments
+
+        Returns:
+            Result dict if method found and executed, None otherwise
+        """
+        if not self._skills_loaded:
+            self.load_skills()
+
+        # Search for the method across all skills
+        for skill in self._loader.get_all_skills():
+            for method in skill.methods:
+                if method.name == method_name:
+                    # Found the method - wrap in python_exec
+                    args_str = ", ".join(
+                        f"{k}={repr(v)}" for k, v in arguments.items()
+                    )
+                    code = f"print(device.{skill.name}.{method_name}({args_str}))"
+                    logger.info(
+                        f"Auto-wrapping skill method call: {method_name} -> {code}"
+                    )
+                    result = await self.execute_code_async(code)
+                    if result.success:
+                        return {"result": result.result or "(no output)"}
+                    else:
+                        return {"error": result.error}
+
+        return None
+
+    def _execute_search_skills(self, query: str, device_limit: int = 10) -> str:
+        """Execute search_skills tool.
+
+        Args:
+            query: Search query
+            device_limit: Number of sample devices to return per skill (online mode)
+
+        Returns:
+            JSON string of search results
+        """
+        import json
+
+        if not self._skills_loaded:
+            self.load_skills()
+
+        # Use device proxy for search (has the search_skills method)
+        device = _DeviceProxy(self._loader)
+        results = device.search_skills(query, device_limit=device_limit)
+
+        return json.dumps(results, indent=2)
+
+    def _execute_describe_function(self, path: str) -> str:
+        """Execute describe_function tool.
+
+        Args:
+            path: Function path (SkillName.method_name)
+
+        Returns:
+            Function description string
+        """
+        if not self._skills_loaded:
+            self.load_skills()
+
+        device = _DeviceProxy(self._loader)
+        return device.describe_function(path)
+
 
 class _DeviceProxy:
     """Proxy object for accessing skills from LLM-generated code.
@@ -509,11 +759,12 @@ class _DeviceProxy:
     def __init__(self, loader: SkillLoader):
         self._loader = loader
 
-    def search_skills(self, query: str = "") -> List[Dict[str, Any]]:
+    def search_skills(self, query: str = "", device_limit: int = 10) -> List[Dict[str, Any]]:
         """Search for skills by keyword.
 
         Args:
             query: Search term (matches name, signature, docstring)
+            device_limit: Ignored for local-only mode
 
         Returns:
             List of matching skills with path, signature, summary
@@ -602,3 +853,309 @@ class _SkillProxy:
             return self._loader.call_method(self._skill_name, name, *args, **kwargs)
         return method_wrapper
 
+
+def normalize_device_name(name: str) -> str:
+    """Normalize device name to valid Python identifier.
+
+    Args:
+        name: Display name (e.g., "Living Room PC")
+
+    Returns:
+        Normalized name (e.g., "living_room_pc")
+    """
+    import re as _re
+    # Lowercase, replace spaces/hyphens with underscores
+    normalized = name.lower()
+    normalized = _re.sub(r'[\s\-]+', '_', normalized)
+    # Remove invalid characters (keep only alphanumeric and underscore)
+    normalized = _re.sub(r'[^a-z0-9_]', '', normalized)
+    # Ensure doesn't start with number
+    if normalized and normalized[0].isdigit():
+        normalized = '_' + normalized
+    return normalized
+
+
+class _DeviceManagerProxy:
+    """Proxy object for accessing skills across multiple devices (online mode).
+
+    Provides:
+    - device_manager.search_skills("query") - Find skills across all devices
+    - device_manager.describe_function("device.SkillName.method") - Get function details
+    - device_manager.device_name.SkillName.method(args) - Call skill on specific device
+
+    Uses __getattr__ for dynamic device access so devices can connect/disconnect
+    during a chat session.
+    """
+
+    def __init__(
+        self,
+        local_loader: SkillLoader,
+        hub_client: Optional[HubClient] = None,
+        connected_devices: Optional[Dict[str, Dict[str, Any]]] = None,
+    ):
+        """Initialize device manager proxy.
+
+        Args:
+            local_loader: Local skill loader for this device
+            hub_client: Hub client for remote skill calls
+            connected_devices: Dict mapping device_name -> device_info with skills
+        """
+        self._local_loader = local_loader
+        self._hub_client = hub_client
+        self._connected_devices: Dict[str, Dict[str, Any]] = connected_devices or {}
+        self._local_device_name = "local"
+
+    def set_local_device_name(self, name: str) -> None:
+        """Set the name of the local device."""
+        self._local_device_name = normalize_device_name(name)
+
+    def update_connected_devices(self, devices: Dict[str, Dict[str, Any]]) -> None:
+        """Update the list of connected devices and their skills.
+
+        Args:
+            devices: Dict mapping device_name -> {"skills": [...], "online": bool}
+        """
+        self._connected_devices = {
+            normalize_device_name(k): v for k, v in devices.items()
+        }
+
+    def search_skills(self, query: str = "", device_limit: int = 10) -> List[Dict[str, Any]]:
+        """Search for skills across all connected devices.
+
+        Args:
+            query: Search term (matches name, signature, docstring)
+
+        Returns:
+            List of skills with path, signature, summary, and devices list
+        """
+        device_limit = max(1, min(int(device_limit or 10), 100))
+
+        # Group skills by signature to deduplicate
+        skill_map: Dict[str, Dict[str, Any]] = {}
+
+        # Add local skills
+        for skill in self._local_loader.get_all_skills():
+            for method in skill.methods:
+                query_lower = query.lower() if query else ""
+                matches = (
+                    not query or
+                    query_lower in method.name.lower() or
+                    query_lower in skill.name.lower() or
+                    query_lower in method.signature.lower() or
+                    (method.docstring and query_lower in method.docstring.lower())
+                )
+
+                if matches:
+                    key = f"{skill.name}.{method.name}"
+                    summary = ""
+                    if method.docstring:
+                        summary = method.docstring.split("\n")[0].strip()
+
+                    if key not in skill_map:
+                        skill_map[key] = {
+                            "path": key,
+                            "signature": method.signature,
+                            "summary": summary,
+                            "devices": [],
+                            "device_count": 0,
+                        }
+                    if self._local_device_name not in skill_map[key]["devices"]:
+                        skill_map[key]["devices"].append(self._local_device_name)
+                    skill_map[key]["device_count"] += 1
+
+        # Add remote device skills
+        for device_name, device_info in self._connected_devices.items():
+            if not device_info.get("online", False):
+                continue
+
+            for skill_data in device_info.get("skills", []):
+                query_lower = query.lower() if query else ""
+                skill_name = skill_data.get("class_name", "")
+                method_name = skill_data.get("function_name", "")
+                signature = skill_data.get("signature", "")
+                docstring = skill_data.get("docstring", "")
+
+                matches = (
+                    not query or
+                    query_lower in method_name.lower() or
+                    query_lower in skill_name.lower() or
+                    query_lower in signature.lower() or
+                    query_lower in docstring.lower()
+                )
+
+                if matches:
+                    key = f"{skill_name}.{method_name}"
+                    summary = docstring.split("\n")[0].strip() if docstring else ""
+
+                    if key not in skill_map:
+                        skill_map[key] = {
+                            "path": key,
+                            "signature": signature,
+                            "summary": summary,
+                            "devices": [],
+                            "device_count": 0,
+                        }
+                    # Always count device availability; sample list is capped
+                    skill_map[key]["device_count"] += 1
+                    if (
+                        device_name not in skill_map[key]["devices"]
+                        and len(skill_map[key]["devices"]) < device_limit
+                    ):
+                        skill_map[key]["devices"].append(device_name)
+
+        return list(skill_map.values())
+
+    def describe_function(self, path: str) -> str:
+        """Get full function details including docstring.
+
+        Args:
+            path: "device_name.SkillName.method_name" or "SkillName.method_name"
+
+        Returns:
+            Full function signature with docstring
+        """
+        parts = path.split(".")
+
+        # Handle both "SkillName.method" and "device.SkillName.method"
+        if len(parts) == 2:
+            skill_name, method_name = parts
+            # Try local first
+            skill = self._local_loader.get_skill(skill_name)
+            if skill:
+                for method in skill.methods:
+                    if method.name == method_name:
+                        doc = method.docstring or "No description available"
+                        return f"def {method.signature}:\n    \"\"\"\n    {doc}\n    \"\"\""
+            return f"Error: Method '{method_name}' not found in {skill_name}"
+
+        elif len(parts) == 3:
+            device_name, skill_name, method_name = parts
+            device_name = normalize_device_name(device_name)
+
+            # Check if it's the local device
+            if device_name == self._local_device_name:
+                skill = self._local_loader.get_skill(skill_name)
+                if skill:
+                    for method in skill.methods:
+                        if method.name == method_name:
+                            doc = method.docstring or "No description available"
+                            return f"def {method.signature}:\n    \"\"\"\n    {doc}\n    \"\"\""
+
+            # Check remote devices
+            device_info = self._connected_devices.get(device_name)
+            if device_info:
+                for skill_data in device_info.get("skills", []):
+                    if (skill_data.get("class_name") == skill_name and
+                            skill_data.get("function_name") == method_name):
+                        sig = skill_data.get("signature", f"{method_name}()")
+                        doc = skill_data.get("docstring", "No description available")
+                        return f"def {sig}:\n    \"\"\"\n    {doc}\n    \"\"\""
+
+            return f"Error: Function '{path}' not found"
+
+        return f"Error: Invalid path '{path}'. Use 'SkillName.method' or 'device.SkillName.method'"
+
+    def __getattr__(self, name: str) -> "_RemoteDeviceProxy":
+        """Get a device by name for skill calls.
+
+        Uses __getattr__ so devices can connect/disconnect during conversation.
+        """
+        if name.startswith("_"):
+            raise AttributeError(name)
+
+        normalized = normalize_device_name(name)
+
+        # Check if it's the local device
+        if normalized == self._local_device_name:
+            return _LocalDeviceSkillsProxy(self._local_loader)
+
+        # Check if device exists in connected devices
+        if normalized not in self._connected_devices:
+            available = list(self._connected_devices.keys())
+            if self._local_device_name:
+                available.insert(0, self._local_device_name)
+            available_str = ", ".join(available) if available else "none connected"
+            raise AttributeError(
+                f"Device '{name}' not connected. "
+                f"Available devices: {available_str}. "
+                f"Use device_manager.search_skills() to see all skills."
+            )
+
+        device_info = self._connected_devices[normalized]
+        if not device_info.get("online", False):
+            raise AttributeError(f"Device '{name}' is currently offline.")
+
+        return _RemoteDeviceProxy(normalized, self._hub_client)
+
+
+class _LocalDeviceSkillsProxy:
+    """Proxy for accessing local device skills through device_manager."""
+
+    def __init__(self, loader: SkillLoader):
+        self._loader = loader
+
+    def __getattr__(self, skill_name: str) -> "_SkillProxy":
+        if skill_name.startswith("_"):
+            raise AttributeError(skill_name)
+        skill = self._loader.get_skill(skill_name)
+        if skill is None:
+            available = [s.name for s in self._loader.get_all_skills()]
+            raise AttributeError(
+                f"Skill '{skill_name}' not found. Available: {', '.join(available)}"
+            )
+        return _SkillProxy(self._loader, skill_name)
+
+
+class _RemoteDeviceProxy:
+    """Proxy for accessing skills on a remote device."""
+
+    def __init__(self, device_name: str, hub_client: Optional[HubClient]):
+        self._device_name = device_name
+        self._hub_client = hub_client
+
+    def __getattr__(self, skill_name: str) -> "_RemoteSkillProxy":
+        if skill_name.startswith("_"):
+            raise AttributeError(skill_name)
+        return _RemoteSkillProxy(self._device_name, skill_name, self._hub_client)
+
+
+class _RemoteSkillProxy:
+    """Proxy for a skill on a remote device."""
+
+    def __init__(self, device_name: str, skill_name: str, hub_client: Optional[HubClient]):
+        self._device_name = device_name
+        self._skill_name = skill_name
+        self._hub_client = hub_client
+
+    def __getattr__(self, method_name: str):
+        """Get a method that calls the remote skill."""
+        if method_name.startswith("_"):
+            raise AttributeError(method_name)
+
+        def method_wrapper(*args, **kwargs):
+            if not self._hub_client:
+                raise RuntimeError("Hub client not available for remote skill calls")
+
+            # This will be called synchronously from sandbox
+            # The actual call goes through Hub to the target device
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Remote skill calls from sandbox require async bridge implementation
+                # This would need to use the sandbox's async bridge to call Hub
+                raise NotImplementedError(
+                    "Remote skill calls from sandbox require async bridge implementation. "
+                    f"Attempted: {self._device_name}.{self._skill_name}.{method_name}"
+                )
+            else:
+                return loop.run_until_complete(
+                    self._hub_client.execute_remote_skill(
+                        device_name=self._device_name,
+                        skill_name=self._skill_name,
+                        method_name=method_name,
+                        args=list(args),
+                        kwargs=kwargs,
+                    )
+                )
+
+        return method_wrapper
