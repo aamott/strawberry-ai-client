@@ -112,6 +112,9 @@ class Gatekeeper:
         if path.startswith("device_manager."):
             return self._execute_device_manager(path[15:], args, kwargs)
 
+        if path.startswith("devices."):
+            return self._execute_device_manager(path[8:], args, kwargs)
+
         # Local mode - validate against allow-list
         if not self.is_allowed(path):
             logger.warning(f"Blocked skill call: {path}")

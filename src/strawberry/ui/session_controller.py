@@ -85,6 +85,28 @@ class SessionController:
     async def delete_local_session(self, session_id: str) -> None:
         await self._sync.queue_delete_session(session_id)
 
+    async def delete_session(
+        self,
+        session_id: str,
+        hub_client: Any,
+        connected: bool,
+    ) -> None:
+        """Delete a session.
+
+        For local-first storage we queue a delete op for Hub sync.
+        If running in legacy Hub-only mode (no local session exists), we can delete
+        directly from the Hub.
+        """
+        # Always queue the local delete (this is the source of truth).
+        await self.delete_local_session(session_id)
+
+        # Best-effort: if the session ID is a Hub session ID and we're online, delete it.
+        if hub_client and connected:
+            try:
+                await self.delete_hub_session(hub_client, session_id)
+            except Exception:
+                logger.debug("Failed to delete Hub session (will rely on sync)")
+
     async def delete_hub_session(self, hub_client, session_id: str) -> None:
         await hub_client.delete_session(session_id)
 
@@ -104,12 +126,63 @@ class SessionController:
             )
         return sessions_data
 
+    async def list_sessions_for_sidebar(
+        self,
+        hub_client: Any,
+        connected: bool,
+    ) -> List[Dict[str, Any]]:
+        """List sessions to display in the sidebar.
+
+        Behavior:
+        - Prefer local sessions when local storage exists.
+        - If local storage is not available (legacy), fall back to Hub sessions.
+
+        Args:
+            hub_client: Hub client for remote session listing.
+            connected: Whether the Hub is considered connected.
+
+        Returns:
+            List of session dicts for the sidebar.
+        """
+
+        # Local sessions are always preferred when available.
+        local = self.list_local_sessions_for_sidebar()
+        if local:
+            return local
+
+        if hub_client and connected:
+            return await self.list_hub_sessions_for_sidebar(hub_client)
+
+        return local
+
     async def list_hub_sessions_for_sidebar(self, hub_client) -> List[Dict[str, Any]]:
         return await hub_client.list_sessions()
 
     def load_local_session_messages(self, session_id: str) -> List[ChatMessage]:
         messages = self._db.get_messages(session_id)
         return [ChatMessage(role=m.role, content=m.content) for m in messages]
+
+    async def load_session_messages(
+        self,
+        session_id: str,
+        hub_client: Any,
+        connected: bool,
+    ) -> List[ChatMessage]:
+        """Load messages for a session.
+
+        Behavior:
+        - Prefer local messages.
+        - If the session doesn't exist locally (or local has no messages), and Hub is
+          connected, fall back to Hub messages.
+        """
+        local_messages = self.load_local_session_messages(session_id)
+        if local_messages:
+            return local_messages
+
+        if hub_client and connected:
+            return await self.load_hub_session_messages(hub_client, session_id)
+
+        return local_messages
 
     async def load_hub_session_messages(self, hub_client, session_id: str) -> List[ChatMessage]:
         messages = await hub_client.get_session_messages(session_id)

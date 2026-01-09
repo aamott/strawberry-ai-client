@@ -56,7 +56,7 @@ description = "Get full function signature with complete docstring for a skill m
 parameters = "tools/describe_function.json"
 
 [tools.python_exec]
-description = "Execute Python code in a sandbox. Use for loops, conditionals, multi-step operations. Access skills via 'device' or 'device_manager'."
+description = "Execute Python code in a sandbox. Use for loops, conditionals, multi-step operations. Access skills via 'device' (offline) or 'devices' (online). 'device_manager' is a legacy alias."
 parameters = "tools/python_exec.json"
 
 # -----------------------------------------------------------------------------

@@ -50,14 +50,14 @@ class SkillService:
         "To execute a local skill, use python_exec with code that calls\n"
         "device.<SkillName>.<method>().\n"
         "When connected to the Hub, remote skills are available via "
-        "device_manager.<Device>.<SkillName>.<method>().\n"
+        "devices.<Device>.<SkillName>.<method>().\n"
         "\n"
         "Examples:\n"
         "- Time: python_exec({{\"code\": \"print(device.TimeSkill.get_current_time())\"}})\n"
         "- Weather: python_exec({{\"code\": \"print(device.WeatherSkill."
         "get_current_weather('Seattle'))\"}})\n"
         "- Calculate: python_exec({{\"code\": \"print(device.CalculatorSkill.add(a=5, b=3))\"}})\n"
-        "- Remote: python_exec({{\"code\": \"print(device_manager.living_room_pc."
+        "- Remote: python_exec({{\"code\": \"print(devices.living_room_pc."
         "MediaControlSkill.set_volume(level=20))\"}})\n"
         "\n"
         "## Available Skills\n"
@@ -102,6 +102,9 @@ class SkillService:
         self._registered = False
         self._skills_loaded = False
 
+        self._gatekeeper: Optional[Gatekeeper] = None
+        self._proxy_gen: Optional[ProxyGenerator] = None
+
         # Sandbox components (initialized after skills are loaded)
         self._sandbox: Optional[SandboxExecutor] = None
         self._sandbox_config = sandbox_config or SandboxConfig(enabled=use_sandbox)
@@ -118,14 +121,16 @@ class SkillService:
 
         # Initialize sandbox components
         if self.use_sandbox:
-            gatekeeper = Gatekeeper(self._loader)
-            proxy_gen = ProxyGenerator(skills)
+            self._gatekeeper = Gatekeeper(self._loader)
+            self._proxy_gen = ProxyGenerator(skills)
             self._sandbox = SandboxExecutor(
-                gatekeeper=gatekeeper,
-                proxy_generator=proxy_gen,
+                gatekeeper=self._gatekeeper,
+                proxy_generator=self._proxy_gen,
                 config=self._sandbox_config,
             )
             logger.info("Sandbox executor initialized")
+
+        self._configure_runtime_mode()
 
         return skills
 
@@ -148,14 +153,11 @@ class SkillService:
             logger.info("No skills to register")
             return True
 
-        try:
-            await self.hub_client.register_skills(skills_data)
-            self._registered = True
-            logger.info(f"Registered {len(skills_data)} skill methods with Hub")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to register skills: {e}")
-            return False
+        # Register skills
+        success = await self.hub_client.register_skills(skills_data)
+        self._registered = True
+        logger.info(f"Registered {len(skills_data)} skill methods with Hub")
+        return success
 
     async def start_heartbeat(self):
         """Start the heartbeat task."""
@@ -214,7 +216,12 @@ class SkillService:
             descriptions.append("")
 
             for method in skill.methods:
-                descriptions.append(f"- `device.{skill.name}.{method.signature}`")
+                prefix = "device"
+                if self.hub_client:
+                    prefix = "devices.{device_name}".format(
+                        device_name=normalize_device_name(self.device_name)
+                    )
+                descriptions.append(f"- `{prefix}.{skill.name}.{method.signature}`")
                 if method.docstring:
                     # Just first line of docstring
                     first_line = method.docstring.split('\n')[0].strip()
@@ -248,7 +255,7 @@ class SkillService:
         if not code_blocks:
             # Match lines that look like: print(device.Something...) or device.Something...
             bare_pattern = (
-                r"^[\s]*((?:print\s*\()?\s*(?:device|device_manager)\."
+                r"^[\s]*((?:print\s*\()?\s*(?:device|devices|device_manager)\."
                 r"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\)?)"
             )
             for line in response.split('\n'):
@@ -354,7 +361,7 @@ class SkillService:
                 "device": device,
             }
 
-            # Expose device_manager for Hub-connected remote calls.
+            # Expose devices for Hub-connected remote calls.
             # This must not do any network I/O here; remote calls happen when user code calls it.
             if self.hub_client:
                 from .remote import DeviceManager
@@ -363,6 +370,7 @@ class SkillService:
                     hub_client=self.hub_client,
                     local_device_name=normalize_device_name(self.device_name),
                 )
+                exec_globals["devices"] = device_manager
                 exec_globals["device_manager"] = device_manager
 
             exec(code, exec_globals, {})
@@ -582,6 +590,33 @@ class SkillService:
         except Exception as e:
             import traceback
             return {"error": f"{type(e).__name__}: {e}\n{traceback.format_exc()}"}
+
+    def set_hub_client(self, hub_client: Optional[HubClient]) -> None:
+        self.hub_client = hub_client
+        self._configure_runtime_mode()
+
+    def _configure_runtime_mode(self) -> None:
+        if not self.use_sandbox:
+            return
+        if not self._sandbox or not self._gatekeeper or not self._proxy_gen:
+            return
+
+        if self.hub_client:
+            from .remote import DeviceManager
+            from .sandbox.proxy_gen import SkillMode
+
+            self._gatekeeper.set_device_manager(
+                DeviceManager(
+                    hub_client=self.hub_client,
+                    local_device_name=normalize_device_name(self.device_name),
+                )
+            )
+            self._proxy_gen.set_mode(SkillMode.REMOTE)
+        else:
+            from .sandbox.proxy_gen import SkillMode
+
+            self._gatekeeper.device_manager = None
+            self._proxy_gen.set_mode(SkillMode.LOCAL)
 
     async def execute_tool_async(
         self, tool_name: str, arguments: Dict[str, Any]

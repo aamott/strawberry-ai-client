@@ -430,6 +430,11 @@ class MainWindow(QMainWindow):
         if self._sessions and self._hub_manager.client:
             self._sessions.set_hub_client(self._hub_manager.client)
 
+        if self._hub_manager.client and self._skill_service:
+            self._chat_area.add_system_message(
+                "Runtime mode: Online  devices API enabled (legacy alias: device_manager)"
+            )
+
         # Register skills with Hub
         asyncio.ensure_future(self._register_skills_with_hub())
 
@@ -477,8 +482,8 @@ class MainWindow(QMainWindow):
         if not self._skill_service or not hub_client:
             return
 
-        # Set hub client on skill service
-        self._skill_service.hub_client = hub_client
+        # Attach hub client on skill service (also switches runtime mode to multi-device)
+        self._skill_service.set_hub_client(hub_client)
 
         # Register skills
         success = await self._skill_service.register_with_hub()
@@ -911,18 +916,20 @@ class MainWindow(QMainWindow):
         self._conversation_history.clear()
         self._chat_area.clear_messages()
 
-        # Load from local storage first
-        if self._sessions:
-            asyncio.ensure_future(self._load_local_session_messages(session_id))
-        elif self._hub_manager.client and self._connected:
-            asyncio.ensure_future(self._load_session_messages(session_id))
+        asyncio.ensure_future(self._load_session_messages(session_id))
 
-    async def _load_local_session_messages(self, session_id: str):
-        """Load messages for a session from local storage."""
+    async def _load_session_messages(self, session_id: str):
+        """Load messages for a session (local-first, Hub fallback)."""
         try:
             if not self._sessions:
                 return
-            messages = self._sessions.load_local_session_messages(session_id)
+
+            messages = await self._sessions.load_session_messages(
+                session_id=session_id,
+                hub_client=self._hub_manager.client,
+                connected=self._connected,
+            )
+
             for msg in messages:
                 self._conversation_history.append(msg)
                 if msg.role == "user":
@@ -932,46 +939,22 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._chat_area.add_system_message(f"Failed to load messages: {e}")
 
-    async def _load_session_messages(self, session_id: str):
-        """Load messages for a session from the Hub."""
-        try:
-            messages = await self._hub_manager.client.get_session_messages(session_id)
-            for msg in messages:
-                chat_msg = ChatMessage(role=msg["role"], content=msg["content"])
-                self._conversation_history.append(chat_msg)
-
-                if msg["role"] == "user":
-                    self._chat_area.add_user_message(msg["content"])
-                elif msg["role"] == "assistant":
-                    self._chat_area.add_assistant_message(msg["content"])
-        except Exception as e:
-            self._chat_area.add_system_message(f"Failed to load messages: {e}")
-
     def _on_session_deleted(self, session_id: str):
         """Delete a session."""
-        if self._sessions:
-            asyncio.ensure_future(self._delete_local_session(session_id))
-        elif self._hub_manager.client and self._connected:
-            asyncio.ensure_future(self._delete_hub_session(session_id))
+        asyncio.ensure_future(self._delete_session(session_id))
 
-    async def _delete_local_session(self, session_id: str):
-        """Delete a session from local storage and queue Hub sync."""
+    async def _delete_session(self, session_id: str) -> None:
+        """Delete a session (local-first, Hub best-effort)."""
         try:
-            if self._sessions:
-                await self._sessions.delete_local_session(session_id)
+            if not self._sessions:
+                return
 
-            # If deleting current session, start new chat
-            if session_id == getattr(self, "_current_session_id", None):
-                self._on_new_chat()
-            await self._refresh_sessions()
-        except Exception as e:
-            print(f"Failed to delete session: {e}")
+            await self._sessions.delete_session(
+                session_id=session_id,
+                hub_client=self._hub_manager.client,
+                connected=self._connected,
+            )
 
-    async def _delete_hub_session(self, session_id: str):
-        """Delete a session on the Hub."""
-        try:
-            await self._hub_manager.client.delete_session(session_id)
-            # If deleting current session, start new chat
             if session_id == getattr(self, "_current_session_id", None):
                 self._on_new_chat()
             await self._refresh_sessions()
@@ -981,16 +964,13 @@ class MainWindow(QMainWindow):
     async def _refresh_sessions(self):
         """Refresh the session list from local storage (with Hub merge if available)."""
         try:
-            sessions_data = []
+            if not self._sessions:
+                return
 
-            # Get local sessions
-            if self._sessions:
-                sessions_data = self._sessions.list_local_sessions_for_sidebar()
-
-            # If no local storage but Hub connected, use Hub sessions
-            elif self._hub_manager.client and self._connected:
-                sessions_data = await self._hub_manager.client.list_sessions()
-
+            sessions_data = await self._sessions.list_sessions_for_sidebar(
+                hub_client=self._hub_manager.client,
+                connected=self._connected,
+            )
             self._chat_sidebar.set_sessions(sessions_data)
         except Exception as e:
             print(f"Failed to refresh sessions: {e}")

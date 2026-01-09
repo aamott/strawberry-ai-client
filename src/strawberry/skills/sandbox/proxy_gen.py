@@ -356,7 +356,7 @@ class _DeviceManagerProxy:
             List of matching skills with path, signature, summary, device
         """
         # Bridge to host for actual search
-        return _bridge_call("device_manager.search_skills", [query], {})
+        return _bridge_call("devices.search_skills", [query], {})
 
     def describe_function(self, path: str) -> str:
         """Get full function details.
@@ -367,11 +367,14 @@ class _DeviceManagerProxy:
         Returns:
             Full signature with docstring
         """
-        return _bridge_call("device_manager.describe_function", [path], {})
+        return _bridge_call("devices.describe_function", [path], {})
 
 
-# Create the global device_manager instance
-device_manager = _DeviceManagerProxy()
+# Create the global devices instance (preferred name)
+devices = _DeviceManagerProxy()
+
+# Backward compatibility alias
+device_manager = devices
 '''
 
         self._cache = code

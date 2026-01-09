@@ -1,11 +1,11 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "description": "Execute Python code in a sandboxed environment. Use this for complex logic like loops, conditionals, and multi-step operations. You have access to 'device' (offline) or 'device_manager' (online) to call skills.",
+  "description": "Execute Python code in a sandboxed environment. Use this for complex logic like loops, conditionals, and multi-step operations. You have access to 'device' (offline) or 'devices' (online) to call skills. ('device_manager' is a legacy alias for 'devices'.)",
   "properties": {
     "code": {
       "type": "string",
-      "description": "Python code to execute. Has access to 'device' or 'device_manager' object for skill calls, and 'print()' for output."
+      "description": "Python code to execute. Has access to 'device' or 'devices' object for skill calls (and legacy 'device_manager'), and 'print()' for output."
     }
   },
   "required": ["code"],
