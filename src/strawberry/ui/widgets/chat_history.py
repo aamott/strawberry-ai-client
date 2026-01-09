@@ -209,10 +209,11 @@ class ChatHistorySidebar(QFrame):
             }}
             #newChatBtn {{
                 background-color: {accent};
-                color: white;
+                color: {self._theme.accent_text};
                 border: none;
                 border-radius: 4px;
-                font-size: 16px;
+                padding: 0px;
+                font-size: 18px;
                 font-weight: bold;
             }}
             #newChatBtn:hover {{
@@ -227,7 +228,7 @@ class ChatHistorySidebar(QFrame):
                 background-color: {self._theme.bg_tertiary};
             }}
             #chatHistoryItem[selected="true"] {{
-                background-color: {accent}30;
+                background-color: {self._theme.bg_tertiary};
                 border: 1px solid {accent};
             }}
             #chatTitle {{

@@ -18,7 +18,6 @@ from ..hub.client import HubError
 from ..llm import OfflineModeTracker, TensorZeroClient
 from ..models import ChatMessage
 from ..skills import SkillService
-from ..storage import LocalSessionDB, SyncManager
 from .agent_helpers import (
     AgentLoopContext,
     ToolCallInfo,
@@ -27,6 +26,7 @@ from .agent_helpers import (
     get_final_display_content,
 )
 from .hub_manager import HubConnectionManager, HubStatus
+from .session_controller import SessionController
 from .theme import DARK_THEME, THEMES, get_stylesheet
 from .voice_controller import VoiceController
 from .widgets import (
@@ -73,8 +73,7 @@ class MainWindow(QMainWindow):
         # Offline mode components
         self._tensorzero_client: Optional[TensorZeroClient] = None
         self._offline_tracker = OfflineModeTracker()
-        self._session_db: Optional[LocalSessionDB] = None
-        self._sync_manager: Optional[SyncManager] = None
+        self._sessions: Optional[SessionController] = None
 
         self._setup_window()
         self._setup_menu()
@@ -89,12 +88,38 @@ class MainWindow(QMainWindow):
         self._init_local_storage()
         self._init_tensorzero()
 
+        # Ensure we have at least one session and populate sidebar.
+        # We schedule via QTimer so this runs after the Qt event loop is active.
+        QTimer.singleShot(0, lambda: asyncio.ensure_future(self._bootstrap_sessions()))
+
         # Connect offline mode listener
         self._offline_tracker.add_listener(self._on_offline_mode_changed)
 
         # Initialize skills and Hub connection
         self._init_skills()
         QTimer.singleShot(100, self._init_hub)
+
+    async def _bootstrap_sessions(self) -> None:
+        """Ensure sessions are ready and visible in the sidebar.
+
+        We want chat history to work immediately (offline or online).
+        If the user sends a message before starting a "New Chat", we still
+        need a current session to persist messages.
+        """
+        if not self._sessions:
+            return
+
+        try:
+            # Populate sidebar from existing sessions.
+            await self._refresh_sessions()
+
+            # If nothing exists yet, create the initial session.
+            sessions = self._sessions.list_local_sessions_for_sidebar()
+            if not sessions and self._current_session_id is None:
+                self._current_session_id = await self._sessions.create_local_session()
+                await self._refresh_sessions()
+        except Exception:
+            logger.exception("Failed to bootstrap sessions")
 
     def _setup_window(self):
         """Configure the main window."""
@@ -333,11 +358,7 @@ class MainWindow(QMainWindow):
     def _init_local_storage(self):
         """Initialize local session storage and sync manager."""
         db_path = Path(self.settings.storage.db_path)
-        if not db_path.is_absolute():
-            db_path = Path.cwd() / db_path
-
-        self._session_db = LocalSessionDB(db_path)
-        self._sync_manager = SyncManager(self._session_db, None)
+        self._sessions = SessionController(db_path)
 
     def _init_tensorzero(self):
         """Initialize TensorZero client for LLM routing."""
@@ -352,7 +373,7 @@ class MainWindow(QMainWindow):
             is_offline: True if now in offline mode
         """
         if is_offline:
-            pending_count = self._sync_manager.get_pending_count() if self._sync_manager else 0
+            pending_count = self._sessions.get_pending_count() if self._sessions else 0
             self._offline_banner.set_offline(
                 model_name=self.settings.local_llm.model,
                 pending_count=pending_count,
@@ -364,24 +385,24 @@ class MainWindow(QMainWindow):
             self._offline_banner.set_online()
             self._status_bar.set_connected(True, self.settings.hub.url)
             # Trigger sync when coming back online
-            if self._sync_manager:
-                asyncio.ensure_future(self._sync_manager.sync_all())
+            if self._sessions:
+                asyncio.ensure_future(self._sessions.sync_all())
 
     def _on_sync_requested(self):
         """Handle manual sync request from offline banner."""
-        if self._sync_manager:
+        if self._sessions:
             self._offline_banner.set_syncing(True)
             asyncio.ensure_future(self._do_manual_sync())
 
     async def _do_manual_sync(self):
         """Perform manual sync and update UI."""
         try:
-            if self._sync_manager:
-                success = await self._sync_manager.sync_all()
+            if self._sessions:
+                success = await self._sessions.sync_all()
                 if success:
                     self._chat_area.add_system_message("Sync completed successfully")
                     # Update pending count
-                    pending = self._sync_manager.get_pending_count()
+                    pending = self._sessions.get_pending_count()
                     self._offline_banner.update_pending_count(pending)
                     self._offline_tracker.pending_sync_count = pending
                 else:
@@ -405,9 +426,9 @@ class MainWindow(QMainWindow):
 
     def _on_hub_connected(self):
         """Called when Hub connection is established."""
-        # Update sync manager with hub client
-        if self._sync_manager and self._hub_manager.client:
-            self._sync_manager.set_hub_client(self._hub_manager.client)
+        # Update session controller with hub client
+        if self._sessions and self._hub_manager.client:
+            self._sessions.set_hub_client(self._hub_manager.client)
 
         # Register skills with Hub
         asyncio.ensure_future(self._register_skills_with_hub())
@@ -484,19 +505,29 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _on_message_submitted(self, message: str):
         """Handle user message submission."""
+        asyncio.ensure_future(self._handle_message_submitted_async(message))
+
+    async def _handle_message_submitted_async(self, message: str) -> None:
+        """Async handler for message submission.
+
+        Ensures a session exists before persisting messages.
+        """
         # Add user message to chat
         self._chat_area.add_message(message, is_user=True)
 
+        # Ensure we have a current session.
+        if self._sessions and self._current_session_id is None:
+            self._current_session_id = await self._sessions.create_local_session()
+            await self._refresh_sessions()
+
         # Store message locally first
-        if self._session_db and self._current_session_id:
-            msg = self._session_db.add_message(self._current_session_id, "user", message)
-            # Queue for sync
-            if self._sync_manager:
-                asyncio.ensure_future(
-                    self._sync_manager.queue_add_message(
-                        self._current_session_id, msg.id, "user", message
-                    )
+        if self._sessions and self._current_session_id:
+            msg_id = self._sessions.add_message_local(self._current_session_id, "user", message)
+            asyncio.ensure_future(
+                self._sessions.queue_add_message(
+                    self._current_session_id, msg_id, "user", message
                 )
+            )
             # Refresh session list to update message count
             asyncio.ensure_future(self._refresh_sessions())
 
@@ -782,23 +813,27 @@ class MainWindow(QMainWindow):
                 final_response = response
 
             # Update pending sync count
-            if self._sync_manager:
-                self._offline_tracker.pending_sync_count = self._sync_manager.get_pending_count()
+            if self._sessions:
+                self._offline_tracker.pending_sync_count = self._sessions.get_pending_count()
 
             # Process final response
             display_content = final_response.content if final_response else "No response"
 
             # Store assistant response locally
-            if self._session_db and self._current_session_id and final_response:
-                msg = self._session_db.add_message(
-                    self._current_session_id, "assistant", final_response.content
+            if self._sessions and self._current_session_id and final_response:
+                msg_id = self._sessions.add_message_local(
+                    self._current_session_id,
+                    "assistant",
+                    final_response.content,
                 )
-                if self._sync_manager:
-                    asyncio.ensure_future(
-                        self._sync_manager.queue_add_message(
-                            self._current_session_id, msg.id, "assistant", final_response.content
-                        )
+                asyncio.ensure_future(
+                    self._sessions.queue_add_message(
+                        self._current_session_id,
+                        msg_id,
+                        "assistant",
+                        final_response.content,
                     )
+                )
 
             # Add to conversation history
             if final_response:
@@ -852,15 +887,8 @@ class MainWindow(QMainWindow):
     async def _create_local_session(self):
         """Create a new local session and queue for Hub sync."""
         try:
-            if self._session_db:
-                session = self._session_db.create_session()
-                self._current_session_id = session.id
-
-                # Queue for Hub sync
-                if self._sync_manager:
-                    await self._sync_manager.queue_create_session(session.id)
-
-                # Refresh session list
+            if self._sessions:
+                self._current_session_id = await self._sessions.create_local_session()
                 await self._refresh_sessions()
         except Exception as e:
             print(f"Failed to create local session: {e}")
@@ -884,7 +912,7 @@ class MainWindow(QMainWindow):
         self._chat_area.clear_messages()
 
         # Load from local storage first
-        if self._session_db:
+        if self._sessions:
             asyncio.ensure_future(self._load_local_session_messages(session_id))
         elif self._hub_manager.client and self._connected:
             asyncio.ensure_future(self._load_session_messages(session_id))
@@ -892,15 +920,15 @@ class MainWindow(QMainWindow):
     async def _load_local_session_messages(self, session_id: str):
         """Load messages for a session from local storage."""
         try:
-            messages = self._session_db.get_messages(session_id)
+            if not self._sessions:
+                return
+            messages = self._sessions.load_local_session_messages(session_id)
             for msg in messages:
-                chat_msg = ChatMessage(role=msg.role, content=msg.content)
-                self._conversation_history.append(chat_msg)
-
+                self._conversation_history.append(msg)
                 if msg.role == "user":
-                    self._chat_area.add_user_message(msg.content)
+                    self._chat_area.add_message(msg.content, is_user=True)
                 elif msg.role == "assistant":
-                    self._chat_area.add_assistant_message(msg.content)
+                    self._chat_area.add_message(msg.content, is_user=False)
         except Exception as e:
             self._chat_area.add_system_message(f"Failed to load messages: {e}")
 
@@ -921,7 +949,7 @@ class MainWindow(QMainWindow):
 
     def _on_session_deleted(self, session_id: str):
         """Delete a session."""
-        if self._session_db:
+        if self._sessions:
             asyncio.ensure_future(self._delete_local_session(session_id))
         elif self._hub_manager.client and self._connected:
             asyncio.ensure_future(self._delete_hub_session(session_id))
@@ -929,10 +957,8 @@ class MainWindow(QMainWindow):
     async def _delete_local_session(self, session_id: str):
         """Delete a session from local storage and queue Hub sync."""
         try:
-            if self._sync_manager:
-                await self._sync_manager.queue_delete_session(session_id)
-            else:
-                self._session_db.delete_session(session_id)
+            if self._sessions:
+                await self._sessions.delete_local_session(session_id)
 
             # If deleting current session, start new chat
             if session_id == getattr(self, "_current_session_id", None):
@@ -958,17 +984,8 @@ class MainWindow(QMainWindow):
             sessions_data = []
 
             # Get local sessions
-            if self._session_db:
-                local_sessions = self._session_db.list_sessions()
-                for session in local_sessions:
-                    sessions_data.append({
-                        "id": session.id,
-                        "hub_id": session.hub_id,
-                        "title": session.title,
-                        "message_count": self._session_db.get_session_message_count(session.id),
-                        "last_activity": session.last_activity,
-                        "sync_status": session.sync_status.value,
-                    })
+            if self._sessions:
+                sessions_data = self._sessions.list_local_sessions_for_sidebar()
 
             # If no local storage but Hub connected, use Hub sessions
             elif self._hub_manager.client and self._connected:
@@ -1331,12 +1348,8 @@ class MainWindow(QMainWindow):
             asyncio.ensure_future(self._tensorzero_client.close())
 
         # Cleanup local storage
-        if self._session_db:
-            self._session_db.close()
-
-        # Stop background sync
-        if self._sync_manager:
-            self._sync_manager.stop_background_sync()
+        if self._sessions:
+            self._sessions.close()
 
         event.accept()
 
@@ -1346,4 +1359,3 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
         self._input_area.set_focus()
-
