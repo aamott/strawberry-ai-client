@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
 
@@ -23,7 +23,7 @@ except ImportError:
     WEBSOCKETS_AVAILABLE = False
     WebSocketClientProtocol = None
 
-from ..models import ChatMessage
+from ..models import ChatMessage, ChatResponse
 
 logger = logging.getLogger(__name__)
 
@@ -80,17 +80,8 @@ class HubConfig:
         )
 
 
-# Re-export ChatMessage for backward compatibility
+# Re-export for backward compatibility
 __all__ = ["ChatMessage", "ChatResponse", "HubConfig", "HubClient", "HubError"]
-
-
-@dataclass
-class ChatResponse:
-    """Response from chat endpoint."""
-    content: str
-    model: str
-    finish_reason: str
-    raw: Dict[str, Any] = field(default_factory=dict)
 
 
 class HubError(Exception):

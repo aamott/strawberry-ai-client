@@ -12,21 +12,21 @@ from PySide6.QtCore import QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
 
-try:
-    # Python 3.11+
-    BaseExceptionGroup  # type: ignore[name-defined]
-except NameError:  # pragma: no cover
-    # Python <3.11 (dependency of anyio/httpx in some environments)
-    from exceptiongroup import BaseExceptionGroup  # type: ignore[assignment]
-
 from ..config import Settings
 from ..config.persistence import persist_settings_and_env
-from ..hub import HubClient, HubConfig
 from ..hub.client import HubError
 from ..llm import OfflineModeTracker, TensorZeroClient
 from ..models import ChatMessage
 from ..skills import SkillService
 from ..storage import LocalSessionDB, SyncManager
+from .agent_helpers import (
+    AgentLoopContext,
+    ToolCallInfo,
+    build_messages_with_history,
+    format_tool_output_message,
+    get_final_display_content,
+)
+from .hub_manager import HubConnectionManager, HubStatus
 from .theme import DARK_THEME, THEMES, get_stylesheet
 from .voice_controller import VoiceController
 from .widgets import (
@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
 
         self.settings = settings
         self._theme = THEMES.get(settings.ui.theme, DARK_THEME)
-        self._hub_client: Optional[HubClient] = None
+        self._hub_manager = HubConnectionManager(self)
         self._conversation_history: List[ChatMessage] = []
         self._connected = False
         self._voice_controller: Optional[VoiceController] = None
@@ -81,8 +81,9 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._apply_theme()
 
-        # Connect signals
-        self.hub_connection_changed.connect(self._update_hub_status)
+        # Connect hub manager signals
+        self._hub_manager.status_changed.connect(self._on_hub_status_changed)
+        self._hub_manager.message.connect(self._on_hub_message)
 
         # Initialize offline mode components
         self._init_local_storage()
@@ -336,7 +337,7 @@ class MainWindow(QMainWindow):
             db_path = Path.cwd() / db_path
 
         self._session_db = LocalSessionDB(db_path)
-        self._sync_manager = SyncManager(self._session_db, self._hub_client)
+        self._sync_manager = SyncManager(self._session_db, None)
 
     def _init_tensorzero(self):
         """Initialize TensorZero client for LLM routing."""
@@ -391,88 +392,36 @@ class MainWindow(QMainWindow):
             self._offline_banner.set_syncing(False)
 
     def _init_hub(self):
-        """Initialize Hub connection."""
-        if self.settings.hub.token:
-            config = HubConfig(
-                url=self.settings.hub.url,
-                token=self.settings.hub.token,
-                timeout=self.settings.hub.timeout_seconds,
-            )
-            self._hub_client = HubClient(config)
+        """Initialize Hub connection via HubConnectionManager."""
+        # Set callback for when connection is established
+        self._hub_manager.set_on_connected_callback(self._on_hub_connected)
 
-            # Update sync manager with hub client
-            if self._sync_manager:
-                self._sync_manager.set_hub_client(self._hub_client)
+        # Initialize connection
+        self._hub_manager.initialize(
+            url=self.settings.hub.url,
+            token=self.settings.hub.token or "",
+            timeout=self.settings.hub.timeout_seconds,
+        )
 
-            # Set connection callback
-            self._hub_client.set_connection_callback(self._on_hub_connection_callback)
+    def _on_hub_connected(self):
+        """Called when Hub connection is established."""
+        # Update sync manager with hub client
+        if self._sync_manager and self._hub_manager.client:
+            self._sync_manager.set_hub_client(self._hub_manager.client)
 
-            # Check connection asynchronously
-            asyncio.ensure_future(self._check_hub_connection())
-        else:
-            self._status_bar.set_status("Hub not configured")
-            self._chat_area.add_system_message(
-                "Hub token not configured. Set HUB_DEVICE_TOKEN in your .env file."
-            )
+        # Register skills with Hub
+        asyncio.ensure_future(self._register_skills_with_hub())
 
-    async def _check_hub_connection(self):
-        """Check Hub connection status."""
-        if self._hub_client:
-            try:
-                healthy = await self._hub_client.health()
-                self._connected = healthy
+    @Slot(object)
+    def _on_hub_status_changed(self, status: HubStatus):
+        """Handle Hub status change from HubConnectionManager."""
+        self._connected = status.connected
+        self._update_hub_status(status.connected)
 
-                if healthy:
-                    # Update status manually since callback might not have fired yet if we didn't
-                    # use connect_websocket explicitly here
-                    # But connect_websocket is called by app logic usually?
-                    # Actually HubClient.health() is HTTP, not WebSocket.
-                    # We should probably initialize WebSocket here or rely on explicit connect.
-                    # For now, let's trust the health check for initial status.
-                    self._update_hub_status(True)
-                    self._chat_area.add_system_message("Connected to Hub. Ready to chat!")
-
-                    # Connect WebSocket
-                    asyncio.create_task(self._hub_client.connect_websocket())
-
-                    # Register skills with Hub
-                    await self._register_skills_with_hub()
-                else:
-                    self._update_hub_status(False)
-                    self._chat_area.add_system_message(
-                        "Hub is not responding. Check if the server is running."
-                    )
-            except Exception as e:
-                self._update_hub_status(False)
-
-                logger.exception("Failed to connect to Hub")
-                err_summary = self._format_exception_for_user(e)
-                self._chat_area.add_system_message(
-                    f"Failed to connect to Hub: {err_summary}"
-                )
-
-    @staticmethod
-    def _format_exception_for_user(exc: BaseException) -> str:
-        """Format exceptions for display.
-
-        Python 3.11+ can wrap async errors into ExceptionGroup (e.g., from TaskGroup).
-        We unwrap those so the user sees the underlying root cause.
-        """
-
-        if isinstance(exc, BaseExceptionGroup):
-            parts: List[str] = []
-            for sub in exc.exceptions:  # type: ignore[attr-defined]
-                parts.append(MainWindow._format_exception_for_user(sub))
-            return "; ".join(p for p in parts if p) or repr(exc)
-
-        msg = str(exc).strip()
-        if not msg:
-            msg = repr(exc)
-        return f"{type(exc).__name__}: {msg}"
-
-    async def _on_hub_connection_callback(self, connected: bool):
-        """Handle Hub connection callback (async)."""
-        self.hub_connection_changed.emit(connected)
+    @Slot(str)
+    def _on_hub_message(self, message: str):
+        """Handle system message from HubConnectionManager."""
+        self._chat_area.add_system_message(message)
 
     @Slot(bool)
     def _update_hub_status(self, connected: bool):
@@ -503,11 +452,12 @@ class MainWindow(QMainWindow):
 
     async def _register_skills_with_hub(self):
         """Register skills with Hub and start heartbeat."""
-        if not self._skill_service or not self._hub_client:
+        hub_client = self._hub_manager.client
+        if not self._skill_service or not hub_client:
             return
 
         # Set hub client on skill service
-        self._skill_service.hub_client = self._hub_client
+        self._skill_service.hub_client = hub_client
 
         # Register skills
         success = await self._skill_service.register_with_hub()
@@ -554,7 +504,7 @@ class MainWindow(QMainWindow):
         if self._tensorzero_client:
             self._input_area.set_sending(True)
             asyncio.ensure_future(self._send_message_via_tensorzero(message))
-        elif self._hub_client and self._connected:
+        elif self._hub_manager.client and self._connected:
             self._input_area.set_sending(True)
             asyncio.ensure_future(self._send_message(message))
         else:
@@ -573,42 +523,30 @@ class MainWindow(QMainWindow):
 
         Loop ends when LLM responds without code blocks (max 5 iterations).
         """
-        MAX_ITERATIONS = 5
+        ctx = AgentLoopContext(max_iterations=5)
 
         try:
             assistant_turn = self._chat_area.add_assistant_turn("(Thinking...)")
 
             # Build initial messages with system prompt
-            messages_to_send = []
-
-            # Add system prompt with skills
-            if self._skill_service:
-                system_prompt = self._skill_service.get_system_prompt()
-                messages_to_send.append(ChatMessage(role="system", content=system_prompt))
-
-            # Add conversation history
-            messages_to_send.extend(self._conversation_history)
-
-            # Add current message
-            messages_to_send.append(ChatMessage(role="user", content=message))
-
-            # Add to local history
-            self._conversation_history.append(
-                ChatMessage(role="user", content=message)
+            system_prompt = self._skill_service.get_system_prompt() if self._skill_service else None
+            messages_to_send = build_messages_with_history(
+                self._conversation_history, message, system_prompt
             )
 
-            # Trim history to prevent unbounded memory growth
+            # Add to local history
+            self._conversation_history.append(ChatMessage(role="user", content=message))
             self._trim_history()
 
             # Agent loop
-            all_tool_calls = []
             final_response = None
 
-            for iteration in range(MAX_ITERATIONS):
-                print(f"[Agent] Iteration {iteration + 1}/{MAX_ITERATIONS}")
+            for iteration in range(ctx.max_iterations):
+                ctx.current_iteration = iteration
+                print(f"[Agent] Iteration {iteration + 1}/{ctx.max_iterations}")
 
-                # Get response from LLM (use configurable temperature)
-                response = await self._hub_client.chat(
+                # Get response from LLM
+                response = await self._hub_manager.client.chat(
                     messages=messages_to_send,
                     temperature=self.settings.llm.temperature,
                 )
@@ -620,50 +558,41 @@ class MainWindow(QMainWindow):
                     code_blocks = self._skill_service.parse_skill_calls(response.content)
                 else:
                     code_blocks = []
-
                 print(f"[Agent] Found {len(code_blocks)} code blocks")
 
                 if not code_blocks:
-                    # No code blocks = agent is done
                     final_response = response
                     print("[Agent] No code blocks, ending loop")
                     break
 
-                # Phase 1: Show raw output (don't strip code blocks)
-                iteration_display = response.content
-                if not iteration_display:
-                    iteration_display = "(Running tools...)"
-                if iteration == 0 and assistant_turn is not None:
-                    assistant_turn.set_markdown(
-                        f"**Step {iteration + 1}:**\n\n{iteration_display}"
-                    )
+                # Display iteration content
+                iteration_display = response.content or "(Running tools...)"
+                step_header = f"**Step {iteration + 1}:**\n\n{iteration_display}"
+                if iteration == 0:
+                    assistant_turn.set_markdown(step_header)
                 else:
-                    assistant_turn.append_markdown(
-                        f"**Step {iteration + 1}:**\n\n{iteration_display}"
-                    )
+                    assistant_turn.append_markdown(step_header)
 
-                # Execute code blocks and display in UI
+                # Execute code blocks
                 outputs = []
                 for code in code_blocks:
                     result = await self._skill_service.execute_code_async(code)
 
                     # Track tool call
-                    tool_call_info = {
-                        "iteration": iteration + 1,
-                        "code": code,
-                        "success": result.success,
-                        "result": result.result,
-                        "error": result.error,
-                    }
-                    all_tool_calls.append(tool_call_info)
+                    ctx.add_tool_call(ToolCallInfo(
+                        iteration=iteration + 1,
+                        code=code,
+                        success=result.success,
+                        result=result.result,
+                        error=result.error,
+                    ))
 
-                    # Display in UI (Integrated Notebook Style)
+                    # Display in UI
                     if result.success:
                         output_text = result.result or "(no output)"
-                        assistant_turn.append_markdown(f"```output\n{output_text}\n```")
                     else:
-                        error_text = result.error
-                        assistant_turn.append_markdown(f"```output\nError: {error_text}\n```")
+                        output_text = f"Error: {result.error}"
+                    assistant_turn.append_markdown(f"```output\n{output_text}\n```")
 
                     # Collect output for LLM
                     if result.success:
@@ -672,53 +601,35 @@ class MainWindow(QMainWindow):
                         outputs.append(f"Error: {result.error}")
 
                 # Add assistant message and tool results to conversation
-                messages_to_send.append(ChatMessage(role="assistant", content=response.content))
-
-                # Format tool output clearly - tell LLM to continue
-                tool_output = chr(10).join(outputs) if outputs else "(no output)"
-                tool_message = (
-                    f"[Code executed. Output:]\n{tool_output}\n\n"
-                    "[Now respond naturally to the user based on this result.]"
+                messages_to_send.append(
+                    ChatMessage(role="assistant", content=response.content)
                 )
-                messages_to_send.append(ChatMessage(role="user", content=tool_message))
+                tool_msg = format_tool_output_message(outputs)
+                messages_to_send.append(ChatMessage(role="user", content=tool_msg))
 
-                print(f"[Agent] Tool output sent: {tool_output[:100]}...")
-
+                print(f"[Agent] Tool output sent: {outputs[0][:100] if outputs else ''}...")
                 final_response = response
 
-            # Phase 1: Show raw output (don't strip code blocks)
-            if final_response:
-                display_content = final_response.content
+            # Determine final display content
+            display_content = get_final_display_content(
+                final_response.content if final_response else None,
+                ctx.tool_calls,
+            )
 
-                # If response was only code blocks and we have tool outputs, show something
-                if not display_content and all_tool_calls:
-                    last_result = all_tool_calls[-1]
-                    if last_result["success"] and last_result["result"]:
-                        display_content = last_result["result"]
-                    elif not last_result["success"]:
-                        display_content = f"Error: {last_result['error']}"
-                    else:
-                        display_content = "(Tool executed successfully)"
-            else:
-                display_content = "No response from LLM"
-
-            # Add response to history and display
+            # Add response to history
             if final_response:
                 self._conversation_history.append(
                     ChatMessage(role="assistant", content=final_response.content)
                 )
-
-                # Trim history after adding response
                 self._trim_history()
 
-                if display_content:
+                # Display final response
+                if ctx.tool_calls:
                     assistant_turn.append_markdown(f"**Final:**\n\n{display_content}")
                 else:
-                    assistant_turn.append_markdown("**Final:**\n\n(No response text)")
+                    assistant_turn.set_markdown(display_content)
 
-                # Update status with iteration count
-                iter_info = f" ({len(all_tool_calls)} tool calls)" if all_tool_calls else ""
-                self._status_bar.set_info(f"Model: {final_response.model}{iter_info}")
+                self._status_bar.set_info(f"Model: {final_response.model}{ctx.get_status_suffix()}")
 
         except HubError as e:
             self._chat_area.add_system_message(f"Error: {e}")
@@ -957,7 +868,7 @@ class MainWindow(QMainWindow):
     async def _create_hub_session(self):
         """Create a new session on the Hub (legacy, used when no local storage)."""
         try:
-            session = await self._hub_client.create_session()
+            session = await self._hub_manager.client.create_session()
             self._current_session_id = session["id"]
             await self._refresh_sessions()
         except Exception as e:
@@ -975,7 +886,7 @@ class MainWindow(QMainWindow):
         # Load from local storage first
         if self._session_db:
             asyncio.ensure_future(self._load_local_session_messages(session_id))
-        elif self._hub_client and self._connected:
+        elif self._hub_manager.client and self._connected:
             asyncio.ensure_future(self._load_session_messages(session_id))
 
     async def _load_local_session_messages(self, session_id: str):
@@ -996,7 +907,7 @@ class MainWindow(QMainWindow):
     async def _load_session_messages(self, session_id: str):
         """Load messages for a session from the Hub."""
         try:
-            messages = await self._hub_client.get_session_messages(session_id)
+            messages = await self._hub_manager.client.get_session_messages(session_id)
             for msg in messages:
                 chat_msg = ChatMessage(role=msg["role"], content=msg["content"])
                 self._conversation_history.append(chat_msg)
@@ -1012,7 +923,7 @@ class MainWindow(QMainWindow):
         """Delete a session."""
         if self._session_db:
             asyncio.ensure_future(self._delete_local_session(session_id))
-        elif self._hub_client and self._connected:
+        elif self._hub_manager.client and self._connected:
             asyncio.ensure_future(self._delete_hub_session(session_id))
 
     async def _delete_local_session(self, session_id: str):
@@ -1033,7 +944,7 @@ class MainWindow(QMainWindow):
     async def _delete_hub_session(self, session_id: str):
         """Delete a session on the Hub."""
         try:
-            await self._hub_client.delete_session(session_id)
+            await self._hub_manager.client.delete_session(session_id)
             # If deleting current session, start new chat
             if session_id == getattr(self, "_current_session_id", None):
                 self._on_new_chat()
@@ -1060,8 +971,8 @@ class MainWindow(QMainWindow):
                     })
 
             # If no local storage but Hub connected, use Hub sessions
-            elif self._hub_client and self._connected:
-                sessions_data = await self._hub_client.list_sessions()
+            elif self._hub_manager.client and self._connected:
+                sessions_data = await self._hub_manager.client.list_sessions()
 
             self._chat_sidebar.set_sessions(sessions_data)
         except Exception as e:
@@ -1124,7 +1035,7 @@ class MainWindow(QMainWindow):
         This is called from a background thread, so we use a thread-safe
         approach to get the response from the async Hub client.
         """
-        if not self._hub_client or not self._connected:
+        if not self._hub_manager.client or not self._connected:
             return f"Hub not connected. You said: {text}"
 
         # Use a new event loop in this thread for the async call
@@ -1348,16 +1259,11 @@ class MainWindow(QMainWindow):
 
     def _reconnect_hub(self):
         """Reconnect to Hub with new settings."""
-        # Close existing client
-        if self._hub_client:
-            asyncio.ensure_future(self._hub_client.close())
-            self._hub_client = None
-
-        self._connected = False
-        self._status_bar.set_connected(False)
-
-        # Reinitialize
-        QTimer.singleShot(100, self._init_hub)
+        self._hub_manager.reconnect(
+            url=self.settings.hub.url,
+            token=self.settings.hub.token or "",
+            timeout=self.settings.hub.timeout_seconds,
+        )
 
     def _on_about(self):
         """Show about dialog."""
@@ -1417,9 +1323,8 @@ class MainWindow(QMainWindow):
         if self._voice_controller:
             self._voice_controller.stop()
 
-        # Cleanup Hub client
-        if self._hub_client:
-            asyncio.ensure_future(self._hub_client.close())
+        # Cleanup Hub connection
+        asyncio.ensure_future(self._hub_manager.close())
 
         # Cleanup TensorZero client
         if self._tensorzero_client:

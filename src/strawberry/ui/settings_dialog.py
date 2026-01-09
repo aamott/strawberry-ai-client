@@ -4,6 +4,7 @@ import asyncio
 import os
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse, urlunparse
 
 from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -334,7 +335,13 @@ class SettingsDialog(QDialog):
 
         self._hub_url = QLineEdit()
         self._hub_url.setPlaceholderText("http://localhost:8000")
+        self._hub_url.editingFinished.connect(self._normalize_hub_url)
         conn_layout.addRow("Hub URL:", self._hub_url)
+
+        self._hub_url_error = QLabel()
+        self._hub_url_error.setProperty("error", True)
+        self._hub_url_error.setVisible(False)
+        conn_layout.addRow("", self._hub_url_error)
 
         self._hub_token = QLineEdit()
         self._hub_token.setPlaceholderText("Enter your Hub access token")
@@ -507,6 +514,54 @@ class SettingsDialog(QDialog):
 
         # Fallback (no running loop)
         loop.run_until_complete(run_and_show())
+
+    def _normalize_hub_url(self):
+        """Normalize and validate Hub URL when field loses focus."""
+        url = self._hub_url.text().strip()
+        if not url:
+            self._hub_url_error.setVisible(False)
+            return
+
+        # Validate URL format
+        error = self._validate_url(url)
+        if error:
+            self._hub_url_error.setText(error)
+            self._hub_url_error.setVisible(True)
+            return
+
+        # Normalize: strip /api or /api/v1 suffix
+        normalized = self._normalize_url(url)
+        if normalized != url:
+            self._hub_url.setText(normalized)
+
+        self._hub_url_error.setVisible(False)
+
+    @staticmethod
+    def _validate_url(url: str) -> Optional[str]:
+        """Validate URL format. Returns error message or None if valid."""
+        try:
+            parsed = urlparse(url)
+            if not parsed.scheme:
+                return "URL must include scheme (http:// or https://)"
+            if parsed.scheme not in ("http", "https"):
+                return f"Invalid scheme '{parsed.scheme}'. Use http or https."
+            if not parsed.netloc:
+                return "URL must include a host (e.g., localhost:8000)"
+            # Check for obviously wrong ports
+            if parsed.port and parsed.port > 65535:
+                return f"Invalid port {parsed.port}. Must be 0-65535."
+            return None
+        except Exception as e:
+            return f"Invalid URL: {e}"
+
+    @staticmethod
+    def _normalize_url(url: str) -> str:
+        """Normalize Hub URL by stripping /api suffix."""
+        parsed = urlparse(url)
+        path = (parsed.path or "").rstrip("/")
+        if path in {"/api", "/api/v1"}:
+            parsed = parsed._replace(path="")
+        return urlunparse(parsed).rstrip("/")
 
     def _on_save(self):
         """Save settings and close dialog."""

@@ -7,14 +7,13 @@ automatic fallback between Hub and local Ollama providers.
 
 import logging
 import os
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from tensorzero import AsyncTensorZeroGateway
 
-from ..models import ChatMessage
+from ..models import ChatMessage, ChatResponse, ToolCall
 
 # Load .env file from project root before TensorZero initialization
 _project_root = Path(__file__).parent.parent.parent.parent
@@ -29,30 +28,8 @@ if not os.environ.get("HUB_DEVICE_TOKEN"):
 logger = logging.getLogger(__name__)
 
 
-# Re-export ChatMessage for backward compatibility
+# Re-export for backward compatibility
 __all__ = ["ChatMessage", "ChatResponse", "ToolCall", "TensorZeroClient", "TensorZeroError"]
-
-
-@dataclass
-class ToolCall:
-    """A tool call from the LLM."""
-
-    id: str
-    name: str
-    arguments: Dict[str, Any]
-
-
-@dataclass
-class ChatResponse:
-    """Response from TensorZero chat endpoint."""
-
-    content: str
-    model: str
-    variant: str  # Which variant was used (hub or local_ollama)
-    is_fallback: bool  # True if using fallback (local) provider
-    inference_id: str = ""
-    tool_calls: List[ToolCall] = field(default_factory=list)
-    raw: Dict[str, Any] = field(default_factory=dict)
 
 
 class TensorZeroError(Exception):
