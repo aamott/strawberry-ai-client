@@ -8,7 +8,6 @@ from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout, QWidget
 from ..theme import Theme
 from .assistant_turn_widget import AssistantTurnWidget
 from .chat_bubble import ChatBubble
-from .tool_call_widget import ToolCallWidget
 
 
 class ChatArea(QScrollArea):
@@ -118,41 +117,6 @@ class ChatArea(QScrollArea):
 
         if self._auto_scroll:
             QTimer.singleShot(10, self._scroll_to_bottom)
-
-    def add_tool_call(
-        self,
-        tool_name: str,
-        arguments: dict,
-    ) -> ToolCallWidget:
-        """Add a tool/skill call widget.
-
-        Args:
-            tool_name: Name of the tool being called
-            arguments: Tool arguments
-
-        Returns:
-            The created ToolCallWidget (can be updated with results)
-        """
-        if self._last_assistant_turn is not None:
-            widget = self._last_assistant_turn.add_tool_call(
-                tool_name=tool_name,
-                arguments=arguments,
-            )
-        else:
-            widget = ToolCallWidget(
-                tool_name=tool_name,
-                arguments=arguments,
-                theme=self._theme,
-                parent=self._container,
-            )
-
-            # Insert before the stretch
-            self._layout.insertWidget(self._layout.count() - 1, widget)
-
-        if self._auto_scroll:
-            QTimer.singleShot(10, self._scroll_to_bottom)
-
-        return widget
 
     def clear_messages(self):
         """Remove all messages from the chat."""

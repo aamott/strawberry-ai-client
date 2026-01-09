@@ -78,6 +78,18 @@ async def test_python_exec_tool_can_call_skill(skill_service: SkillService) -> N
 
 
 @pytest.mark.asyncio
+async def test_python_exec_tool_returns_placeholder_when_no_output(
+    skill_service: SkillService,
+) -> None:
+    """`python_exec` should return a stable non-empty result when code prints nothing."""
+    result = await skill_service.execute_tool_async(
+        "python_exec",
+        {"code": "device.WeatherSkill.get_current_weather('Seattle')"},
+    )
+    assert result == {"result": "(no output)"}
+
+
+@pytest.mark.asyncio
 async def test_unknown_tool_returns_error(skill_service: SkillService) -> None:
     """Unknown tool names should return a structured error."""
     result = await skill_service.execute_tool_async("not_a_tool", {})

@@ -9,7 +9,6 @@ from .input_area import InputArea, MicState
 from .offline_banner import OfflineModeBanner
 from .output_widget import OutputWidget
 from .status_bar import StatusBar
-from .tool_call_widget import ToolCallWidget
 from .voice_indicator import VoiceIndicator
 
 __all__ = [
@@ -23,7 +22,6 @@ __all__ = [
     "OfflineModeBanner",
     "OutputWidget",
     "StatusBar",
-    "ToolCallWidget",
     "VoiceIndicator",
 ]
 

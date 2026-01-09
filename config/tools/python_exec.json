@@ -5,7 +5,7 @@
   "properties": {
     "code": {
       "type": "string",
-      "description": "Python code to execute. Has access to 'device' or 'devices' object for skill calls (and legacy 'device_manager'), and 'print()' for output."
+      "description": "Python code to execute. Has access to 'device' or 'devices' object for skill calls (and legacy 'device_manager'), and 'print()' for output. If you want the user to see a skill result, print it."
     }
   },
   "required": ["code"],

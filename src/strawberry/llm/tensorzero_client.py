@@ -141,6 +141,8 @@ class TensorZeroClient:
 
         # Add conversation messages (system role not allowed in messages)
         for msg in messages:
+            if msg.role == "system":
+                continue
             tz_messages.append({"role": msg.role, "content": msg.content})
 
         try:
@@ -265,8 +267,10 @@ class TensorZeroClient:
         # Build messages for TensorZero
         tz_messages = []
 
-        # Add conversation messages
+        # Add conversation messages (system role not allowed in messages)
         for msg in messages:
+            if msg.role == "system":
+                continue
             tz_messages.append({"role": msg.role, "content": msg.content})
 
         # Add tool results as user message with tool_result content blocks

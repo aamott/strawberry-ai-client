@@ -623,16 +623,18 @@ class MainWindow(QMainWindow):
                         error=result.error,
                     ))
 
-                    # Display in UI
+                    # Display in UI (inline code cell + output)
+                    assistant_turn.append_markdown(f"```python\n{code}\n```")
                     if result.success:
                         output_text = result.result or "(no output)"
+                        assistant_turn.append_markdown(f"```bash\n{output_text}\n```")
                     else:
-                        output_text = f"Error: {result.error}"
-                    assistant_turn.append_markdown(f"```output\n{output_text}\n```")
+                        error_text = result.error or "Unknown error"
+                        assistant_turn.append_markdown(f"```bash\nError: {error_text}\n```")
 
                     # Collect output for LLM
                     if result.success:
-                        outputs.append(result.result or "")
+                        outputs.append(result.result or "(no output)")
                     else:
                         outputs.append(f"Error: {result.error}")
 
@@ -796,14 +798,32 @@ class MainWindow(QMainWindow):
                     }
                     all_tool_calls.append(tool_call_info)
 
-                    # Display tool call in UI (Integrated Notebook Style)
-                    # For TZ native tools, show results similar to the local path
-                    if "result" in result:
-                        output_text = str(result["result"])
-                        assistant_turn.append_markdown(f"```output\n{output_text}\n```")
+                    # Display tool call in UI (inline)
+                    # - For python_exec, show the actual code
+                    # - For other tools, show JSON args
+                    if tool_name == "python_exec" and "code" in tool_args:
+                        assistant_turn.append_markdown(
+                            f"```python\n{tool_args.get('code') or ''}\n```"
+                        )
                     else:
-                        error_text = result.get("error", "Unknown error")
-                        assistant_turn.append_markdown(f"```output\nError: {error_text}\n```")
+                        try:
+                            import json
+
+                            args_json = json.dumps(tool_args, indent=2, sort_keys=True)
+                        except TypeError:
+                            args_json = "\n".join(
+                                f"{k}: {repr(v)}" for k, v in (tool_args or {}).items()
+                            )
+                        assistant_turn.append_markdown(f"```json\n{args_json}\n```")
+
+                    if "result" in result:
+                        assistant_turn.append_markdown(
+                            f"```bash\n{str(result['result'])}\n```"
+                        )
+                    else:
+                        assistant_turn.append_markdown(
+                            f"```bash\nError: {result.get('error', 'Unknown error')}\n```"
+                        )
 
                     # Build tool result for TensorZero
                     tool_results.append({

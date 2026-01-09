@@ -375,7 +375,7 @@ class SkillService:
 
             exec(code, exec_globals, {})
             output = stdout_capture.getvalue().strip()
-            return SkillCallResult(success=True, result=output)
+            return SkillCallResult(success=True, result=output or "(no output)")
         except Exception as e:
             return SkillCallResult(success=False, error=str(e))
         finally:
