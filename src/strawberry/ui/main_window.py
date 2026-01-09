@@ -1,5 +1,6 @@
 """Main application window."""
 
+import ast
 import asyncio
 import logging
 import os
@@ -743,8 +744,31 @@ class MainWindow(QMainWindow):
                 tool_count = len(response.tool_calls)
                 print(f"[TZ Agent] Response: {content_preview}... Tools: {tool_count}")
 
-                # Check for tool calls
-                if not response.tool_calls:
+                # Check for tool calls. Some providers/models may return legacy tool
+                # execution requests as fenced ```tool_code``` blocks (or bare
+                # device.* calls) instead of structured tool_calls.
+                legacy_tool_request = False
+                if response.content:
+                    content_lower = response.content.lower()
+                    if "```tool_code" in content_lower:
+                        legacy_tool_request = True
+                    else:
+                        for line in response.content.splitlines():
+                            s = line.strip()
+                            if s.startswith(
+                                (
+                                    "device.",
+                                    "devices.",
+                                    "device_manager.",
+                                    "print(device.",
+                                    "print(devices.",
+                                    "print(device_manager.",
+                                )
+                            ):
+                                legacy_tool_request = True
+                                break
+
+                if not response.tool_calls and not legacy_tool_request:
                     # No tool calls - agent is done
                     final_response = response
                     print("[TZ Agent] No tool calls, ending loop")
@@ -831,6 +855,113 @@ class MainWindow(QMainWindow):
                         "name": tool_name,
                         "result": result.get("result", result.get("error", "")),
                     })
+
+                # Execute legacy fenced tool_code blocks if no structured tool calls
+                if legacy_tool_request and not response.tool_calls and self._skill_service:
+                    code_blocks = self._skill_service.parse_skill_calls(response.content or "")
+                    if code_blocks:
+                        outputs = []
+                        for code in code_blocks:
+                            stripped = (code or "").strip()
+
+                            # If the model emits a tool invocation like python_exec({...})
+                            # as "tool_code", route it through the tool system rather
+                            # than executing as Python.
+                            tool_name: Optional[str] = None
+                            for candidate in ("python_exec", "search_skills", "describe_function"):
+                                if stripped.startswith(f"{candidate}(") and stripped.endswith(")"):
+                                    tool_name = candidate
+                                    break
+
+                            if tool_name:
+                                args_str = stripped[len(tool_name) + 1 : -1].strip()
+                                tool_args = {}
+                                if args_str:
+                                    try:
+                                        import json
+
+                                        tool_args = json.loads(args_str)
+                                    except Exception:
+                                        try:
+                                            tool_args = ast.literal_eval(args_str)
+                                        except Exception:
+                                            tool_args = {}
+
+                                tool_result = await self._skill_service.execute_tool_async(
+                                    tool_name,
+                                    tool_args,
+                                )
+
+                                all_tool_calls.append(
+                                    {
+                                        "iteration": iteration + 1,
+                                        "name": tool_name,
+                                        "arguments": tool_args,
+                                        "result": tool_result,
+                                    }
+                                )
+
+                                if (
+                                    tool_name == "python_exec"
+                                    and isinstance(tool_args, dict)
+                                    and "code" in tool_args
+                                ):
+                                    assistant_turn.append_markdown(
+                                        f"```python\n{tool_args.get('code') or ''}\n```"
+                                    )
+                                else:
+                                    try:
+                                        import json
+
+                                        args_json = json.dumps(tool_args, indent=2, sort_keys=True)
+                                    except TypeError:
+                                        args_json = "\n".join(
+                                            f"{k}: {repr(v)}" for k, v in (tool_args or {}).items()
+                                        )
+                                    assistant_turn.append_markdown(f"```json\n{args_json}\n```")
+
+                                if "result" in tool_result:
+                                    out = str(tool_result.get("result") or "(no output)")
+                                    outputs.append(out)
+                                    assistant_turn.append_markdown(f"```bash\n{out}\n```")
+                                else:
+                                    err = str(tool_result.get("error") or "Unknown error")
+                                    outputs.append(f"Error: {err}")
+                                    assistant_turn.append_markdown(f"```bash\nError: {err}\n```")
+                            else:
+                                result = await self._skill_service.execute_code_async(code)
+
+                                all_tool_calls.append(
+                                    {
+                                        "iteration": iteration + 1,
+                                        "name": "python_exec",
+                                        "arguments": {"code": code},
+                                        "result": {"result": result.result, "error": result.error},
+                                    }
+                                )
+
+                                assistant_turn.append_markdown(f"```python\n{code}\n```")
+                                if result.success:
+                                    outputs.append(result.result or "(no output)")
+                                    assistant_turn.append_markdown(
+                                        f"```bash\n{result.result or '(no output)'}\n```"
+                                    )
+                                else:
+                                    outputs.append(f"Error: {result.error}")
+                                    assistant_turn.append_markdown(
+                                        f"```bash\nError: {result.error or 'Unknown error'}\n```"
+                                    )
+
+                        # Feed tool output back in-band and continue the loop using a
+                        # regular chat turn (not structured tool_results).
+                        tz_messages.append(
+                            ChatMessage(role="assistant", content=response.content)
+                        )
+                        tz_messages.append(
+                            ChatMessage(role="user", content=format_tool_output_message(outputs))
+                        )
+                        final_response = response
+                        continue
 
                 # Add assistant response to messages for next iteration
                 tz_messages.append(ChatMessage(role="assistant", content=response.content))

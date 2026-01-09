@@ -1,6 +1,7 @@
 """Assistant turn widget."""
+import re
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -8,6 +9,55 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLay
 
 from ..markdown_renderer import render_markdown
 from ..theme import Theme
+
+
+def _parse_chunks(md: str) -> List[Tuple[str, str, Optional[str]]]:
+    """Parse markdown into text/code/output chunks.
+
+    Returns tuples of:
+    - ("text", text, None)
+    - ("code", code, language)
+    - ("output", output, None)
+    """
+    if not md:
+        return [("text", "", None)]
+
+    chunks: List[Tuple[str, str, Optional[str]]] = []
+    pattern = re.compile(r"```(?P<lang>[A-Za-z0-9_-]+)?\n(?P<body>.*?)\n?```", re.DOTALL)
+
+    last_end = 0
+    for match in pattern.finditer(md):
+        # Any text before this block
+        if match.start() > last_end:
+            text = md[last_end : match.start()]
+            if text:
+                chunks.append(("text", text, None))
+
+        lang = match.group("lang")
+        lang_norm = lang.lower() if lang else None
+        body = (match.group("body") or "").strip()
+
+        if lang_norm in ("output", "result"):
+            chunks.append(("output", body, None))
+        else:
+            chunks.append(("code", body, lang_norm))
+
+        last_end = match.end()
+
+    # Trailing text
+    if last_end < len(md):
+        text = md[last_end:]
+        if text:
+            chunks.append(("text", text, None))
+
+    if not chunks:
+        return [("text", md, None)]
+
+    # If the whole string was plain text, normalize to single chunk.
+    if len(chunks) == 1 and chunks[0][0] == "text":
+        return [("text", md, None)]
+
+    return chunks
 
 
 class AssistantTurnWidget(QFrame):

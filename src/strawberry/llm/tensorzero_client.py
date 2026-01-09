@@ -139,6 +139,9 @@ class TensorZeroClient:
         # Build input for TensorZero
         tz_messages = []
 
+        if system_prompt:
+            tz_messages.append({"role": "user", "content": system_prompt})
+
         # Add conversation messages (system role not allowed in messages)
         for msg in messages:
             if msg.role == "system":
@@ -152,8 +155,6 @@ class TensorZeroClient:
                 "function_name": "chat",
                 "input": {"messages": tz_messages},
             }
-            if system_prompt:
-                inference_params["input"]["system"] = system_prompt
 
             response = await gateway.inference(**inference_params)
 
@@ -267,6 +268,9 @@ class TensorZeroClient:
         # Build messages for TensorZero
         tz_messages = []
 
+        if system_prompt:
+            tz_messages.append({"role": "user", "content": system_prompt})
+
         # Add conversation messages (system role not allowed in messages)
         for msg in messages:
             if msg.role == "system":
@@ -287,8 +291,6 @@ class TensorZeroClient:
 
         try:
             inference_input: Dict[str, Any] = {"messages": tz_messages}
-            if system_prompt:
-                inference_input["system"] = system_prompt
 
             response = await gateway.inference(
                 function_name="chat",
