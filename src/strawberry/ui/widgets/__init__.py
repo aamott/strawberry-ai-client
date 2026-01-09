@@ -4,8 +4,10 @@ from .assistant_turn_widget import AssistantTurnWidget
 from .chat_area import ChatArea
 from .chat_bubble import ChatBubble
 from .chat_history import ChatHistorySidebar
+from .code_block_widget import CodeBlockWidget
 from .input_area import InputArea, MicState
 from .offline_banner import OfflineModeBanner
+from .output_widget import OutputWidget
 from .status_bar import StatusBar
 from .tool_call_widget import ToolCallWidget
 from .voice_indicator import VoiceIndicator
@@ -15,9 +17,11 @@ __all__ = [
     "ChatArea",
     "ChatBubble",
     "ChatHistorySidebar",
+    "CodeBlockWidget",
     "InputArea",
     "MicState",
     "OfflineModeBanner",
+    "OutputWidget",
     "StatusBar",
     "ToolCallWidget",
     "VoiceIndicator",

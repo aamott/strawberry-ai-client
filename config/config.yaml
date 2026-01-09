@@ -5,7 +5,7 @@ device:
   # id: auto-generated if not set
 
 hub:
-  url: "http://localhost:80000"
+  url: "http://localhost:8000"
   token: "${HUB_TOKEN}"
 
 audio:

@@ -4,6 +4,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from tenacity import (
@@ -22,7 +23,39 @@ except ImportError:
     WEBSOCKETS_AVAILABLE = False
     WebSocketClientProtocol = None
 
+from ..models import ChatMessage
+
 logger = logging.getLogger(__name__)
+
+
+try:
+    # Python 3.11+
+    BaseExceptionGroup  # type: ignore[name-defined]
+except NameError:  # pragma: no cover
+    # Python <3.11
+    from exceptiongroup import BaseExceptionGroup  # type: ignore[assignment]
+
+
+def _normalize_hub_url(url: str) -> str:
+    """Normalize Hub base URL.
+
+    The HubClient expects a base URL at the server root (no /api suffix).
+    Users often paste URLs like https://host/api or https://host/api/v1.
+    Those break Hub endpoints like /health and /ws/device.
+    """
+
+    raw = (url or "").strip()
+    if not raw:
+        return raw
+
+    parsed = urlparse(raw)
+    path = (parsed.path or "").rstrip("/")
+    if path in {"/api", "/api/v1"}:
+        parsed = parsed._replace(path="")
+
+    # Keep scheme/netloc/query/etc. Ensure no trailing slash in base.
+    normalized = urlunparse(parsed).rstrip("/")
+    return normalized
 
 
 @dataclass
@@ -31,6 +64,9 @@ class HubConfig:
     url: str
     token: str
     timeout: float = 30.0
+
+    def __post_init__(self) -> None:
+        self.url = _normalize_hub_url(self.url)
 
     @classmethod
     def from_settings(cls, settings) -> Optional["HubConfig"]:
@@ -44,11 +80,8 @@ class HubConfig:
         )
 
 
-@dataclass
-class ChatMessage:
-    """A chat message."""
-    role: str  # user, assistant, system
-    content: str
+# Re-export ChatMessage for backward compatibility
+__all__ = ["ChatMessage", "ChatResponse", "HubConfig", "HubClient", "HubError"]
 
 
 @dataclass
@@ -143,7 +176,14 @@ class HubClient:
         try:
             response = await self.client.get("/health")
             return response.status_code == 200
-        except httpx.RequestError:
+        except httpx.RequestError as e:
+            logger.warning(f"Hub health check request error: {e}")
+            return False
+        except BaseExceptionGroup as eg:
+            # Some async networking stacks raise ExceptionGroup/TaskGroup wrappers.
+            # Log underlying errors and treat as unhealthy.
+            for sub in eg.exceptions:  # type: ignore[attr-defined]
+                logger.warning(f"Hub health check error: {sub!r}")
             return False
 
     async def get_device_info(self) -> Dict[str, Any]:

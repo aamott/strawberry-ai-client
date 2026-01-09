@@ -1,20 +1,30 @@
 """Main application window."""
 
 import asyncio
+import logging
 import os
+import traceback
 from pathlib import Path
 from typing import List, Optional
 
+import httpx
 from PySide6.QtCore import QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QFont
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
+
+try:
+    # Python 3.11+
+    BaseExceptionGroup  # type: ignore[name-defined]
+except NameError:  # pragma: no cover
+    # Python <3.11 (dependency of anyio/httpx in some environments)
+    from exceptiongroup import BaseExceptionGroup  # type: ignore[assignment]
 
 from ..config import Settings
 from ..config.persistence import persist_settings_and_env
 from ..hub import HubClient, HubConfig
-from ..hub.client import ChatMessage, HubError
+from ..hub.client import HubError
 from ..llm import OfflineModeTracker, TensorZeroClient
-from ..llm.tensorzero_client import ChatMessage as TZChatMessage
+from ..models import ChatMessage
 from ..skills import SkillService
 from ..storage import LocalSessionDB, SyncManager
 from .theme import DARK_THEME, THEMES, get_stylesheet
@@ -28,6 +38,8 @@ from .widgets import (
     StatusBar,
     VoiceIndicator,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
@@ -291,9 +303,6 @@ class MainWindow(QMainWindow):
             self._input_area.set_theme(self._theme)
             self._status_bar.set_theme(self._theme)
 
-            # Update menu checkmarks
-            view_menu = self.menuBar().findChild(QMenu, "")
-            _ = view_menu
             # Note: Would need to properly track actions to update checkmarks
 
     def _init_skills(self):
@@ -435,7 +444,31 @@ class MainWindow(QMainWindow):
                     )
             except Exception as e:
                 self._update_hub_status(False)
-                self._chat_area.add_system_message(f"Failed to connect to Hub: {e}")
+
+                logger.exception("Failed to connect to Hub")
+                err_summary = self._format_exception_for_user(e)
+                self._chat_area.add_system_message(
+                    f"Failed to connect to Hub: {err_summary}"
+                )
+
+    @staticmethod
+    def _format_exception_for_user(exc: BaseException) -> str:
+        """Format exceptions for display.
+
+        Python 3.11+ can wrap async errors into ExceptionGroup (e.g., from TaskGroup).
+        We unwrap those so the user sees the underlying root cause.
+        """
+
+        if isinstance(exc, BaseExceptionGroup):
+            parts: List[str] = []
+            for sub in exc.exceptions:  # type: ignore[attr-defined]
+                parts.append(MainWindow._format_exception_for_user(sub))
+            return "; ".join(p for p in parts if p) or repr(exc)
+
+        msg = str(exc).strip()
+        if not msg:
+            msg = repr(exc)
+        return f"{type(exc).__name__}: {msg}"
 
     async def _on_hub_connection_callback(self, connected: bool):
         """Handle Hub connection callback (async)."""
@@ -514,6 +547,8 @@ class MainWindow(QMainWindow):
                         self._current_session_id, msg.id, "user", message
                     )
                 )
+            # Refresh session list to update message count
+            asyncio.ensure_future(self._refresh_sessions())
 
         # Send via TensorZero (handles Hub/local fallback) or direct Hub
         if self._tensorzero_client:
@@ -541,8 +576,6 @@ class MainWindow(QMainWindow):
         MAX_ITERATIONS = 5
 
         try:
-            import re
-
             assistant_turn = self._chat_area.add_assistant_turn("(Thinking...)")
 
             # Build initial messages with system prompt
@@ -596,12 +629,8 @@ class MainWindow(QMainWindow):
                     print("[Agent] No code blocks, ending loop")
                     break
 
-                iteration_display = re.sub(
-                    r"```[pP]ython\s*.*?\s*```",
-                    "",
-                    response.content,
-                    flags=re.DOTALL,
-                ).strip()
+                # Phase 1: Show raw output (don't strip code blocks)
+                iteration_display = response.content
                 if not iteration_display:
                     iteration_display = "(Running tools...)"
                 if iteration == 0 and assistant_turn is not None:
@@ -628,15 +657,13 @@ class MainWindow(QMainWindow):
                     }
                     all_tool_calls.append(tool_call_info)
 
-                    # Display in UI
-                    widget = self._chat_area.add_tool_call(
-                        tool_name=f"Agent Step {iteration + 1}",
-                        arguments={"code": code},
-                    )
+                    # Display in UI (Integrated Notebook Style)
                     if result.success:
-                        widget.set_success(result.result or "(no output)")
+                        output_text = result.result or "(no output)"
+                        assistant_turn.append_markdown(f"```output\n{output_text}\n```")
                     else:
-                        widget.set_error(result.error)
+                        error_text = result.error
+                        assistant_turn.append_markdown(f"```output\nError: {error_text}\n```")
 
                     # Collect output for LLM
                     if result.success:
@@ -659,13 +686,9 @@ class MainWindow(QMainWindow):
 
                 final_response = response
 
-            # Extract display content (remove code blocks from final response)
+            # Phase 1: Show raw output (don't strip code blocks)
             if final_response:
-                display_content = re.sub(
-                    r'```[pP]ython\s*.*?\s*```', '',
-                    final_response.content,
-                    flags=re.DOTALL
-                ).strip()
+                display_content = final_response.content
 
                 # If response was only code blocks and we have tool outputs, show something
                 if not display_content and all_tool_calls:
@@ -721,10 +744,13 @@ class MainWindow(QMainWindow):
 
             # Add conversation history
             for msg in self._conversation_history:
-                tz_messages.append(TZChatMessage(role=msg.role, content=msg.content))
+                # tensorzero/openai often reject 'system' messages in the middle of history
+                if msg.role == "system":
+                    continue
+                tz_messages.append(ChatMessage(role=msg.role, content=msg.content))
 
             # Add current message
-            tz_messages.append(TZChatMessage(role="user", content=message))
+            tz_messages.append(ChatMessage(role="user", content=message))
 
             # Add to local history
             self._conversation_history.append(
@@ -823,15 +849,14 @@ class MainWindow(QMainWindow):
                     }
                     all_tool_calls.append(tool_call_info)
 
-                    # Display tool call in UI
-                    widget = self._chat_area.add_tool_call(
-                        tool_name=tool_name,
-                        arguments=tool_args,
-                    )
+                    # Display tool call in UI (Integrated Notebook Style)
+                    # For TZ native tools, show results similar to the local path
                     if "result" in result:
-                        widget.set_success(str(result["result"]))
+                        output_text = str(result["result"])
+                        assistant_turn.append_markdown(f"```output\n{output_text}\n```")
                     else:
-                        widget.set_error(result.get("error", "Unknown error"))
+                        error_text = result.get("error", "Unknown error")
+                        assistant_turn.append_markdown(f"```output\nError: {error_text}\n```")
 
                     # Build tool result for TensorZero
                     tool_results.append({
@@ -841,7 +866,7 @@ class MainWindow(QMainWindow):
                     })
 
                 # Add assistant response to messages for next iteration
-                tz_messages.append(TZChatMessage(role="assistant", content=response.content))
+                tz_messages.append(ChatMessage(role="assistant", content=response.content))
 
                 final_response = response
 
@@ -886,7 +911,6 @@ class MainWindow(QMainWindow):
                 self._status_bar.set_info(f"Model: {final_response.model}{variant_info}{tool_info}")
 
         except Exception as e:
-            import traceback
             traceback.print_exc()
             self._chat_area.add_system_message(f"Error: {e}")
         finally:
@@ -1104,8 +1128,6 @@ class MainWindow(QMainWindow):
             return f"Hub not connected. You said: {text}"
 
         # Use a new event loop in this thread for the async call
-        import asyncio
-
         # Create a new event loop for this thread
         loop = asyncio.new_event_loop()
         try:
@@ -1125,8 +1147,6 @@ class MainWindow(QMainWindow):
 
         Creates a fresh HTTP client since we're in a different thread/loop.
         """
-        import httpx
-
         try:
             # Create a new client for this request (thread-safe)
             async with httpx.AsyncClient(
@@ -1231,6 +1251,8 @@ class MainWindow(QMainWindow):
 
     def _apply_settings_changes(self, changes: dict):
         """Apply settings changes from dialog."""
+        project_root = Path(__file__).resolve().parents[3]
+
         # Persist changes first (best effort). Non-secrets go to config/config.yaml.
         # Secrets (tokens/API keys) go to .env and are applied immediately.
         yaml_updates = {}
@@ -1264,10 +1286,15 @@ class MainWindow(QMainWindow):
             env_updates["HUB_DEVICE_TOKEN"] = token
             env_updates["HUB_TOKEN"] = token
 
+            # Eagerly apply in-memory so reconnect works even if file persistence fails.
+            if token:
+                os.environ["HUB_DEVICE_TOKEN"] = token
+                os.environ["HUB_TOKEN"] = token
+
         try:
             result = persist_settings_and_env(
-                config_path=Path("config/config.yaml"),
-                env_path=Path(".env"),
+                config_path=project_root / "config" / "config.yaml",
+                env_path=project_root / ".env",
                 yaml_updates=yaml_updates,
                 env_updates=env_updates,
             )

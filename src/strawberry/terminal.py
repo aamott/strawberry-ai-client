@@ -8,7 +8,8 @@ from typing import Callable, Optional
 
 from .config import Settings, load_config
 from .hub import HubClient, HubConfig
-from .hub.client import ChatMessage, HubError
+from .hub.client import HubError
+from .models import ChatMessage
 from .pipeline.events import EventType, PipelineEvent
 
 

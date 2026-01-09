@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 from tensorzero import AsyncTensorZeroGateway
 
+from ..models import ChatMessage
+
 # Load .env file from project root before TensorZero initialization
 _project_root = Path(__file__).parent.parent.parent.parent
 load_dotenv(_project_root / ".env")
@@ -27,12 +29,8 @@ if not os.environ.get("HUB_DEVICE_TOKEN"):
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ChatMessage:
-    """A chat message."""
-
-    role: str  # user, assistant, system
-    content: str
+# Re-export ChatMessage for backward compatibility
+__all__ = ["ChatMessage", "ChatResponse", "ToolCall", "TensorZeroClient", "TensorZeroError"]
 
 
 @dataclass
