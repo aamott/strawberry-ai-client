@@ -5,10 +5,18 @@ from typing import List, Optional, Tuple
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..markdown_renderer import render_markdown
 from ..theme import Theme
+from .auto_resizing_text_browser import AutoResizingTextBrowser
 
 
 def _parse_chunks(md: str) -> List[Tuple[str, str, Optional[str]]]:
@@ -99,20 +107,14 @@ class AssistantTurnWidget(QFrame):
         self._sender_label = sender
 
         # Content container (will hold text labels and code/output block widgets)
-        self._message_label = QLabel()
-        self._message_label.setObjectName("messageLabel")
-        self._message_label.setWordWrap(True)
-        self._message_label.setTextFormat(Qt.TextFormat.RichText)
-        self._message_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-            | Qt.TextInteractionFlag.TextSelectableByKeyboard
-            | Qt.TextInteractionFlag.LinksAccessibleByMouse
+        self._message_view = AutoResizingTextBrowser()
+        self._message_view.setObjectName("messageView")
+        self._message_view.setFrameShape(QFrame.Shape.NoFrame)
+        self._message_view.setOpenExternalLinks(True)
+        self._message_view.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
         )
-        self._message_label.setOpenExternalLinks(True)
-        self._message_label.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum
-        )
-        self._bubble_layout.addWidget(self._message_label)
+        self._bubble_layout.addWidget(self._message_view)
 
         # Render initial content
         self._render_message()
@@ -130,21 +132,19 @@ class AssistantTurnWidget(QFrame):
 
         # Bubble sizing
         self._bubble.setMinimumWidth(100)
-        self._bubble.setMaximumWidth(1200)  # Increased for better readability
-        self._bubble.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+        self._bubble.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        outer_layout.addWidget(self._bubble)
-        outer_layout.addStretch()
+        outer_layout.addWidget(self._bubble, 1)
 
         self._apply_style()
 
     def _render_message(self) -> None:
         """Render markdown content as HTML."""
         html_content = render_markdown(self._markdown or "", self._theme)
-        self._message_label.setText(html_content)
+        self._message_view.setHtml(html_content)
 
         if self._theme:
-            self._message_label.setStyleSheet(
+            self._message_view.setStyleSheet(
                 f"color: {self._theme.ai_text}; background: transparent;"
             )
 
