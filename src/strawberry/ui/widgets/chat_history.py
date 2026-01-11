@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -177,8 +178,15 @@ class ChatHistorySidebar(QFrame):
         self._list_layout.setSpacing(4)
         self._list_layout.addStretch()
 
-        # Scroll area would be better but keeping simple for now
-        layout.addWidget(self._list_container, 1)
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setObjectName("chatHistoryScroll")
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._scroll_area.setWidget(self._list_container)
+
+        layout.addWidget(self._scroll_area, 1)
 
         # Empty state
         self._empty_label = QLabel("No chat history yet.\nStart a new chat!")
