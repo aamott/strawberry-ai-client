@@ -13,15 +13,17 @@ from PySide6.QtCore import QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
 
+from strawberry.skills.service import SkillService
+
 from ..config import Settings
 from ..config.persistence import persist_settings_and_env
 from ..hub.client import HubError
 from ..llm import OfflineModeTracker, TensorZeroClient
 from ..models import ChatMessage
-from ..skills import SkillService
 from .agent_helpers import (
     AgentLoopContext,
     ToolCallInfo,
+    append_in_band_tool_feedback,
     build_messages_with_history,
     format_tool_output_message,
     get_final_display_content,
@@ -809,6 +811,7 @@ class MainWindow(QMainWindow):
 
                 # Execute tool calls
                 tool_results = []
+                in_band_outputs: list[str] = []
                 for tool_call in response.tool_calls:
                     tool_name = tool_call.name or "unknown_tool"
                     tool_args = tool_call.arguments or {}
@@ -867,10 +870,14 @@ class MainWindow(QMainWindow):
                         assistant_turn.append_markdown(f"```json\n{args_json}\n```")
 
                     if "result" in result:
+                        in_band_outputs.append(str(result["result"]))
                         assistant_turn.append_markdown(
                             f"```bash\n{str(result['result'])}\n```"
                         )
                     else:
+                        in_band_outputs.append(
+                            f"Error: {result.get('error', 'Unknown error')}"
+                        )
                         assistant_turn.append_markdown(
                             f"```bash\nError: {result.get('error', 'Unknown error')}\n```"
                         )
@@ -881,6 +888,19 @@ class MainWindow(QMainWindow):
                         "name": tool_name,
                         "result": result.get("result", result.get("error", "")),
                     })
+
+                # Local fallback models (e.g. Ollama) often don't reliably bind
+                # structured tool_result blocks to prior tool_calls. Feed results
+                # back in-band to avoid repeated identical tool calls.
+                if response.is_fallback and response.tool_calls:
+                    append_in_band_tool_feedback(
+                        tz_messages,
+                        assistant_content=response.content or "",
+                        outputs=in_band_outputs,
+                    )
+                    final_response = response
+                    tool_results = []
+                    continue
 
                 # Execute legacy fenced tool_code blocks if no structured tool calls
                 if legacy_tool_request and not response.tool_calls and self._skill_service:

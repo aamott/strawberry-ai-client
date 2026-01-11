@@ -96,6 +96,22 @@ def format_tool_output_message(outputs: List[str]) -> str:
     )
 
 
+def append_in_band_tool_feedback(
+    messages: List[ChatMessage],
+    *,
+    assistant_content: str,
+    outputs: List[str],
+) -> None:
+    """Append tool execution feedback as normal chat messages.
+
+    Some local models (e.g. Ollama fallbacks) do not reliably bind structured
+    tool_result blocks to prior tool_calls. In those cases, feeding tool output
+    back in-band avoids repeated identical tool calls.
+    """
+    messages.append(ChatMessage(role="assistant", content=assistant_content))
+    messages.append(ChatMessage(role="user", content=format_tool_output_message(outputs)))
+
+
 def get_final_display_content(
     final_response_content: Optional[str],
     tool_calls: List[ToolCallInfo],
