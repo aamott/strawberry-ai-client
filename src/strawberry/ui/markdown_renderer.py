@@ -135,7 +135,8 @@ def get_markdown_css(theme: Optional[Theme] = None) -> str:
             border: 1px solid {border_color};
             border-radius: 8px;
             padding: 12px;
-            overflow-x: auto;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
             margin: 0.5em 0;
         }}
 
@@ -143,6 +144,8 @@ def get_markdown_css(theme: Optional[Theme] = None) -> str:
             background-color: transparent;
             padding: 0;
             border-radius: 0;
+            white-space: inherit;
+            overflow-wrap: anywhere;
         }}
 
         .markdown-body blockquote {{

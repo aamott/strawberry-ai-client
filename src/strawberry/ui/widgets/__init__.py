@@ -1,6 +1,7 @@
 """Custom widgets for Strawberry UI."""
 
 from .assistant_turn_widget import AssistantTurnWidget
+from .auto_resizing_text_browser import AutoResizingTextBrowser
 from .chat_area import ChatArea
 from .chat_bubble import ChatBubble
 from .chat_history import ChatHistorySidebar
@@ -13,6 +14,7 @@ from .voice_indicator import VoiceIndicator
 
 __all__ = [
     "AssistantTurnWidget",
+    "AutoResizingTextBrowser",
     "ChatArea",
     "ChatBubble",
     "ChatHistorySidebar",

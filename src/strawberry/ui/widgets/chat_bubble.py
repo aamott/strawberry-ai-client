@@ -1,14 +1,23 @@
 """Chat message bubble widget."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Optional
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..markdown_renderer import render_markdown
 from ..theme import Theme
+from .auto_resizing_text_browser import AutoResizingTextBrowser
 
 
 class ChatBubble(QFrame):
@@ -42,7 +51,7 @@ class ChatBubble(QFrame):
         outer_layout.setContentsMargins(8, 4, 8, 4)
 
         if self.is_user:
-            outer_layout.addStretch()
+            outer_layout.addStretch(1)
 
         # Bubble container
         bubble = QFrame()
@@ -60,29 +69,22 @@ class ChatBubble(QFrame):
         sender.setFont(sender_font)
         bubble_layout.addWidget(sender)
 
-        # Message content - QLabel with rich text
-        message = QLabel()
-        message.setObjectName("messageLabel")
-        message.setWordWrap(True)
-        message.setTextFormat(Qt.TextFormat.RichText)
-        message.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse |
-            Qt.TextInteractionFlag.TextSelectableByKeyboard |
-            Qt.TextInteractionFlag.LinksAccessibleByMouse
-        )
+        message = AutoResizingTextBrowser()
+        message.setObjectName("messageView")
+        message.setFrameShape(QFrame.Shape.NoFrame)
         message.setOpenExternalLinks(True)
-        message.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        message.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         # Render content
         if not self.is_user:
             # Render markdown for AI messages
             html_content = render_markdown(self.content, self._theme)
-            message.setText(html_content)
+            message.setHtml(html_content)
         else:
             # Simple HTML for user messages
             escaped = self.content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             escaped = escaped.replace("\n", "<br>")
-            message.setText(escaped)
+            message.setHtml(escaped)
 
         bubble_layout.addWidget(message)
 
@@ -98,18 +100,23 @@ class ChatBubble(QFrame):
 
         # Bubble sizing
         bubble.setMinimumWidth(100)
-        bubble.setMaximumWidth(600)
-        bubble.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+        bubble.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        outer_layout.addWidget(bubble)
+        outer_layout.addWidget(bubble, 4)
 
         if not self.is_user:
-            outer_layout.addStretch()
+            outer_layout.addStretch(1)
 
         # Apply bubble-specific styling
         self._apply_style(bubble, sender, message, time_label)
 
-    def _apply_style(self, bubble: QFrame, sender: QLabel, message: QLabel, time_label: QLabel):
+    def _apply_style(
+        self,
+        bubble: QFrame,
+        sender: QLabel,
+        message: AutoResizingTextBrowser,
+        time_label: QLabel,
+    ):
         """Apply theme-based styling to bubble."""
         if self._theme:
             if self.is_user:
