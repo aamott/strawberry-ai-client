@@ -1,6 +1,6 @@
 """Tests for offline mode components."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -10,6 +10,7 @@ from strawberry.llm.offline_tracker import OfflineModeTracker
 from strawberry.llm.tensorzero_client import ChatMessage, ChatResponse, TensorZeroClient
 from strawberry.storage.session_db import LocalSessionDB, SyncStatus
 from strawberry.storage.sync_manager import SyncManager
+from strawberry.ui.session_controller import SessionController
 
 
 class TestOfflineModeTracker:
@@ -284,8 +285,8 @@ class TestLocalSessionDB:
         remote = {
             "id": "hub-789",
             "title": "Remote Session",
-            "created_at": datetime.utcnow().isoformat(),
-            "last_activity": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "last_activity": datetime.now(timezone.utc).isoformat(),
         }
 
         session = db.import_remote_session(remote)
@@ -371,8 +372,8 @@ class TestSyncManager:
                 {
                     "id": "remote-1",
                     "title": "Remote Session",
-                    "created_at": datetime.utcnow().isoformat(),
-                    "last_activity": datetime.utcnow().isoformat(),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "last_activity": datetime.now(timezone.utc).isoformat(),
                 }
             ]
         )
@@ -392,6 +393,82 @@ class TestSyncManager:
         db.queue_sync_operation("create_session", {"local_id": "2"})
 
         assert sync_manager.get_pending_count() == 2
+
+    @pytest.mark.asyncio
+    async def test_pull_remote_metadata_updates_title(
+        self, db: LocalSessionDB, mock_hub_client
+    ):
+        """Existing local sessions should get title updates from Hub."""
+        local = db.create_session(title="Old Title")
+        db.mark_session_synced(local.id, "hub-1")
+
+        mock_hub_client.list_sessions = AsyncMock(
+            return_value=[
+                {
+                    "id": "hub-1",
+                    "title": "New Title",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "last_activity": datetime.now(timezone.utc).isoformat(),
+                }
+            ]
+        )
+        mock_hub_client.get_session_messages = AsyncMock(return_value=[])
+
+        sync_manager = SyncManager(db, mock_hub_client)
+        result = await sync_manager.pull_remote_metadata()
+        assert result
+
+        updated = db.get_session(local.id)
+        assert updated.title == "New Title"
+
+
+class TestSessionControllerHubIdMapping:
+    """Tests for SessionController hub_id mapping and metadata merge."""
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_for_sidebar_merges_remote_titles(self, tmp_path: Path):
+        db_path = tmp_path / "test_controller.db"
+        controller = SessionController(db_path)
+        local_id = await controller.create_local_session()
+        controller.db.mark_session_synced(local_id, "hub-xyz")
+
+        hub_client = MagicMock()
+        hub_client.health = AsyncMock(return_value=True)
+        hub_client.list_sessions = AsyncMock(
+            return_value=[
+                {
+                    "id": "hub-xyz",
+                    "title": "Hub Renamed",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "last_activity": datetime.now(timezone.utc).isoformat(),
+                }
+            ]
+        )
+        hub_client.get_session_messages = AsyncMock(return_value=[])
+
+        sessions = await controller.list_sessions_for_sidebar(hub_client, connected=True)
+        assert sessions
+        assert sessions[0]["title"] == "Hub Renamed"
+
+        controller.close()
+
+    @pytest.mark.asyncio
+    async def test_load_session_messages_uses_hub_id(self, tmp_path: Path):
+        db_path = tmp_path / "test_controller_messages.db"
+        controller = SessionController(db_path)
+        local_id = controller.db.create_session().id
+        controller.db.mark_session_synced(local_id, "hub-abc")
+
+        hub_client = MagicMock()
+        hub_client.get_session_messages = AsyncMock(
+            return_value=[{"role": "user", "content": "hi"}]
+        )
+
+        messages = await controller.load_session_messages(local_id, hub_client, connected=True)
+        assert messages and messages[0].content == "hi"
+        hub_client.get_session_messages.assert_called_once_with("hub-abc")
+
+        controller.close()
 
 
 class TestTensorZeroClient:

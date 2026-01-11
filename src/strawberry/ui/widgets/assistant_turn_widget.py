@@ -1,21 +1,30 @@
 """Assistant turn widget."""
 import re
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
-from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QSizePolicy,
-    QVBoxLayout,
-    QWidget,
-)
+try:
+    from PySide6.QtGui import QFont
+    from PySide6.QtWidgets import (
+        QFrame,
+        QHBoxLayout,
+        QLabel,
+        QSizePolicy,
+        QVBoxLayout,
+        QWidget,
+    )
 
-from ..markdown_renderer import render_markdown
-from ..theme import Theme
-from .auto_resizing_text_browser import AutoResizingTextBrowser
+    from ..markdown_renderer import render_markdown
+    from ..theme import Theme
+    from .auto_resizing_text_browser import AutoResizingTextBrowser
+
+    _HAS_QT = True
+except ModuleNotFoundError:
+    _HAS_QT = False
+    if TYPE_CHECKING:
+        from PySide6.QtWidgets import QWidget
+
+        from ..theme import Theme
 
 
 def _parse_chunks(md: str) -> List[Tuple[str, str, Optional[str]]]:
@@ -67,123 +76,120 @@ def _parse_chunks(md: str) -> List[Tuple[str, str, Optional[str]]]:
     return chunks
 
 
-class AssistantTurnWidget(QFrame):
-    """Assistant message bubble for Strawberry."""
+if _HAS_QT:
 
-    def __init__(
-        self,
-        content: str,
-        timestamp: Optional[datetime] = None,
-        theme: Optional[Theme] = None,
-        parent: Optional[QWidget] = None,
-    ):
-        super().__init__(parent)
+    class AssistantTurnWidget(QFrame):
+        """Assistant message bubble for Strawberry."""
 
-        self._markdown = content
-        self.timestamp = timestamp or datetime.now()
-        self._theme = theme
+        def __init__(
+            self,
+            content: str,
+            timestamp: Optional[datetime] = None,
+            theme: Optional[Theme] = None,
+            parent: Optional[QWidget] = None,
+        ):
+            super().__init__(parent)
 
-        self._setup_ui()
+            self._markdown = content
+            self.timestamp = timestamp or datetime.now()
+            self._theme = theme
 
-    def _setup_ui(self):
-        outer_layout = QHBoxLayout(self)
-        outer_layout.setContentsMargins(8, 4, 8, 4)
+            self._setup_ui()
 
-        self._bubble = QFrame()
-        self._bubble.setObjectName("assistantTurn")
-        self._bubble_layout = QVBoxLayout(self._bubble)
-        self._bubble_layout.setContentsMargins(12, 8, 12, 8)
-        self._bubble_layout.setSpacing(6)
+        def _setup_ui(self):
+            outer_layout = QHBoxLayout(self)
+            outer_layout.setContentsMargins(8, 4, 8, 4)
 
-        # Sender label
-        sender = QLabel("Strawberry")
-        sender.setObjectName("senderLabel")
-        sender_font = QFont()
-        sender_font.setWeight(QFont.Weight.DemiBold)
-        sender_font.setPointSize(11)
-        sender.setFont(sender_font)
-        self._bubble_layout.addWidget(sender)
-        self._sender_label = sender
+            self._bubble = QFrame()
+            self._bubble.setObjectName("assistantTurn")
+            self._bubble_layout = QVBoxLayout(self._bubble)
+            self._bubble_layout.setContentsMargins(12, 8, 12, 8)
+            self._bubble_layout.setSpacing(6)
 
-        # Content container (will hold text labels and code/output block widgets)
-        self._message_view = AutoResizingTextBrowser()
-        self._message_view.setObjectName("messageView")
-        self._message_view.setFrameShape(QFrame.Shape.NoFrame)
-        self._message_view.setOpenExternalLinks(True)
-        self._message_view.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
-        )
-        self._bubble_layout.addWidget(self._message_view)
+            sender = QLabel("Strawberry")
+            sender.setObjectName("senderLabel")
+            sender_font = QFont()
+            sender_font.setWeight(QFont.Weight.DemiBold)
+            sender_font.setPointSize(11)
+            sender.setFont(sender_font)
+            self._bubble_layout.addWidget(sender)
+            self._sender_label = sender
 
-        # Render initial content
-        self._render_message()
+            self._message_view = AutoResizingTextBrowser()
+            self._message_view.setObjectName("messageView")
+            self._message_view.setFrameShape(QFrame.Shape.NoFrame)
+            self._message_view.setOpenExternalLinks(True)
+            self._message_view.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+            )
+            self._bubble_layout.addWidget(self._message_view)
 
-        # Timestamp
-        time_str = self.timestamp.strftime("%H:%M")
-        time_label = QLabel(time_str)
-        time_label.setObjectName("timeLabel")
-        time_label.setProperty("muted", True)
-        time_font = QFont()
-        time_font.setPointSize(10)
-        time_label.setFont(time_font)
-        self._bubble_layout.addWidget(time_label)
-        self._time_label = time_label
+            self._render_message()
 
-        # Bubble sizing
-        self._bubble.setMinimumWidth(100)
-        self._bubble.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+            time_str = self.timestamp.strftime("%H:%M")
+            time_label = QLabel(time_str)
+            time_label.setObjectName("timeLabel")
+            time_label.setProperty("muted", True)
+            time_font = QFont()
+            time_font.setPointSize(10)
+            time_label.setFont(time_font)
+            self._bubble_layout.addWidget(time_label)
+            self._time_label = time_label
 
-        outer_layout.addWidget(self._bubble, 1)
+            self._bubble.setMinimumWidth(100)
+            self._bubble.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self._apply_style()
+            outer_layout.addWidget(self._bubble, 1)
 
-    def _render_message(self) -> None:
-        """Render markdown content as HTML."""
-        html_content = render_markdown(self._markdown or "", self._theme)
-        self._message_view.setHtml(html_content)
+            self._apply_style()
 
-        if self._theme:
-            self._message_view.setStyleSheet(
-                f"color: {self._theme.ai_text}; background: transparent;"
+        def _render_message(self) -> None:
+            """Render markdown content as HTML."""
+            html_content = render_markdown(self._markdown or "", self._theme)
+            self._message_view.setHtml(html_content)
+
+            if self._theme:
+                self._message_view.setStyleSheet(
+                    f"color: {self._theme.ai_text}; background: transparent;"
+                )
+
+        def set_markdown(self, content: str) -> None:
+            """Replace markdown content and re-render."""
+            self._markdown = content
+            self._render_message()
+
+        def append_markdown(self, content: str) -> None:
+            """Append to markdown content and re-render."""
+            if not self._markdown:
+                self._markdown = content
+            else:
+                self._markdown = f"{self._markdown}\n\n{content}"
+            self._render_message()
+
+        def _apply_style(self):
+            """Apply theme-based styling."""
+            if not self._theme:
+                return
+
+            bg = self._theme.ai_bubble
+            text = self._theme.ai_text
+
+            self._bubble.setStyleSheet(
+                f"""
+                    QFrame#assistantTurn {{
+                        background-color: {bg};
+                        border-radius: 12px;
+                    }}
+                """
             )
 
-    def set_markdown(self, content: str) -> None:
-        """Replace markdown content and re-render."""
-        self._markdown = content
-        self._render_message()
+            self._sender_label.setStyleSheet(f"color: {text}; background: transparent;")
+            self._time_label.setStyleSheet(
+                f"color: {self._theme.text_muted}; background: transparent;"
+            )
 
-    def append_markdown(self, content: str) -> None:
-        """Append to markdown content and re-render."""
-        if not self._markdown:
-            self._markdown = content
-        else:
-            self._markdown = f"{self._markdown}\n\n{content}"
-        self._render_message()
-
-    def _apply_style(self):
-        """Apply theme-based styling."""
-        if not self._theme:
-            return
-
-        bg = self._theme.ai_bubble
-        text = self._theme.ai_text
-
-        self._bubble.setStyleSheet(
-            f"""
-                QFrame#assistantTurn {{
-                    background-color: {bg};
-                    border-radius: 12px;
-                }}
-            """
-        )
-
-        self._sender_label.setStyleSheet(f"color: {text}; background: transparent;")
-        self._time_label.setStyleSheet(
-            f"color: {self._theme.text_muted}; background: transparent;"
-        )
-
-    def set_theme(self, theme: Theme):
-        """Update the widget's theme."""
-        self._theme = theme
-        self._apply_style()
-        self._render_message()
+        def set_theme(self, theme: Theme):
+            """Update the widget's theme."""
+            self._theme = theme
+            self._apply_style()
+            self._render_message()

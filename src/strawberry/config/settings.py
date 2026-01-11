@@ -3,7 +3,7 @@
 import uuid
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DeviceSettings(BaseModel):
@@ -134,6 +134,8 @@ class StorageSettings(BaseModel):
 
 class Settings(BaseModel):
     """Root configuration model."""
+    model_config = ConfigDict(extra="ignore")  # Ignore unknown fields in config file
+
     device: DeviceSettings = Field(default_factory=DeviceSettings)
     hub: HubSettings = Field(default_factory=HubSettings)
     audio: AudioSettings = Field(default_factory=AudioSettings)
@@ -149,7 +151,4 @@ class Settings(BaseModel):
     tensorzero: TensorZeroSettings = Field(default_factory=TensorZeroSettings)
     local_llm: LocalLLMSettings = Field(default_factory=LocalLLMSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
-
-    class Config:
-        extra = "ignore"  # Ignore unknown fields in config file
 

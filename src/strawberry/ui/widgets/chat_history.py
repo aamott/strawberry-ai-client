@@ -1,14 +1,15 @@
 """Chat history sidebar widget for displaying past sessions."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -21,6 +22,7 @@ class ChatHistoryItem(QFrame):
 
     clicked = Signal(str)  # session_id
     delete_requested = Signal(str)  # session_id
+    rename_requested = Signal(str)  # session_id
 
     def __init__(
         self,
@@ -86,7 +88,12 @@ class ChatHistoryItem(QFrame):
 
     def _format_time(self, dt: datetime) -> str:
         """Format datetime for display."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+
         delta = now - dt
 
         if delta.days == 0:
@@ -119,15 +126,34 @@ class ChatHistoryItem(QFrame):
         """Handle click."""
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.session_id)
+        elif event.button() == Qt.MouseButton.RightButton:
+            self._show_context_menu(event.globalPosition().toPoint())
         super().mousePressEvent(event)
 
+    def _show_context_menu(self, pos):
+        """Show context menu with rename and delete options."""
+        menu = QMenu(self)
 
-class ChatHistorySidebar(QFrame):
+        rename_action = QAction("Rename", self)
+        rename_action.triggered.connect(lambda: self.rename_requested.emit(self.session_id))
+        menu.addAction(rename_action)
+
+        menu.addSeparator()
+
+        delete_action = QAction("Delete", self)
+        delete_action.triggered.connect(lambda: self.delete_requested.emit(self.session_id))
+        menu.addAction(delete_action)
+
+        menu.exec(pos)
+
+
+class ChatHistorySidebar(QWidget):
     """Sidebar showing chat history."""
 
     session_selected = Signal(str)  # session_id
     new_chat_requested = Signal()
     session_deleted = Signal(str)  # session_id
+    session_renamed = Signal(str)  # session_id
 
     def __init__(self, theme, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -282,7 +308,7 @@ class ChatHistorySidebar(QFrame):
             if isinstance(last_activity, str):
                 last_activity = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
             elif last_activity is None:
-                last_activity = datetime.utcnow()
+                last_activity = datetime.now(timezone.utc)
 
             item = ChatHistoryItem(
                 session_id=session["id"],
@@ -293,6 +319,7 @@ class ChatHistorySidebar(QFrame):
             )
             item.clicked.connect(self._on_item_clicked)
             item.delete_requested.connect(self._on_delete_requested)
+            item.rename_requested.connect(self._on_rename_requested)
 
             self._items[session["id"]] = item
             self._list_layout.insertWidget(i, item)
@@ -321,6 +348,10 @@ class ChatHistorySidebar(QFrame):
     def _on_delete_requested(self, session_id: str):
         """Handle delete request."""
         self.session_deleted.emit(session_id)
+
+    def _on_rename_requested(self, session_id: str):
+        """Handle rename request."""
+        self.session_renamed.emit(session_id)
 
     def update_theme(self, theme):
         """Update the theme."""

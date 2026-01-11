@@ -39,7 +39,7 @@ class TestChatHistorySidebar:
 
     def test_set_sessions_populates_items(self):
         """ChatHistorySidebar.set_sessions should populate item widgets."""
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         from strawberry.ui.theme import DARK_THEME
         from strawberry.ui.widgets.chat_history import ChatHistorySidebar
@@ -51,13 +51,13 @@ class TestChatHistorySidebar:
                 "id": "session-1",
                 "title": "Test Chat 1",
                 "message_count": 5,
-                "last_activity": datetime.utcnow(),
+                "last_activity": datetime.now(timezone.utc),
             },
             {
                 "id": "session-2",
                 "title": "Test Chat 2",
                 "message_count": 3,
-                "last_activity": datetime.utcnow(),
+                "last_activity": datetime.now(timezone.utc),
             },
         ]
 

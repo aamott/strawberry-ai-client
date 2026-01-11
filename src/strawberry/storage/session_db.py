@@ -5,12 +5,31 @@ import logging
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _to_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _parse_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return _to_utc(value)
+    if value is None:
+        return _utc_now()
+    text = str(value).replace("Z", "+00:00")
+    return _to_utc(datetime.fromisoformat(text))
 
 
 class SyncStatus(str, Enum):
@@ -28,8 +47,8 @@ class Session:
     id: str  # Local UUID, never changes
     hub_id: Optional[str] = None  # Hub's ID after sync
     title: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    last_activity: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utc_now)
+    last_activity: datetime = field(default_factory=_utc_now)
     is_synced: bool = False
     sync_status: SyncStatus = SyncStatus.LOCAL
     deleted_at: Optional[datetime] = None  # Soft delete timestamp
@@ -43,7 +62,7 @@ class Message:
     session_id: str  # Local session ID
     role: str  # user, assistant, system
     content: str
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utc_now)
     hub_message_id: Optional[int] = None  # Hub's message ID after sync
     is_synced: bool = False
     sequence_number: int = 0  # Order within session
@@ -155,7 +174,7 @@ class LocalSessionDB:
             Created Session object
         """
         session_id = str(uuid.uuid4())
-        now = datetime.utcnow()
+        now = _utc_now()
 
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -287,7 +306,7 @@ class LocalSessionDB:
         if soft:
             cursor.execute(
                 "UPDATE local_sessions SET deleted_at = ? WHERE id = ?",
-                (datetime.utcnow().isoformat(), session_id),
+                (_utc_now().isoformat(), session_id),
             )
         else:
             cursor.execute("DELETE FROM local_sessions WHERE id = ?", (session_id,))
@@ -321,6 +340,27 @@ class LocalSessionDB:
         session = self.get_session(local_id)
         return session.hub_id if session else None
 
+    def get_session_by_hub_id(self, hub_id: str) -> Optional[Session]:
+        """Get a local session by Hub session ID.
+
+        Args:
+            hub_id: Hub session ID
+
+        Returns:
+            Local Session object or None if not found
+        """
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM local_sessions WHERE hub_id = ? AND deleted_at IS NULL",
+            (hub_id,),
+        )
+        row = cursor.fetchone()
+
+        if row:
+            return self._row_to_session(row)
+        return None
+
     def has_hub_session(self, hub_id: str) -> bool:
         """Check if we have a local copy of a Hub session.
 
@@ -349,13 +389,11 @@ class LocalSessionDB:
         session_id = str(uuid.uuid4())
         hub_id = remote.get("id")
         title = remote.get("title")
-        created_at = remote.get("created_at", datetime.utcnow().isoformat())
+        created_at = remote.get("created_at", _utc_now().isoformat())
         last_activity = remote.get("last_activity", created_at)
 
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-        if isinstance(last_activity, str):
-            last_activity = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
+        created_at_dt = _parse_datetime(created_at)
+        last_activity_dt = _parse_datetime(last_activity)
 
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -365,7 +403,13 @@ class LocalSessionDB:
                 (id, hub_id, title, created_at, last_activity, is_synced, sync_status)
             VALUES (?, ?, ?, ?, ?, TRUE, 'synced')
             """,
-            (session_id, hub_id, title, created_at, last_activity),
+            (
+                session_id,
+                hub_id,
+                title,
+                created_at_dt.isoformat(),
+                last_activity_dt.isoformat(),
+            ),
         )
         conn.commit()
 
@@ -373,8 +417,8 @@ class LocalSessionDB:
             id=session_id,
             hub_id=hub_id,
             title=title,
-            created_at=created_at,
-            last_activity=last_activity,
+            created_at=created_at_dt,
+            last_activity=last_activity_dt,
             is_synced=True,
             sync_status=SyncStatus.SYNCED,
         )
@@ -406,7 +450,7 @@ class LocalSessionDB:
         )
         seq_num = cursor.fetchone()[0]
 
-        now = datetime.utcnow()
+        now = _utc_now()
         cursor.execute(
             """
             INSERT INTO local_messages (session_id, role, content, created_at, sequence_number)
@@ -488,9 +532,7 @@ class LocalSessionDB:
         )
         seq_num = cursor.fetchone()[0]
 
-        created_at = remote.get("created_at", datetime.utcnow().isoformat())
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        created_at_dt = _parse_datetime(remote.get("created_at", _utc_now().isoformat()))
 
         cursor.execute(
             """
@@ -503,7 +545,7 @@ class LocalSessionDB:
                 remote.get("id"),
                 remote.get("role"),
                 remote.get("content"),
-                created_at,
+                created_at_dt.isoformat(),
                 seq_num,
             ),
         )
@@ -515,7 +557,7 @@ class LocalSessionDB:
             session_id=session_id,
             role=remote.get("role"),
             content=remote.get("content"),
-            created_at=created_at,
+            created_at=created_at_dt,
             hub_message_id=remote.get("id"),
             is_synced=True,
             sequence_number=seq_num,
@@ -620,17 +662,11 @@ class LocalSessionDB:
 
     def _row_to_session(self, row: sqlite3.Row) -> Session:
         """Convert database row to Session object."""
-        created_at = row["created_at"]
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at)
+        created_at = _parse_datetime(row["created_at"])
+        last_activity = _parse_datetime(row["last_activity"])
 
-        last_activity = row["last_activity"]
-        if isinstance(last_activity, str):
-            last_activity = datetime.fromisoformat(last_activity)
-
-        deleted_at = row["deleted_at"]
-        if deleted_at and isinstance(deleted_at, str):
-            deleted_at = datetime.fromisoformat(deleted_at)
+        deleted_raw = row["deleted_at"]
+        deleted_at = _parse_datetime(deleted_raw) if deleted_raw else None
 
         return Session(
             id=row["id"],
@@ -645,9 +681,7 @@ class LocalSessionDB:
 
     def _row_to_message(self, row: sqlite3.Row) -> Message:
         """Convert database row to Message object."""
-        created_at = row["created_at"]
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at)
+        created_at = _parse_datetime(row["created_at"])
 
         return Message(
             id=row["id"],
@@ -662,9 +696,7 @@ class LocalSessionDB:
 
     def _row_to_sync_op(self, row: sqlite3.Row) -> SyncOperation:
         """Convert database row to SyncOperation object."""
-        created_at = row["created_at"]
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at)
+        created_at = _parse_datetime(row["created_at"])
 
         return SyncOperation(
             id=row["id"],

@@ -89,6 +89,21 @@ class SyncManager:
         finally:
             self._sync_in_progress = False
 
+    async def pull_remote_metadata(self) -> bool:
+        """Pull remote session metadata and merge into local storage.
+
+        This is a lightweight "read-side" sync used by the UI to keep session
+        titles consistent with the Hub when connected.
+
+        Returns:
+            True if pull completed (or was not needed), False if Hub unavailable.
+        """
+        if not await self._hub_available():
+            return False
+
+        await self._pull_remote()
+        return True
+
     async def _push_pending(self) -> None:
         """Push queued operations to Hub."""
         pending = self.db.get_pending_sync()
@@ -209,7 +224,12 @@ class SyncManager:
                 logger.error(f"Failed to sync message {msg.id}: {e}")
 
     async def _pull_remote(self) -> None:
-        """Pull remote sessions from the last 30 days that we don't have locally."""
+        """Pull remote sessions and merge into local storage.
+
+        Behavior:
+        - Import sessions/messages that don't exist locally.
+        - Update local metadata (e.g. title) for sessions that already exist.
+        """
         try:
             remote_sessions = await self.hub_client.list_sessions(days=self.SYNC_DAYS)
         except Exception as e:
@@ -223,8 +243,13 @@ class SyncManager:
             if not hub_id:
                 continue
 
-            # Check if we already have this session
+            # If we already have this session, update local metadata.
             if self.db.has_hub_session(hub_id):
+                local_session = self.db.get_session_by_hub_id(hub_id)
+                if local_session:
+                    remote_title = remote.get("title")
+                    if remote_title is not None and remote_title != local_session.title:
+                        self.db.update_session(local_session.id, title=remote_title)
                 continue
 
             # Import remote session locally

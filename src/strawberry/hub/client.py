@@ -17,11 +17,11 @@ from tenacity import (
 
 try:
     import websockets
-    from websockets.client import WebSocketClientProtocol
+    from websockets.asyncio.client import ClientConnection
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
     WEBSOCKETS_AVAILABLE = False
-    WebSocketClientProtocol = None
+    ClientConnection = None
 
 from ..models import ChatMessage, ChatResponse
 
@@ -134,7 +134,7 @@ class HubClient:
         #   cross-event-loop errors (async objects bound to a different loop).
         # - A dedicated sync httpx client avoids event loop coupling entirely.
         self._sync_client: Optional[httpx.Client] = None
-        self._websocket: Optional[WebSocketClientProtocol] = None
+        self._websocket: Optional[ClientConnection] = None
         self._ws_task: Optional[asyncio.Task] = None
         self._skill_callback: Optional[Callable[[str, str, list, dict], Awaitable[Any]]] = None
         self._connection_callback: Optional[Callable[[bool], Awaitable[None]]] = None
@@ -449,7 +449,7 @@ class HubClient:
         Returns:
             Session info with id, created_at, etc.
         """
-        response = await self.client.post("/sessions", json={})
+        response = await self.client.post("/api/sessions", json={})
         self._check_response(response)
         return response.json()
 
@@ -468,7 +468,7 @@ class HubClient:
         params: Dict[str, Any] = {"limit": limit}
         if days is not None:
             params["days"] = days
-        response = await self.client.get("/sessions", params=params)
+        response = await self.client.get("/api/sessions", params=params)
         self._check_response(response)
         return response.json()["sessions"]
 
@@ -481,7 +481,7 @@ class HubClient:
         Returns:
             Session info dict
         """
-        response = await self.client.get(f"/sessions/{session_id}")
+        response = await self.client.get(f"/api/sessions/{session_id}")
         self._check_response(response)
         return response.json()
 
@@ -492,9 +492,9 @@ class HubClient:
             session_id: Session ID
 
         Returns:
-            List of message dicts with role, content, created_at
+            List of message dicts
         """
-        response = await self.client.get(f"/sessions/{session_id}/messages")
+        response = await self.client.get(f"/api/sessions/{session_id}/messages")
         self._check_response(response)
         return response.json()["messages"]
 
@@ -505,14 +505,14 @@ class HubClient:
 
         Args:
             session_id: Session ID
-            role: Message role (user, assistant, system)
+            role: Message role
             content: Message content
 
         Returns:
-            Created message info
+            Created message info dict
         """
         response = await self.client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"role": role, "content": content},
         )
         self._check_response(response)
@@ -524,8 +524,25 @@ class HubClient:
         Args:
             session_id: Session ID to delete
         """
-        response = await self.client.delete(f"/sessions/{session_id}")
+        response = await self.client.delete(f"/api/sessions/{session_id}")
         self._check_response(response)
+
+    async def update_session(self, session_id: str, title: str) -> Dict[str, Any]:
+        """Update a session's title.
+
+        Args:
+            session_id: Session ID to update
+            title: New title for the session
+
+        Returns:
+            Updated session info
+        """
+        response = await self.client.patch(
+            f"/api/sessions/{session_id}",
+            json={"title": title},
+        )
+        self._check_response(response)
+        return response.json()
 
     # =========================================================================
     # Helpers

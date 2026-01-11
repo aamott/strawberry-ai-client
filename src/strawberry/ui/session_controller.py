@@ -100,15 +100,43 @@ class SessionController:
         # Always queue the local delete (this is the source of truth).
         await self.delete_local_session(session_id)
 
-        # Best-effort: if the session ID is a Hub session ID and we're online, delete it.
+        # Best-effort: if we're online, delete from Hub using hub_id when present.
         if hub_client and connected:
             try:
-                await self.delete_hub_session(hub_client, session_id)
+                hub_id = self._db.get_hub_session_id(session_id)
+                await self.delete_hub_session(hub_client, hub_id or session_id)
             except Exception:
                 logger.debug("Failed to delete Hub session (will rely on sync)")
 
     async def delete_hub_session(self, hub_client, session_id: str) -> None:
         await hub_client.delete_session(session_id)
+
+    async def rename_session(
+        self,
+        session_id: str,
+        new_title: str,
+        hub_client: Any,
+        connected: bool,
+    ) -> None:
+        """Rename a session in both local storage and Hub (if connected).
+
+        Args:
+            session_id: Session ID to rename
+            new_title: New title for the session
+            hub_client: Hub client for remote update
+            connected: Whether Hub is connected
+        """
+        # Update local session
+        self._db.update_session(session_id, title=new_title)
+
+        # If connected and session has a hub_id, update Hub
+        if hub_client and connected:
+            hub_id = self._db.get_hub_session_id(session_id)
+            if hub_id:
+                try:
+                    await hub_client.update_session(hub_id, new_title)
+                except Exception as e:
+                    logger.warning(f"Failed to update Hub session title: {e}")
 
     def list_local_sessions_for_sidebar(self) -> List[Dict[str, Any]]:
         sessions_data: List[Dict[str, Any]] = []
@@ -144,16 +172,16 @@ class SessionController:
         Returns:
             List of session dicts for the sidebar.
         """
-
-        # Local sessions are always preferred when available.
-        local = self.list_local_sessions_for_sidebar()
-        if local:
-            return local
-
+        # Option A: local-first, but merge remote metadata when connected.
         if hub_client and connected:
-            return await self.list_hub_sessions_for_sidebar(hub_client)
+            try:
+                self.set_hub_client(hub_client)
+                await self._sync.pull_remote_metadata()
+            except Exception:
+                logger.debug("Failed to pull remote session metadata")
 
-        return local
+        # Always return local sessions (source of truth).
+        return self.list_local_sessions_for_sidebar()
 
     async def list_hub_sessions_for_sidebar(self, hub_client) -> List[Dict[str, Any]]:
         return await hub_client.list_sessions()
@@ -180,7 +208,8 @@ class SessionController:
             return local_messages
 
         if hub_client and connected:
-            return await self.load_hub_session_messages(hub_client, session_id)
+            hub_id = self._db.get_hub_session_id(session_id)
+            return await self.load_hub_session_messages(hub_client, hub_id or session_id)
 
         return local_messages
 

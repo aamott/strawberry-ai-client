@@ -38,6 +38,7 @@ from .widgets import (
     InputArea,
     MicState,
     OfflineModeBanner,
+    RenameDialog,
     StatusBar,
     VoiceIndicator,
 )
@@ -227,6 +228,7 @@ class MainWindow(QMainWindow):
         self._chat_sidebar.session_selected.connect(self._on_session_selected)
         self._chat_sidebar.new_chat_requested.connect(self._on_new_chat)
         self._chat_sidebar.session_deleted.connect(self._on_session_deleted)
+        self._chat_sidebar.session_renamed.connect(self._on_session_rename_requested)
         main_layout.addWidget(self._chat_sidebar)
 
         # Content area (right side)
@@ -1139,6 +1141,36 @@ class MainWindow(QMainWindow):
     def _on_session_deleted(self, session_id: str):
         """Delete a session."""
         asyncio.ensure_future(self._delete_session(session_id))
+
+    def _on_session_rename_requested(self, session_id: str):
+        """Show rename dialog and update session title."""
+        asyncio.ensure_future(self._rename_session(session_id))
+
+    async def _rename_session(self, session_id: str) -> None:
+        """Rename a session with a dialog."""
+        try:
+            if not self._sessions:
+                return
+
+            # Get current session info
+            session = self._sessions.db.get_session(session_id)
+            if not session:
+                return
+
+            # Show rename dialog
+            dialog = RenameDialog(current_title=session.title, parent=self)
+            if dialog.exec():
+                new_title = dialog.get_title()
+                if new_title:
+                    await self._sessions.rename_session(
+                        session_id=session_id,
+                        new_title=new_title,
+                        hub_client=self._hub_manager.client,
+                        connected=self._connected,
+                    )
+                    await self._refresh_sessions()
+        except Exception as e:
+            logger.error(f"Failed to rename session: {e}")
 
     async def _delete_session(self, session_id: str) -> None:
         """Delete a session (local-first, Hub best-effort)."""

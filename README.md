@@ -5,6 +5,10 @@ Voice assistant spoke for the Strawberry AI platform.
 ## Quick Start
 
 ```bash
+# Create a local virtualenv (recommended)
+python3 -m venv .venv
+source .venv/bin/activate
+
 # Install core dependencies (terminal mode only)
 pip install -e .
 
@@ -32,13 +36,13 @@ pip install -e ".[all]"
 
 ```bash
 # Terminal mode (no UI dependencies required)
-strawberry
+.venv/bin/strawberry
 
 # GUI mode (requires UI dependencies: pip install -e ".[ui]")
-strawberry-gui
+.venv/bin/strawberry-gui
 
 # Run tests
-strawberry-test
+.venv/bin/strawberry-test
 ```
 
 ## TODO (Backend Selection + UI Docs)

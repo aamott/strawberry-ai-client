@@ -1,29 +1,35 @@
 """Custom widgets for Strawberry UI."""
 
-from .assistant_turn_widget import AssistantTurnWidget
-from .auto_resizing_text_browser import AutoResizingTextBrowser
-from .chat_area import ChatArea
-from .chat_bubble import ChatBubble
-from .chat_history import ChatHistorySidebar
-from .code_block_widget import CodeBlockWidget
-from .input_area import InputArea, MicState
-from .offline_banner import OfflineModeBanner
-from .output_widget import OutputWidget
-from .status_bar import StatusBar
-from .voice_indicator import VoiceIndicator
+# All widgets require PySide6, so we import them conditionally
+# This allows headless unit tests to import specific modules directly
+__all__ = []
 
-__all__ = [
-    "AssistantTurnWidget",
-    "AutoResizingTextBrowser",
-    "ChatArea",
-    "ChatBubble",
-    "ChatHistorySidebar",
-    "CodeBlockWidget",
-    "InputArea",
-    "MicState",
-    "OfflineModeBanner",
-    "OutputWidget",
-    "StatusBar",
-    "VoiceIndicator",
-]
+try:
+    from .assistant_turn_widget import AssistantTurnWidget
+    from .auto_resizing_text_browser import AutoResizingTextBrowser
+    from .chat_area import ChatArea
+    from .chat_bubble import ChatBubble
+    from .chat_history import ChatHistorySidebar
+    from .input_area import InputArea, MicState
+    from .offline_banner import OfflineModeBanner
+    from .rename_dialog import RenameDialog
+    from .status_bar import StatusBar
+    from .voice_indicator import VoiceIndicator
 
+    __all__ = [
+        "AssistantTurnWidget",
+        "AutoResizingTextBrowser",
+        "ChatArea",
+        "ChatBubble",
+        "ChatHistorySidebar",
+        "InputArea",
+        "MicState",
+        "OfflineModeBanner",
+        "RenameDialog",
+        "StatusBar",
+        "VoiceIndicator",
+    ]
+except ImportError:
+    # PySide6 not available - widgets cannot be imported
+    # Individual modules can still be imported directly if they don't require Qt
+    pass
