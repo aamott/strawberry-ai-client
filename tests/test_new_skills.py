@@ -14,20 +14,21 @@ from strawberry.skills.service import SkillService
 def skills_dir():
     """Create a temporary skills directory with new skills."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Copy the new skill files
+        # Copy the new skill repos
         skills_base = Path(__file__).parent.parent / "skills"
 
-        # Create internet skill
-        internet_skill = Path(tmpdir) / "internet_skill.py"
-        internet_skill.write_text((skills_base / "internet_skill.py").read_text())
+        repo_names = [
+            "internet_skill",
+            "media_control_skill",
+            "system_control_skill",
+        ]
 
-        # Create media control skill
-        media_skill = Path(tmpdir) / "media_control_skill.py"
-        media_skill.write_text((skills_base / "media_control_skill.py").read_text())
-
-        # Create system control skill
-        system_skill = Path(tmpdir) / "system_control_skill.py"
-        system_skill.write_text((skills_base / "system_control_skill.py").read_text())
+        for repo_name in repo_names:
+            repo_dir = Path(tmpdir) / repo_name
+            repo_dir.mkdir(parents=True, exist_ok=True)
+            (repo_dir / "skill.py").write_text(
+                (skills_base / repo_name / "skill.py").read_text()
+            )
 
         yield Path(tmpdir)
 

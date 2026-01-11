@@ -3,6 +3,8 @@
 import importlib.util
 import inspect
 import logging
+import sys
+import types
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -90,6 +92,8 @@ class SkillLoader:
         self._skills: Dict[str, SkillInfo] = {}
         self._instances: Dict[str, Any] = {}
 
+        self._repo_namespace_root = "strawberry_skillrepos"
+
     def load_all(self) -> List[SkillInfo]:
         """Load all skills from the skills directory.
 
@@ -107,7 +111,41 @@ class SkillLoader:
             logger.warning(f"Skills path is not a directory: {self.skills_path}")
             return []
 
-        # Find all Python files
+        # Find all repo-style skills: skills/<repo_name>/<entrypoint>.py
+        for repo_dir in self.skills_path.iterdir():
+            if not repo_dir.is_dir():
+                continue
+            if repo_dir.name.startswith("."):
+                continue
+            if repo_dir.name == "__pycache__":
+                continue
+
+            entrypoint = self._find_repo_entrypoint(repo_dir)
+            if entrypoint is None:
+                continue
+
+            try:
+                skills = self._load_repo_entrypoint(repo_dir, entrypoint)
+                for skill in skills:
+                    if skill.name in self._skills:
+                        logger.error(
+                            "Duplicate skill class name '%s' found in %s; "
+                            "already loaded from %s. Skipping duplicate.",
+                            skill.name,
+                            str(entrypoint),
+                            str(self._skills[skill.name].module_path),
+                        )
+                        continue
+                    self._skills[skill.name] = skill
+                    logger.info(
+                        "Loaded repo skill: %s (%d methods)",
+                        skill.name,
+                        len(skill.methods),
+                    )
+            except Exception as e:
+                logger.error(f"Failed to load repo skill from {entrypoint}: {e}")
+
+        # Find all top-level Python files
         for py_file in self.skills_path.glob("*.py"):
             if py_file.name.startswith("_"):
                 continue
@@ -115,12 +153,94 @@ class SkillLoader:
             try:
                 skills = self._load_file(py_file)
                 for skill in skills:
+                    if skill.name in self._skills:
+                        logger.error(
+                            "Duplicate skill class name '%s' found in %s; "
+                            "already loaded from %s. Skipping duplicate.",
+                            skill.name,
+                            str(py_file),
+                            str(self._skills[skill.name].module_path),
+                        )
+                        continue
                     self._skills[skill.name] = skill
-                    logger.info(f"Loaded skill: {skill.name} ({len(skill.methods)} methods)")
+                    logger.info(
+                        "Loaded skill: %s (%d methods)",
+                        skill.name,
+                        len(skill.methods),
+                    )
             except Exception as e:
                 logger.error(f"Failed to load {py_file}: {e}")
 
         return list(self._skills.values())
+
+    def _find_repo_entrypoint(self, repo_dir: Path) -> Optional[Path]:
+        """Find the entrypoint Python file for a repo-style skill.
+
+        Supported (first match wins):
+        - skill.py
+        - <repo_name>.py
+        - main.py
+        - __init__.py
+        """
+        candidates = [
+            repo_dir / "skill.py",
+            repo_dir / f"{repo_dir.name}.py",
+            repo_dir / "main.py",
+            repo_dir / "__init__.py",
+        ]
+
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file():
+                if candidate.name.startswith("_"):
+                    continue
+                return candidate
+        return None
+
+    def _ensure_repo_namespace_root(self) -> None:
+        """Ensure the repo namespace root module exists in sys.modules."""
+        if self._repo_namespace_root in sys.modules:
+            return
+
+        root = types.ModuleType(self._repo_namespace_root)
+        root.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[self._repo_namespace_root] = root
+
+    def _load_repo_entrypoint(self, repo_dir: Path, entrypoint: Path) -> List[SkillInfo]:
+        """Load skills from a repo entrypoint.
+
+        The entrypoint is loaded as a unique package namespace:
+        strawberry_skillrepos.<repo_name>
+
+        This enables safe relative imports inside the repo, e.g.:
+        - from . import helpers
+        - from .my_pkg.utils import foo
+        """
+        self._ensure_repo_namespace_root()
+
+        repo_name = repo_dir.name
+        module_name = f"{self._repo_namespace_root}.{repo_name}"
+
+        # Load as a package so relative imports work.
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            entrypoint,
+            submodule_search_locations=[str(repo_dir)],
+        )
+
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load spec for {entrypoint}")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+
+        skills: List[SkillInfo] = []
+        for name, obj in inspect.getmembers(module, inspect.isclass):
+            if obj.__module__ == module_name and name.endswith("Skill"):
+                skill_info = self._extract_skill_info(name, obj, entrypoint)
+                if skill_info.methods:
+                    skills.append(skill_info)
+        return skills
 
     def _load_file(self, file_path: Path) -> List[SkillInfo]:
         """Load skills from a single Python file.

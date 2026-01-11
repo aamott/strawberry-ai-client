@@ -125,6 +125,15 @@ class HubClient:
     def __init__(self, config: HubConfig):
         self.config = config
         self._client: Optional[httpx.AsyncClient] = None
+        # Synchronous fallback client.
+        #
+        # Why this exists:
+        # - Some parts of the system execute LLM-generated code in a *sync* context
+        #   (direct exec fallback when the Deno sandbox is unavailable).
+        # - Using the async httpx client from that sync context can crash with
+        #   cross-event-loop errors (async objects bound to a different loop).
+        # - A dedicated sync httpx client avoids event loop coupling entirely.
+        self._sync_client: Optional[httpx.Client] = None
         self._websocket: Optional[WebSocketClientProtocol] = None
         self._ws_task: Optional[asyncio.Task] = None
         self._skill_callback: Optional[Callable[[str, str, list, dict], Awaitable[Any]]] = None
@@ -142,6 +151,17 @@ class HubClient:
             )
         return self._client
 
+    @property
+    def sync_client(self) -> httpx.Client:
+        """Get or create the synchronous HTTP client."""
+        if self._sync_client is None:
+            self._sync_client = httpx.Client(
+                base_url=self.config.url,
+                headers={"Authorization": f"Bearer {self.config.token}"},
+                timeout=self.config.timeout,
+            )
+        return self._sync_client
+
     async def close(self):
         """Close the HTTP client and WebSocket connection."""
         # Close WebSocket
@@ -151,6 +171,11 @@ class HubClient:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
+
+        # Close sync client
+        if self._sync_client:
+            self._sync_client.close()
+            self._sync_client = None
 
     async def __aenter__(self):
         return self
@@ -308,6 +333,19 @@ class HubClient:
         self._check_response(response)
         return response.json()["results"]
 
+    @_retry_config
+    def search_skills_sync(self, query: str = "", device_limit: int = 10) -> List[Dict[str, Any]]:
+        """Synchronous version of search_skills.
+
+        This is used by the non-sandbox (direct exec) fallback path.
+        """
+        response = self.sync_client.get(
+            "/skills/search",
+            params={"query": query, "device_limit": device_limit},
+        )
+        self._check_response(response)
+        return response.json()["results"]
+
     # =========================================================================
     # Remote Skill Execution
     # =========================================================================
@@ -348,6 +386,40 @@ class HubClient:
             "/skills/execute",
             json=payload,
             timeout=60.0,  # Longer timeout for remote execution
+        )
+        self._check_response(response)
+
+        result = response.json()
+        if not result.get("success"):
+            raise HubError(result.get("error", "Remote execution failed"))
+
+        return result.get("result")
+
+    @_retry_config
+    def execute_remote_skill_sync(
+        self,
+        device_name: str,
+        skill_name: str,
+        method_name: str,
+        args: List[Any] = None,
+        kwargs: Dict[str, Any] = None,
+    ) -> Any:
+        """Synchronous version of execute_remote_skill.
+
+        This is used by the non-sandbox (direct exec) fallback path.
+        """
+        payload = {
+            "device_name": device_name,
+            "skill_name": skill_name,
+            "method_name": method_name,
+            "args": args or [],
+            "kwargs": kwargs or {},
+        }
+
+        response = self.sync_client.post(
+            "/skills/execute",
+            json=payload,
+            timeout=60.0,
         )
         self._check_response(response)
 

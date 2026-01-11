@@ -116,6 +116,27 @@ class RemoteSkillClassProxy:
         )
 
 
+class LocalDeviceProxy:
+    """Proxy for the local device - routes to local skill execution."""
+
+    def __init__(self, local_loader: Any):
+        self._local_loader = local_loader
+
+    def __getattr__(self, skill_name: str):
+        """Get a local skill proxy."""
+        if skill_name.startswith('_'):
+            raise AttributeError(f"Cannot access private attribute: {skill_name}")
+
+        skill = self._local_loader.get_skill(skill_name)
+        if skill is None:
+            available = [s.name for s in self._local_loader.get_all_skills()]
+            raise AttributeError(
+                f"Skill '{skill_name}' not found locally. "
+                f"Available: {', '.join(available)}"
+            )
+        return skill.instance
+
+
 class RemoteDeviceProxy:
     """Proxy for a remote device."""
 
@@ -146,26 +167,57 @@ class DeviceManager:
     - device_manager.DeviceName.SkillClass.method() - Call remote skill
     """
 
-    def __init__(self, hub_client: HubClient, local_device_name: str):
+    def __init__(
+        self,
+        hub_client: HubClient,
+        local_device_name: str,
+        local_loader: Optional[Any] = None,
+    ):
         """Initialize device manager.
 
         Args:
             hub_client: Hub client for API calls
             local_device_name: Name of the local device (for prioritization)
+            local_loader: Optional local skill loader for routing local device calls
         """
         self._hub_client = hub_client
         self._local_device_name = local_device_name
+        self._local_loader = local_loader
         self._devices: Dict[str, RemoteDeviceProxy] = {}
         self._skill_cache: Optional[List[RemoteSkillResult]] = None
         self._cache_timestamp: float = 0
         self._cache_ttl: float = 60.0  # 1 minute cache
         self._cache_device_limit: int = 10
 
-    def __getattr__(self, device_name: str) -> RemoteDeviceProxy:
-        """Get proxy for a remote device."""
+    def _supports_sync_method(self, method_name: str) -> bool:
+        """Return True if the hub client provides a real sync implementation.
+
+        We intentionally check the *type*, not the instance.
+
+        Why:
+        - In tests we often pass `Mock()` as the hub client.
+        - `Mock` reports arbitrary attributes as present, so `hasattr(mock, "...")`
+          is always True and would incorrectly route calls into a non-existent sync
+          implementation.
+        - Checking the class ensures we only use the sync fallback for real HubClient
+          (or explicit stub classes that actually define the method).
+        """
+        try:
+            attr = getattr(type(self._hub_client), method_name)
+        except AttributeError:
+            return False
+        return callable(attr)
+
+    def __getattr__(self, device_name: str):
+        """Get proxy for a device (local or remote)."""
         if device_name.startswith('_'):
             raise AttributeError(f"Cannot access private attribute: {device_name}")
 
+        # Check if this is the local device
+        if device_name == self._local_device_name and self._local_loader:
+            return LocalDeviceProxy(self._local_loader)
+
+        # Otherwise create remote device proxy
         if device_name not in self._devices:
             self._devices[device_name] = RemoteDeviceProxy(self, device_name)
         return self._devices[device_name]
@@ -245,9 +297,23 @@ class DeviceManager:
 
         Returns grouped skills with device lists.
         """
-        skills_data = _run_async(
-            self._hub_client.search_skills(query="", device_limit=device_limit)
-        )
+        # IMPORTANT: Non-sandbox fallback (no Deno)
+        #
+        # DeviceManager methods are synchronous because they are often called from
+        # the direct-exec fallback path (SkillService.execute_code). In that mode we
+        # cannot safely rely on async objects bound to the UI/event loop.
+        #
+        # Prefer the HubClient's *sync* methods when available to avoid cross-event-loop
+        # crashes. Fall back to the old async bridge for backward compatibility.
+        if self._supports_sync_method("search_skills_sync"):
+            skills_data = self._hub_client.search_skills_sync(
+                query="",
+                device_limit=device_limit,
+            )
+        else:
+            skills_data = _run_async(
+                self._hub_client.search_skills(query="", device_limit=device_limit)
+            )
 
         results = []
         for skill in skills_data:
@@ -301,15 +367,28 @@ class DeviceManager:
 
         # Execute via Hub
         try:
-            result = _run_async(
-                self._hub_client.execute_remote_skill(
+            # IMPORTANT: Non-sandbox fallback (no Deno)
+            #
+            # Prefer the sync HTTP path when available. This avoids event loop coupling
+            # and makes remote skill calls work even when the Deno sandbox is missing.
+            if self._supports_sync_method("execute_remote_skill_sync"):
+                result = self._hub_client.execute_remote_skill_sync(
                     device_name=device_name,
                     skill_name=skill_name,
                     method_name=method_name,
                     args=list(args),
                     kwargs=kwargs,
                 )
-            )
+            else:
+                result = _run_async(
+                    self._hub_client.execute_remote_skill(
+                        device_name=device_name,
+                        skill_name=skill_name,
+                        method_name=method_name,
+                        args=list(args),
+                        kwargs=kwargs,
+                    )
+                )
             return result
         except Exception as e:
             logger.error(f"Remote skill execution failed: {e}")

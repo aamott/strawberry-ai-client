@@ -14,21 +14,126 @@ class WeatherSkill:
     """Provides weather data with explicit configuration requirements."""
 
     def __init__(self):
-        self._api_key = os.environ.get("WEATHER_API_KEY")
         self._base_url = "https://api.openweathermap.org/data/2.5"
+        self._geo_url = "https://api.openweathermap.org/geo/1.0"
+
+        self._us_state_codes = {
+            "AL",
+            "AK",
+            "AZ",
+            "AR",
+            "CA",
+            "CO",
+            "CT",
+            "DE",
+            "FL",
+            "GA",
+            "HI",
+            "ID",
+            "IL",
+            "IN",
+            "IA",
+            "KS",
+            "KY",
+            "LA",
+            "ME",
+            "MD",
+            "MA",
+            "MI",
+            "MN",
+            "MS",
+            "MO",
+            "MT",
+            "NE",
+            "NV",
+            "NH",
+            "NJ",
+            "NM",
+            "NY",
+            "NC",
+            "ND",
+            "OH",
+            "OK",
+            "OR",
+            "PA",
+            "RI",
+            "SC",
+            "SD",
+            "TN",
+            "TX",
+            "UT",
+            "VT",
+            "VA",
+            "WA",
+            "WV",
+            "WI",
+            "WY",
+            "DC",
+        }
+
+    def _get_api_key(self) -> str:
+        api_key = os.environ.get("WEATHER_API_KEY")
+        if not api_key:
+            raise ValueError("Weather API not configured")
+        return api_key
+
+    def _normalize_location(self, location: str) -> str:
+        raw = (location or "").strip()
+        if not raw:
+            raise ValueError("Location is required")
+
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+        if len(parts) == 1:
+            return parts[0]
+
+        if len(parts) == 2:
+            city, second = parts
+            second_upper = second.upper()
+            if second_upper in self._us_state_codes:
+                return f"{city},{second_upper},US"
+            return f"{city},{second_upper}"
+
+        city = parts[0]
+        state = parts[1].upper()
+        country = parts[2].upper()
+        return f"{city},{state},{country}"
+
+    def _geocode(self, location: str, api_key: str) -> Dict[str, Any]:
+        query = self._normalize_location(location)
+        params = {
+            "q": query,
+            "limit": 1,
+            "appid": api_key,
+        }
+
+        response = requests.get(
+            f"{self._geo_url}/direct",
+            params=params,
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, list) or not data:
+            raise ValueError(f"Location not found: {location}")
+        top = data[0]
+        if "lat" not in top or "lon" not in top:
+            raise ValueError(f"Location not found: {location}")
+        return top
 
     def get_current_weather(self, location: str, units: str = "metric") -> Dict[str, Any]:
         """Get current weather with clear status."""
-        if not self._api_key:
+        try:
+            api_key = self._get_api_key()
+        except Exception:
             return {
                 "success": False,
                 "error": "Weather API not configured",
                 "message": "Please set WEATHER_API_KEY environment variable",
-                "documentation": "https://openweathermap.org/api"
+                "documentation": "https://openweathermap.org/api",
             }
 
         try:
-            return self._fetch_weather_data(location, units)
+            return self._fetch_weather_data(location, units, api_key)
         except Exception as e:
             return {
                 "success": False,
@@ -38,12 +143,14 @@ class WeatherSkill:
                 "suggested_action": "Check API key and network connection"
             }
 
-    def _fetch_weather_data(self, location: str, units: str) -> Dict[str, Any]:
+    def _fetch_weather_data(self, location: str, units: str, api_key: str) -> Dict[str, Any]:
         """Fetch real weather data."""
+        geo = self._geocode(location, api_key)
         params = {
-            'q': location,
-            'units': units,
-            'appid': self._api_key
+            "lat": geo["lat"],
+            "lon": geo["lon"],
+            "units": units,
+            "appid": api_key,
         }
 
         response = requests.get(
@@ -70,16 +177,18 @@ class WeatherSkill:
 
     def get_forecast(self, location: str, days: int = 5, units: str = "metric") -> Dict[str, Any]:
         """Get weather forecast with clear status."""
-        if not self._api_key:
+        try:
+            api_key = self._get_api_key()
+        except Exception:
             return {
                 "success": False,
                 "error": "Weather API not configured",
                 "message": "Please set WEATHER_API_KEY environment variable",
-                "documentation": "https://openweathermap.org/api"
+                "documentation": "https://openweathermap.org/api",
             }
 
         try:
-            return self._fetch_forecast_data(location, days, units)
+            return self._fetch_forecast_data(location, days, units, api_key)
         except Exception as e:
             return {
                 "success": False,
@@ -90,12 +199,15 @@ class WeatherSkill:
                 "suggested_action": "Check API key and network connection"
             }
 
-    def _fetch_forecast_data(self, location: str, days: int, units: str) -> Dict[str, Any]:
+    def _fetch_forecast_data(
+        self, location: str, days: int, units: str, api_key: str
+    ) -> Dict[str, Any]:
         """Fetch real forecast data."""
+        normalized = self._normalize_location(location)
         params = {
-            'q': location,
+            'q': normalized,
             'units': units,
-            'appid': self._api_key,
+            'appid': api_key,
             'cnt': min(days, 16)
         }
 

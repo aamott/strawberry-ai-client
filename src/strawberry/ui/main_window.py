@@ -74,6 +74,7 @@ class MainWindow(QMainWindow):
         # Offline mode components
         self._tensorzero_client: Optional[TensorZeroClient] = None
         self._offline_tracker = OfflineModeTracker()
+        self._pending_mode_notice: Optional[str] = None
         self._sessions: Optional[SessionController] = None
 
         self._setup_window()
@@ -382,9 +383,31 @@ class MainWindow(QMainWindow):
             self._status_bar.set_status(
                 self._offline_tracker.get_status_text(self.settings.local_llm.model)
             )
+
+            if self._skill_service:
+                from strawberry.skills.sandbox.proxy_gen import SkillMode
+
+                self._skill_service.set_mode_override(SkillMode.LOCAL)
+
+            self._pending_mode_notice = (
+                "Runtime mode switched to OFFLINE/LOCAL. "
+                "The Hub/remote devices API is unavailable. "
+                "Use only device.<SkillName>.<method>(...)."
+            )
         else:
             self._offline_banner.set_online()
             self._status_bar.set_connected(True, self.settings.hub.url)
+
+            if self._skill_service:
+                from strawberry.skills.sandbox.proxy_gen import SkillMode
+
+                self._skill_service.set_mode_override(SkillMode.REMOTE)
+
+            self._pending_mode_notice = (
+                "Runtime mode switched to ONLINE (Hub). "
+                "Remote devices API is available again. "
+                "Use devices.<Device>.<SkillName>.<method>(...)."
+            )
             # Trigger sync when coming back online
             if self._sessions:
                 asyncio.ensure_future(self._sessions.sync_all())
@@ -711,7 +734,10 @@ class MainWindow(QMainWindow):
             # Get system prompt
             system_prompt = None
             if self._skill_service:
-                system_prompt = self._skill_service.get_system_prompt()
+                system_prompt = self._skill_service.get_system_prompt(
+                    mode_notice=self._pending_mode_notice
+                )
+                self._pending_mode_notice = None
 
             # Agent loop for tool calls
             all_tool_calls = []

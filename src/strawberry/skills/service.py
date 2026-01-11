@@ -10,9 +10,21 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..hub import HubClient
 from .loader import SkillInfo, SkillLoader
-from .sandbox import Gatekeeper, ProxyGenerator, SandboxConfig, SandboxExecutor
+from .sandbox.executor import SandboxConfig, SandboxExecutor
+from .sandbox.gatekeeper import Gatekeeper
+from .sandbox.proxy_gen import ProxyGenerator, SkillMode
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_device_name(name: str) -> str:
+    """Normalize device name to valid Python identifier."""
+    normalized = name.lower()
+    normalized = re.sub(r"[\s\-]+", "_", normalized)
+    normalized = re.sub(r"[^a-z0-9_]", "", normalized)
+    if normalized and normalized[0].isdigit():
+        normalized = "_" + normalized
+    return normalized
 
 
 @dataclass
@@ -101,6 +113,8 @@ class SkillService:
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._registered = False
         self._skills_loaded = False
+
+        self._mode_override: Optional[SkillMode] = None
 
         self._gatekeeper: Optional[Gatekeeper] = None
         self._proxy_gen: Optional[ProxyGenerator] = None
@@ -193,7 +207,7 @@ class SkillService:
             except Exception as e:
                 logger.error(f"Heartbeat failed: {e}")
 
-    def get_system_prompt(self) -> str:
+    def get_system_prompt(self, *, mode_notice: Optional[str] = None) -> str:
         """Generate the system prompt with skill descriptions.
 
         Returns:
@@ -207,6 +221,32 @@ class SkillService:
         if not skills:
             return "You are Strawberry, a helpful AI assistant."
 
+        mode = self._get_effective_mode()
+
+        mode_lines: list[str] = []
+        if mode_notice:
+            mode_lines.append(mode_notice.strip())
+            mode_lines.append("")
+
+        if mode == SkillMode.LOCAL:
+            mode_lines.extend(
+                [
+                    "Runtime mode: OFFLINE/LOCAL.",
+                    "- Use only the local device proxy: device.<SkillName>.<method>(...) ",
+                    "- Do NOT use devices.* or device_manager.* (they are unavailable).",
+                ]
+            )
+        else:
+            mode_lines.extend(
+                [
+                    "Runtime mode: ONLINE (Hub).",
+                    "- Use the remote devices proxy: devices.<Device>.<SkillName>.<method>(...) ",
+                    "- You may also use device_manager.* as a legacy alias.",
+                ]
+            )
+
+        mode_preamble = "\n".join(mode_lines).strip()
+
         # Build skill descriptions
         descriptions = []
         for skill in skills:
@@ -217,7 +257,7 @@ class SkillService:
 
             for method in skill.methods:
                 prefix = "device"
-                if self.hub_client:
+                if mode == SkillMode.REMOTE:
                     prefix = "devices.{device_name}".format(
                         device_name=normalize_device_name(self.device_name)
                     )
@@ -229,7 +269,10 @@ class SkillService:
             descriptions.append("")
 
         skill_text = "\n".join(descriptions)
-        return self.SYSTEM_PROMPT_TEMPLATE.format(skill_descriptions=skill_text)
+        prompt = self.SYSTEM_PROMPT_TEMPLATE.format(skill_descriptions=skill_text)
+        if mode_preamble:
+            return f"{mode_preamble}\n\n{prompt}"
+        return prompt
 
     def parse_skill_calls(self, response: str) -> List[str]:
         """Parse skill calls from LLM response.
@@ -253,9 +296,16 @@ class SkillService:
 
         # 2. If no fenced blocks found, look for bare device.* calls
         if not code_blocks:
+            mode = self._get_effective_mode()
+            allowed_roots = ("device",)
+            if mode == SkillMode.REMOTE:
+                allowed_roots = ("device", "devices", "device_manager")
+
             # Match lines that look like: print(device.Something...) or device.Something...
             bare_pattern = (
-                r"^[\s]*((?:print\s*\()?\s*(?:device|devices|device_manager)\."
+                r"^[\s]*((?:print\s*\()?\s*(?:"
+                + "|".join(allowed_roots)
+                + r")\."
                 r"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\)?)"
             )
             for line in response.split('\n'):
@@ -280,9 +330,23 @@ class SkillService:
         """
         if self._sandbox:
             result = await self._sandbox.execute(code)
-            # If sandbox failed due to Deno not installed, fall back to direct execution
+            # IMPORTANT: Sandbox fallback strategy when Deno is not installed
+            #
+            # The sandbox (Deno + Pyodide) is the secure execution environment, but it's
+            # not always available (e.g., Deno not installed, development mode).
+            #
+            # SAFE to fall back to direct exec:
+            # - Local device skills (device.* or devices.<this_device>.*)
+            # - These run in the same process/event loop, no cross-thread issues
+            #
+            # Remote device calls are supported in the fallback path via *sync HTTP*
+            # methods on HubClient (see HubClient.search_skills_sync and
+            # HubClient.execute_remote_skill_sync). This avoids event-loop coupling.
             if not result.success and "Deno not installed" in (result.error or ""):
-                logger.warning("Sandbox unavailable, falling back to direct execution")
+                logger.warning(
+                    "Sandbox unavailable (Deno not installed), falling back to direct "
+                    "execution"
+                )
                 return self.execute_code(code)
             return SkillCallResult(
                 success=result.success,
@@ -296,8 +360,19 @@ class SkillService:
     def execute_code(self, code: str) -> SkillCallResult:
         """Execute a code block containing skill calls (sync, direct).
 
-        WARNING: This method uses direct exec() and is NOT secure.
-        Use execute_code_async() with sandbox for production.
+        IMPORTANT: Direct execution fallback
+
+        This is a fallback when the sandbox is unavailable. It's needed because:
+        1. Deno may not be installed (especially in development/testing)
+        2. Users should still be able to use local skills
+        3. The sandbox is primarily for security isolation, not functional requirement
+
+        SAFETY:
+        - Local device skills: SAFE (same process, no async issues)
+        - Remote device skills: Supported via HubClient *sync HTTP* fallback
+
+        SECURITY WARNING: This bypasses sandbox isolation. Only use for trusted code.
+        The LLM-generated code is still validated (no imports, limited builtins).
 
         Args:
             code: Python code to execute
@@ -305,10 +380,24 @@ class SkillService:
         Returns:
             SkillCallResult with output or error
         """
+        mode = self._get_effective_mode()
+
+        # Enforce mode correctness: in OFFLINE/LOCAL mode there is no Hub client, so
+        # devices.* and device_manager.* must not be used.
+        if mode == SkillMode.LOCAL and ("devices." in code or "device_manager." in code):
+            return SkillCallResult(
+                success=False,
+                error=(
+                    "Remote devices proxy is unavailable in OFFLINE/LOCAL mode. "
+                    "Use device.<SkillName>.<method>(...) instead of devices.*"
+                ),
+            )
+
         import io
         import sys
 
-        # Create device proxy (local skills)
+        # Create device proxy for local skills
+        # This supports both device.* and devices.<this_device>.* syntax
         device = _DeviceProxy(self._loader)
 
         try:
@@ -367,6 +456,7 @@ class SkillService:
                 from .remote import DeviceManager
 
                 device_manager = DeviceManager(
+                    local_loader=self._loader,
                     hub_client=self.hub_client,
                     local_device_name=normalize_device_name(self.device_name),
                 )
@@ -377,9 +467,38 @@ class SkillService:
             output = stdout_capture.getvalue().strip()
             return SkillCallResult(success=True, result=output or "(no output)")
         except Exception as e:
-            return SkillCallResult(success=False, error=str(e))
+            return SkillCallResult(success=False, error=f"Execution error: {e}")
         finally:
             sys.stdout = old_stdout
+
+    def _is_remote_device_call(self, code: str) -> bool:
+        """Check if code calls a remote device (not the local device).
+
+        Returns True if code references devices.<other_device>.* or device_manager.*
+        Returns False if code only uses device.* or devices.<this_device>.*
+        """
+        # device_manager.* is always remote (cross-device discovery)
+        if "device_manager." in code:
+            return True
+
+        # device.* is always local
+        if "devices." not in code:
+            return False
+
+        # Check if it's devices.<local_device_name>.* (which is actually local)
+        local_device_name = normalize_device_name(self.device_name)
+        local_pattern = f"devices.{local_device_name}."
+
+        # Simple heuristic: if code contains devices. but NOT our local device name,
+        # it's a remote call
+        if local_pattern in code:
+            # Contains local device reference - check if there are OTHER device references
+            # For now, conservatively allow if local device is referenced
+            # (A more sophisticated check would parse the AST to find all device references)
+            return False
+
+        # Contains devices. but not our local device - must be remote
+        return True
 
     async def process_response_async(self, response: str) -> Tuple[str, List[Dict[str, Any]]]:
         """Process LLM response, executing any skill calls (async, sandbox).
@@ -595,26 +714,38 @@ class SkillService:
         self.hub_client = hub_client
         self._configure_runtime_mode()
 
+    def set_mode_override(self, mode: Optional[SkillMode]) -> None:
+        self._mode_override = mode
+        self._configure_runtime_mode()
+
+    def _get_effective_mode(self) -> SkillMode:
+        if self._mode_override is not None:
+            # Never report REMOTE if no Hub client is configured.
+            if self._mode_override == SkillMode.REMOTE and not self.hub_client:
+                return SkillMode.LOCAL
+            return self._mode_override
+        return SkillMode.REMOTE if self.hub_client else SkillMode.LOCAL
+
     def _configure_runtime_mode(self) -> None:
         if not self.use_sandbox:
             return
         if not self._sandbox or not self._gatekeeper or not self._proxy_gen:
             return
 
-        if self.hub_client:
+        mode = self._get_effective_mode()
+
+        if mode == SkillMode.REMOTE:
             from .remote import DeviceManager
-            from .sandbox.proxy_gen import SkillMode
 
             self._gatekeeper.set_device_manager(
                 DeviceManager(
+                    local_loader=self._loader,
                     hub_client=self.hub_client,
                     local_device_name=normalize_device_name(self.device_name),
                 )
             )
             self._proxy_gen.set_mode(SkillMode.REMOTE)
         else:
-            from .sandbox.proxy_gen import SkillMode
-
             self._gatekeeper.device_manager = None
             self._proxy_gen.set_mode(SkillMode.LOCAL)
 
@@ -631,10 +762,11 @@ class SkillService:
             Dict with "result" or "error" key
         """
         try:
+            mode = self._get_effective_mode()
             if tool_name == "search_skills":
                 query = arguments.get("query", "")
                 device_limit = int(arguments.get("device_limit", 10) or 10)
-                if self.hub_client:
+                if mode == SkillMode.REMOTE and self.hub_client:
                     import json
 
                     results = await self.hub_client.search_skills(
@@ -648,7 +780,7 @@ class SkillService:
 
             elif tool_name == "describe_function":
                 path = arguments.get("path", "")
-                if self.hub_client:
+                if mode == SkillMode.REMOTE and self.hub_client:
                     query = ""
                     if path:
                         query = path.split(".")[0]
@@ -889,27 +1021,6 @@ class _SkillProxy:
         return method_wrapper
 
 
-def normalize_device_name(name: str) -> str:
-    """Normalize device name to valid Python identifier.
-
-    Args:
-        name: Display name (e.g., "Living Room PC")
-
-    Returns:
-        Normalized name (e.g., "living_room_pc")
-    """
-    import re as _re
-    # Lowercase, replace spaces/hyphens with underscores
-    normalized = name.lower()
-    normalized = _re.sub(r'[\s\-]+', '_', normalized)
-    # Remove invalid characters (keep only alphanumeric and underscore)
-    normalized = _re.sub(r'[^a-z0-9_]', '', normalized)
-    # Ensure doesn't start with number
-    if normalized and normalized[0].isdigit():
-        normalized = '_' + normalized
-    return normalized
-
-
 class _DeviceManagerProxy:
     """Proxy object for accessing skills across multiple devices (online mode).
 
@@ -927,6 +1038,7 @@ class _DeviceManagerProxy:
         local_loader: SkillLoader,
         hub_client: Optional[HubClient] = None,
         connected_devices: Optional[Dict[str, Dict[str, Any]]] = None,
+        local_device_name: Optional[str] = None,
     ):
         """Initialize device manager proxy.
 
@@ -934,11 +1046,14 @@ class _DeviceManagerProxy:
             local_loader: Local skill loader for this device
             hub_client: Hub client for remote skill calls
             connected_devices: Dict mapping device_name -> device_info with skills
+            local_device_name: Name of the local device (will be normalized)
         """
         self._local_loader = local_loader
         self._hub_client = hub_client
         self._connected_devices: Dict[str, Dict[str, Any]] = connected_devices or {}
-        self._local_device_name = "local"
+        self._local_device_name = (
+            normalize_device_name(local_device_name) if local_device_name else "local"
+        )
 
     def set_local_device_name(self, name: str) -> None:
         """Set the name of the local device."""

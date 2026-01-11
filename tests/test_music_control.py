@@ -4,7 +4,7 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
-from skills.music_control_skill import AdvancedMusicControlSkill, MusicControlSkill
+from skills.music_control_skill.skill import AdvancedMusicControlSkill, MusicControlSkill
 
 
 class TestMusicControlSkill:
