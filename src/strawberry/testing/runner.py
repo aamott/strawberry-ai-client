@@ -89,6 +89,34 @@ def _read_text_file(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def _strip_warnings_from_pytest_log(text: str) -> str:
+    """Remove pytest warnings sections from a terminal log.
+
+    This is intentionally conservative: it strips the "warnings summary" section
+    emitted by pytest (when present) but leaves other content intact.
+    """
+
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+
+    in_warning_section = False
+    for line in lines:
+        if not in_warning_section and line.strip().lower() == "warnings summary":
+            in_warning_section = True
+            continue
+
+        # The warnings section ends when pytest prints a new major section title.
+        if in_warning_section:
+            if _SECTION_TITLE_RE.match(line.rstrip("\n")):
+                in_warning_section = False
+            else:
+                continue
+
+        out.append(line)
+
+    return "".join(out)
+
+
 def _tail_lines(text: str, line_count: int) -> str:
     if line_count <= 0:
         return ""
@@ -101,6 +129,33 @@ def _list_log_files(log_dir: Path) -> list[Path]:
         return []
     files = [p for p in log_dir.glob("*.log") if p.is_file()]
     return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def _cleanup_log_dir(*, log_dir: Path, keep: Path) -> None:
+    """Keep only a single log file in the log directory.
+
+    The repo ignores these logs, so keeping only the newest avoids confusion and
+    reduces noise when iterating on one failure at a time.
+    """
+
+    if not log_dir.exists():
+        return
+
+    keep_resolved = keep.resolve() if keep.exists() else keep
+    for p in log_dir.glob("*.log"):
+        if not p.is_file():
+            continue
+        try:
+            if p.resolve() == keep_resolved:
+                continue
+        except FileNotFoundError:
+            # Race-y/odd FS edge: if it disappeared, nothing to do.
+            continue
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            # Best-effort cleanup only.
+            pass
 
 
 def _print_log_files(log_dir: Path) -> int:
@@ -374,6 +429,14 @@ def main() -> int:
         help="Search the log file for a pattern (regex by default) (no test run)",
     )
     parser.add_argument(
+        "--test",
+        default="",
+        help=(
+            "Convenience search in the log for a test name/nodeid substring "
+            "(equivalent to --grep with fixed strings + default context) (no test run)"
+        ),
+    )
+    parser.add_argument(
         "--fixed-strings",
         action="store_true",
         help="Treat --grep as a literal string instead of a regex",
@@ -409,6 +472,11 @@ def main() -> int:
         help="Only search/print up to this 1-based line number (no test run)",
     )
     parser.add_argument(
+        "--hide-warnings",
+        action="store_true",
+        help="Hide pytest warnings sections when reading/searching logs (no test run)",
+    )
+    parser.add_argument(
         "--show-all",
         action="store_true",
         help="Print full pytest output to console (may be verbose)",
@@ -431,6 +499,11 @@ def main() -> int:
         action="store_true",
         help="More console output (passes -v to pytest)",
     )
+    parser.add_argument(
+        "--keep-other-logs",
+        action="store_true",
+        help="Do not delete other .test-logs/*.log files (default keeps only latest)",
+    )
 
     args, passthrough = parser.parse_known_args()
 
@@ -448,20 +521,64 @@ def main() -> int:
         log_file = project_root / log_file
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
+    if log_file.parent == log_dir and not args.keep_other_logs:
+        _cleanup_log_dir(log_dir=log_dir, keep=log_file)
+
     if args.failures:
         _print_header()
-        return _print_failures_index(log_file)
+        text = _read_text_file(log_file)
+        if args.hide_warnings:
+            text = _strip_warnings_from_pytest_log(text)
+        failures = _extract_failures_from_pytest_log(text)
+        if not failures:
+            print("No failures found in log.")
+            print(f"Log: {log_file}")
+            return 0
+
+        print("Failures:")
+        for i, block in enumerate(failures, start=1):
+            print(f"{i}) {_failure_title(block)}")
+        print(f"\nLog: {log_file}")
+        return 0
 
     if int(args.show_failure) > 0:
         _print_header()
-        return _print_failure_by_index(log_file, int(args.show_failure))
+        if not log_file.exists():
+            print(f"Log file not found: {log_file}")
+            return 2
+
+        text = _read_text_file(log_file)
+        if args.hide_warnings:
+            text = _strip_warnings_from_pytest_log(text)
+
+        failures = _extract_failures_from_pytest_log(text)
+        if not failures:
+            print("No failures found in log.")
+            print(f"Log: {log_file}")
+            return 0
+
+        index = int(args.show_failure)
+        if index < 1 or index > len(failures):
+            print(f"Invalid failure index: {index} (valid range: 1..{len(failures)})")
+            print(f"Log: {log_file}")
+            return 2
+
+        block = failures[index - 1]
+        print(f"Failure {index}/{len(failures)}: {_failure_title(block)}")
+        print("-" * 50)
+        print(block)
+        print(f"\nLog: {log_file}")
+        return 0
 
     if int(args.tail_log) > 0:
         _print_header()
         if not log_file.exists():
             print(f"Log file not found: {log_file}")
             return 2
-        print(_tail_lines(_read_text_file(log_file), int(args.tail_log)), end="")
+        text = _read_text_file(log_file)
+        if args.hide_warnings:
+            text = _strip_warnings_from_pytest_log(text)
+        print(_tail_lines(text, int(args.tail_log)), end="")
         print(f"\nLog: {log_file}")
         return 0
 
@@ -469,21 +586,127 @@ def main() -> int:
         _print_header()
         return _print_log_files(log_dir)
 
+    if args.test and args.grep:
+        _print_header()
+        print("Choose either --test or --grep (not both).")
+        return 2
+
+    if args.test:
+        _print_header()
+        from_line = int(args.from_line) if int(args.from_line) > 0 else None
+        to_line = int(args.to_line) if int(args.to_line) > 0 else None
+
+        # Defaults tuned for "focus on one test" iteration.
+        before = int(args.before) if int(args.before) > 0 else 2
+        after = int(args.after) if int(args.after) > 0 else 30
+
+        text = _read_text_file(log_file) if log_file.exists() else ""
+        if args.hide_warnings:
+            text = _strip_warnings_from_pytest_log(text)
+        if not log_file.exists():
+            print(f"Log file not found: {log_file}")
+            return 2
+
+        tmp_file = log_file
+        if args.hide_warnings:
+            # Avoid a second read inside _search_log; pass through a temp string via a file.
+            # Instead of creating a file, we re-run the search logic inline.
+            all_lines = text.splitlines(keepends=False)
+            subset = _slice_line_range(all_lines, from_line, to_line)
+            offset = max(0, (from_line - 1)) if from_line is not None else 0
+            regex = re.compile(re.escape(str(args.test)), flags=re.IGNORECASE)
+            matches = [i for i, line in enumerate(subset, start=1 + offset) if regex.search(line)]
+            if not matches:
+                print("No matches found.")
+                print(f"Test: {args.test}")
+                print(f"Log: {log_file}")
+                return 1
+            printed: set[int] = set()
+            for match_line in matches:
+                start = max(1, match_line - before)
+                end = min(len(all_lines), match_line + after)
+                for line_no in range(start, end + 1):
+                    if line_no in printed:
+                        continue
+                    printed.add(line_no)
+                    prefix = ">" if line_no == match_line else " "
+                    print(f"{prefix}{line_no:6d}: {all_lines[line_no - 1]}")
+                print("-")
+            print(f"Matches: {len(matches)}")
+            print(f"Log: {log_file}")
+            return 0
+
+        return _search_log(
+            log_file=tmp_file,
+            pattern=str(args.test),
+            fixed_strings=True,
+            ignore_case=True,
+            before=before,
+            after=after,
+            from_line=from_line,
+            to_line=to_line,
+        )
+
     if args.grep:
         _print_header()
         from_line = int(args.from_line) if int(args.from_line) > 0 else None
         to_line = int(args.to_line) if int(args.to_line) > 0 else None
         try:
-            return _search_log(
-                log_file=log_file,
-                pattern=str(args.grep),
-                fixed_strings=bool(args.fixed_strings),
-                ignore_case=bool(args.ignore_case),
-                before=int(args.before),
-                after=int(args.after),
-                from_line=from_line,
-                to_line=to_line,
-            )
+            if not log_file.exists():
+                print(f"Log file not found: {log_file}")
+                return 2
+
+            if not args.hide_warnings:
+                return _search_log(
+                    log_file=log_file,
+                    pattern=str(args.grep),
+                    fixed_strings=bool(args.fixed_strings),
+                    ignore_case=bool(args.ignore_case),
+                    before=int(args.before),
+                    after=int(args.after),
+                    from_line=from_line,
+                    to_line=to_line,
+                )
+
+            # Inline search on warnings-stripped text.
+            text = _strip_warnings_from_pytest_log(_read_text_file(log_file))
+            all_lines = text.splitlines(keepends=False)
+            subset = _slice_line_range(all_lines, from_line, to_line)
+            offset = max(0, (from_line - 1)) if from_line is not None else 0
+
+            flags = re.IGNORECASE if bool(args.ignore_case) else 0
+            if bool(args.fixed_strings):
+                regex = re.compile(re.escape(str(args.grep)), flags=flags)
+            else:
+                regex = re.compile(str(args.grep), flags=flags)
+
+            matches = [
+                i for i, line in enumerate(subset, start=1 + offset) if regex.search(line)
+            ]
+
+            if not matches:
+                print("No matches found.")
+                print(f"Pattern: {args.grep}")
+                print(f"Log: {log_file}")
+                return 1
+
+            printed: set[int] = set()
+            before = int(args.before)
+            after = int(args.after)
+            for match_line in matches:
+                start = max(1, match_line - max(0, before))
+                end = min(len(all_lines), match_line + max(0, after))
+                for line_no in range(start, end + 1):
+                    if line_no in printed:
+                        continue
+                    printed.add(line_no)
+                    prefix = ">" if line_no == match_line else " "
+                    print(f"{prefix}{line_no:6d}: {all_lines[line_no - 1]}")
+                print("-")
+
+            print(f"Matches: {len(matches)}")
+            print(f"Log: {log_file}")
+            return 0
         except re.error as exc:
             print(f"Invalid regex for --grep: {exc}")
             print(f"Pattern: {args.grep}")
