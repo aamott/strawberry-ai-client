@@ -5,7 +5,7 @@ import logging
 from typing import Optional
 
 from ..hub import HubClient, HubError
-from .session_db import LocalSessionDB
+from .session_db import LocalSessionDB, SyncStatus
 
 logger = logging.getLogger(__name__)
 
@@ -121,17 +121,27 @@ class SyncManager:
                 continue
 
             try:
+                did_sync = True
                 if op.operation == "create_session":
-                    await self._sync_create_session(op)
+                    did_sync = await self._sync_create_session(op)
 
                 elif op.operation == "add_message":
-                    await self._sync_add_message(op)
+                    did_sync = await self._sync_add_message(op)
 
                 elif op.operation == "delete_session":
-                    await self._sync_delete_session(op)
+                    did_sync = await self._sync_delete_session(op)
 
-                # Success - remove from queue
-                self.db.remove_from_sync_queue(op.id)
+                elif op.operation == "update_session":
+                    did_sync = await self._sync_update_session(op)
+
+                else:
+                    logger.error(f"Unknown sync operation: {op.operation}")
+                    did_sync = True
+
+                # Only remove from queue if we actually synced.
+                # If we deferred (e.g., waiting for session hub_id), keep it.
+                if did_sync:
+                    self.db.remove_from_sync_queue(op.id)
 
             except HubError as e:
                 logger.warning(f"Sync failed for {op.operation}: {e}")
@@ -141,31 +151,33 @@ class SyncManager:
                 logger.error(f"Unexpected error syncing {op.operation}: {e}")
                 self.db.increment_sync_attempts(op.id)
 
-    async def _sync_create_session(self, op) -> None:
+    async def _sync_create_session(self, op) -> bool:
         """Sync a create_session operation."""
         local_id = op.payload.get("local_id")
         if not local_id:
             logger.error("create_session operation missing local_id")
-            return
+            return True
 
         # Check if already synced
         session = self.db.get_session(local_id)
         if session and session.hub_id:
             logger.debug(f"Session {local_id} already synced")
-            return
+            return True
 
         # Create session on Hub
         hub_session = await self.hub_client.create_session()
         hub_id = hub_session.get("id")
 
+        if not hub_id:
+            raise RuntimeError("Hub create_session returned no id")
+
         # Update local session with Hub ID
         self.db.mark_session_synced(local_id, hub_id)
         logger.info(f"Synced session {local_id} -> {hub_id}")
 
-        # Sync any messages for this session
-        await self._sync_session_messages(local_id, hub_id)
+        return True
 
-    async def _sync_add_message(self, op) -> None:
+    async def _sync_add_message(self, op) -> bool:
         """Sync an add_message operation."""
         local_session_id = op.payload.get("session_id")
         message_id = op.payload.get("message_id")
@@ -174,14 +186,14 @@ class SyncManager:
 
         if not all([local_session_id, message_id, role, content]):
             logger.error("add_message operation missing required fields")
-            return
+            return True
 
         # Get Hub session ID
         hub_session_id = self.db.get_hub_session_id(local_session_id)
         if not hub_session_id:
             # Session not yet synced - will be handled when session syncs
             logger.debug(f"Session {local_session_id} not yet synced, deferring message")
-            return
+            return False
 
         # Add message to Hub
         hub_message = await self.hub_client.add_session_message(
@@ -193,12 +205,14 @@ class SyncManager:
         self.db.mark_message_synced(message_id, hub_message_id)
         logger.debug(f"Synced message {message_id} -> {hub_message_id}")
 
-    async def _sync_delete_session(self, op) -> None:
+        return True
+
+    async def _sync_delete_session(self, op) -> bool:
         """Sync a delete_session operation."""
         hub_session_id = op.payload.get("hub_session_id")
         if not hub_session_id:
             logger.debug("delete_session operation missing hub_session_id, already local-only")
-            return
+            return True
 
         try:
             await self.hub_client.delete_session(hub_session_id)
@@ -209,6 +223,31 @@ class SyncManager:
                 logger.debug(f"Session {hub_session_id} already deleted from Hub")
             else:
                 raise
+
+        return True
+
+    async def _sync_update_session(self, op) -> bool:
+        """Sync an update_session operation (e.g., rename).
+
+        Payload:
+            local_id: Local session ID
+            title: Desired title
+        """
+        local_id = op.payload.get("local_id")
+        title = op.payload.get("title")
+        if not local_id or title is None:
+            logger.error("update_session operation missing local_id/title")
+            return True
+
+        hub_session_id = self.db.get_hub_session_id(local_id)
+        if not hub_session_id:
+            logger.debug(f"Session {local_id} not yet synced, deferring update_session")
+            return False
+
+        await self.hub_client.update_session(hub_session_id, title)
+        # Mark session as fully synced after successful update.
+        self.db.update_session(local_id, sync_status=SyncStatus.SYNCED)
+        return True
 
     async def _sync_session_messages(self, local_session_id: str, hub_session_id: str) -> None:
         """Sync all unsynced messages for a session."""
@@ -317,6 +356,21 @@ class SyncManager:
         # Try immediate sync if Hub available and session is synced
         hub_session_id = self.db.get_hub_session_id(session_id)
         if hub_session_id and await self._hub_available():
+            await self._push_pending()
+
+    async def queue_update_session(self, local_session_id: str, title: str) -> None:
+        """Queue an update_session operation for sync.
+
+        Args:
+            local_session_id: Local session ID
+            title: New title to set on Hub
+        """
+        self.db.queue_sync_operation(
+            "update_session",
+            {"local_id": local_session_id, "title": title},
+        )
+
+        if await self._hub_available():
             await self._push_pending()
 
     async def queue_delete_session(self, local_session_id: str) -> None:

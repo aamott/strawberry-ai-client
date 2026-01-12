@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..models import ChatMessage
-from ..storage import LocalSessionDB, SyncManager
+from ..storage import LocalSessionDB, SyncManager, SyncStatus
 
 logger = logging.getLogger(__name__)
 
@@ -135,8 +135,19 @@ class SessionController:
             if hub_id:
                 try:
                     await hub_client.update_session(hub_id, new_title)
+                    self._db.update_session(session_id, sync_status=SyncStatus.SYNCED)
                 except Exception as e:
                     logger.warning(f"Failed to update Hub session title: {e}")
+                    self._db.update_session(session_id, sync_status=SyncStatus.PENDING_SYNC)
+                    await self._sync.queue_update_session(session_id, new_title)
+            else:
+                # Not yet synced; queue update to be applied after create_session sync.
+                self._db.update_session(session_id, sync_status=SyncStatus.PENDING_SYNC)
+                await self._sync.queue_update_session(session_id, new_title)
+        else:
+            # Offline: queue update for next sync.
+            self._db.update_session(session_id, sync_status=SyncStatus.PENDING_SYNC)
+            await self._sync.queue_update_session(session_id, new_title)
 
     def list_local_sessions_for_sidebar(self) -> List[Dict[str, Any]]:
         sessions_data: List[Dict[str, Any]] = []

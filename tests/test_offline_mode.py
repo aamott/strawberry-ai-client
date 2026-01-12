@@ -363,6 +363,41 @@ class TestSyncManager:
         )
 
     @pytest.mark.asyncio
+    async def test_add_message_deferred_not_removed(self, db: LocalSessionDB, mock_hub_client):
+        """If a session has no hub_id yet, add_message ops should remain queued."""
+        sync_manager = SyncManager(db, mock_hub_client)
+
+        session = db.create_session()
+        msg = db.add_message(session.id, "user", "Hello")
+        await sync_manager.queue_add_message(session.id, msg.id, "user", "Hello")
+
+        # Trigger sync: add_message should defer and remain queued.
+        await sync_manager.sync_all()
+        pending = db.get_pending_sync()
+        assert any(op.operation == "add_message" for op in pending)
+
+    @pytest.mark.asyncio
+    async def test_update_session_deferred_then_synced(self, db: LocalSessionDB, mock_hub_client):
+        """update_session ops should defer until hub_id exists, then sync."""
+        mock_hub_client.update_session = AsyncMock(return_value={"id": "hub-session-1"})
+        sync_manager = SyncManager(db, mock_hub_client)
+
+        session = db.create_session(title="Old")
+        await sync_manager.queue_update_session(session.id, "New")
+
+        # No hub_id yet -> operation should remain
+        pending = db.get_pending_sync()
+        assert any(op.operation == "update_session" for op in pending)
+
+        # Once session is synced, update_session should apply
+        db.mark_session_synced(session.id, "hub-session-1")
+        await sync_manager.sync_all()
+
+        mock_hub_client.update_session.assert_called_once_with("hub-session-1", "New")
+        pending2 = db.get_pending_sync()
+        assert not any(op.operation == "update_session" for op in pending2)
+
+    @pytest.mark.asyncio
     async def test_pull_remote_sessions(
         self, db: LocalSessionDB, mock_hub_client
     ):

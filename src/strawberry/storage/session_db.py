@@ -273,8 +273,14 @@ class LocalSessionDB:
         if sync_status is not None:
             updates.append("sync_status = ?")
             params.append(sync_status.value)
-            updates.append("is_synced = ?")
-            params.append(sync_status == SyncStatus.SYNCED)
+            # is_synced tracks whether this session is linked to a Hub session.
+            # A session can be PENDING_SYNC and still be synced/linked.
+            if sync_status == SyncStatus.SYNCED:
+                updates.append("is_synced = ?")
+                params.append(True)
+            elif sync_status == SyncStatus.LOCAL:
+                updates.append("is_synced = ?")
+                params.append(False)
 
         if not updates:
             return False

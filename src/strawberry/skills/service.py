@@ -1289,16 +1289,11 @@ class _RemoteSkillProxy:
             # This will be called synchronously from sandbox
             # The actual call goes through Hub to the target device
             import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Remote skill calls from sandbox require async bridge implementation
-                # This would need to use the sandbox's async bridge to call Hub
-                raise NotImplementedError(
-                    "Remote skill calls from sandbox require async bridge implementation. "
-                    f"Attempted: {self._device_name}.{self._skill_name}.{method_name}"
-                )
-            else:
-                return loop.run_until_complete(
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                # No running loop: use asyncio.run() so the loop is always closed.
+                return asyncio.run(
                     self._hub_client.execute_remote_skill(
                         device_name=self._device_name,
                         skill_name=self._skill_name,
@@ -1307,5 +1302,19 @@ class _RemoteSkillProxy:
                         kwargs=kwargs,
                     )
                 )
+
+            # Running loop in this thread.
+            # Remote skill calls from sandbox require async bridge implementation.
+            # This would need to use the sandbox's async bridge to call Hub.
+            raise NotImplementedError(
+                "Remote skill calls from sandbox require async bridge implementation. "
+                f"Attempted: {self._device_name}.{self._skill_name}.{method_name}"
+            )
+
+            # (unreachable)
+            if False:  # pragma: no cover
+                # Remote skill calls from sandbox require async bridge implementation
+                # This would need to use the sandbox's async bridge to call Hub
+                ...
 
         return method_wrapper
