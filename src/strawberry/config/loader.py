@@ -55,11 +55,24 @@ def load_config(
     # Load config.yaml
     config_data = {}
     if config_path is None:
-        config_path = Path("config/config.yaml")
+        # Default to ai-pc-spoke/config/config.yaml relative to this file
+        # This ensures it works regardless of current working directory
+        config_path = Path(__file__).resolve().parents[3] / "config" / "config.yaml"
 
     if config_path.exists():
-        with open(config_path) as f:
-            config_data = yaml.safe_load(f) or {}
+        try:
+            with open(config_path) as f:
+                config_data = yaml.safe_load(f) or {}
+        except yaml.YAMLError as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Config file is invalid YAML at {config_path}: {e}. Using defaults")
+            config_data = {}
+    else:
+        # Log warning if config file not found
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Config file not found at {config_path}, using defaults")
 
     # Expand environment variables
     config_data = _expand_env_vars(config_data)

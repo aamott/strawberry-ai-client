@@ -52,6 +52,9 @@ class Session:
     is_synced: bool = False
     sync_status: SyncStatus = SyncStatus.LOCAL
     deleted_at: Optional[datetime] = None  # Soft delete timestamp
+    # Mode tracking: "online" | "offline" | None
+    # Tracks which mode prompt was last sent to avoid duplicates
+    last_mode_prompt: Optional[str] = None
 
 
 @dataclass
@@ -119,7 +122,8 @@ class LocalSessionDB:
                 last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 is_synced BOOLEAN DEFAULT FALSE,
                 sync_status TEXT DEFAULT 'local',
-                deleted_at TIMESTAMP
+                deleted_at TIMESTAMP,
+                last_mode_prompt TEXT
             );
 
             -- Local messages table
@@ -153,6 +157,16 @@ class LocalSessionDB:
         """
         )
         conn.commit()
+
+        # Migration: Add last_mode_prompt column if missing (for existing databases)
+        try:
+            cursor.execute("PRAGMA table_info(local_sessions)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            if "last_mode_prompt" not in existing_cols:
+                cursor.execute("ALTER TABLE local_sessions ADD COLUMN last_mode_prompt TEXT")
+                conn.commit()
+        except Exception:
+            pass  # Best-effort migration
 
     def close(self) -> None:
         """Close database connection."""

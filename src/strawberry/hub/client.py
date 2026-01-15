@@ -219,6 +219,7 @@ class HubClient:
         model: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
+        enable_tools: bool = False,
     ) -> ChatResponse:
         """Send a chat completion request to the Hub.
 
@@ -227,6 +228,8 @@ class HubClient:
             model: Model to use (default: Hub's configured model)
             temperature: Sampling temperature
             max_tokens: Maximum tokens in response
+            enable_tools: If True, Hub runs agent loop and executes tools.
+                         If False, Hub just passes through to LLM.
 
         Returns:
             ChatResponse with the assistant's reply
@@ -234,6 +237,7 @@ class HubClient:
         payload = {
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": temperature,
+            "enable_tools": enable_tools,
         }
 
         if model:

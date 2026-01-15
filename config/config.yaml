@@ -1,7 +1,7 @@
 # Strawberry AI Spoke Configuration
 
 device:
-  name: "My Strawberry Spoke"
+  name: "Strawberry Spoke"
   # id: auto-generated if not set
 
 hub:

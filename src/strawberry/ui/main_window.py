@@ -343,8 +343,10 @@ class MainWindow(QMainWindow):
 
         # Make path absolute if relative
         if not skills_path.is_absolute():
-            # Relative to config file or cwd
-            skills_path = Path.cwd() / skills_path
+            # Resolve relative to project root, not cwd.
+            # This ensures ./skills works even if launched from a different directory.
+            project_root = Path(__file__).resolve().parents[3]
+            skills_path = project_root / skills_path
 
         self._skill_service = SkillService(skills_path, device_name=self.settings.device.name)
 
@@ -512,6 +514,21 @@ class MainWindow(QMainWindow):
 
         # Attach hub client on skill service (also switches runtime mode to multi-device)
         self._skill_service.set_hub_client(hub_client)
+
+        # Ensure Hub -> Spoke skill execution requests can be handled.
+        # Without this, HubClient receives `skill_request` messages but raises
+        # RuntimeError("No skill callback registered").
+        async def _ws_skill_callback(
+            skill_name: str,
+            method_name: str,
+            args: list,
+            kwargs: dict,
+        ):
+            return await self._skill_service.execute_skill_by_name(
+                skill_name, method_name, args, kwargs
+            )
+
+        hub_client.set_skill_callback(_ws_skill_callback)
 
         # Register skills
         success = await self._skill_service.register_with_hub()
@@ -708,8 +725,110 @@ class MainWindow(QMainWindow):
     async def _send_message_via_tensorzero(self, message: str):
         """Send message via TensorZero with Hub/local fallback and tool call support.
 
-        Uses TensorZero gateway which handles fallback between Hub and local Ollama.
-        Supports agent loop with TensorZero native tool calls.
+        When online (Hub connected), routes to Hub with enable_tools=true so Hub
+        executes tools. When offline, runs agent loop locally with local tool execution.
+        """
+        # Check if we should route to Hub (online mode)
+        # Hub executes tools when online; Spoke executes locally when offline
+        use_hub_tools = (
+            self._hub_manager.connected
+            and self._hub_manager.client is not None
+            and not self._offline_tracker.is_offline
+        )
+
+        if use_hub_tools:
+            await self._send_message_via_hub(message)
+        else:
+            await self._send_message_via_local_agent(message)
+
+    async def _send_message_via_hub(self, message: str):
+        """Send message to Hub with tools enabled (Hub executes tools).
+
+        Used when online - Hub runs the agent loop and executes tools via `devices`.
+        Spoke only receives the final response.
+        """
+        try:
+            assistant_turn = self._chat_area.add_assistant_turn("(Thinking...)")
+
+            # Build messages for Hub
+            hub_messages = []
+            for msg in self._conversation_history:
+                if msg.role == "system":
+                    continue
+                hub_messages.append(ChatMessage(role=msg.role, content=msg.content))
+
+            # Add current message
+            hub_messages.append(ChatMessage(role="user", content=message))
+
+            # Add to local history
+            self._conversation_history.append(
+                ChatMessage(role="user", content=message)
+            )
+            self._trim_history()
+
+            # Store user message locally
+            if self._sessions and self._current_session_id:
+                msg_id = self._sessions.add_message_local(
+                    self._current_session_id, "user", message
+                )
+                asyncio.ensure_future(
+                    self._sessions.queue_add_message(
+                        self._current_session_id, msg_id, "user", message
+                    )
+                )
+
+            # Call Hub with enable_tools=true
+            print("[Hub Agent] Sending message to Hub with tools enabled")
+            response = await self._hub_manager.client.chat(
+                messages=hub_messages,
+                temperature=self.settings.llm.temperature,
+                enable_tools=True,
+            )
+
+            # Update offline tracker (successful Hub response = online)
+            self._offline_tracker.on_response(response)
+
+            # Display response
+            display_content = response.content or "No response"
+            assistant_turn.set_markdown(display_content)
+
+            # Store assistant response locally
+            if self._sessions and self._current_session_id:
+                msg_id = self._sessions.add_message_local(
+                    self._current_session_id, "assistant", response.content
+                )
+                asyncio.ensure_future(
+                    self._sessions.queue_add_message(
+                        self._current_session_id,
+                        msg_id,
+                        "assistant",
+                        response.content,
+                    )
+                )
+
+            # Add to conversation history
+            self._conversation_history.append(
+                ChatMessage(role="assistant", content=response.content)
+            )
+            self._trim_history()
+
+            # Update pending sync count
+            if self._sessions:
+                self._offline_tracker.pending_sync_count = self._sessions.get_pending_count()
+
+        except Exception:
+            logger.exception("Hub chat failed, falling back to local")
+            # Mark as potentially offline and retry with local agent
+            self._offline_tracker._set_offline(True)
+            await self._send_message_via_local_agent(message, skip_history_add=True)
+        finally:
+            self._input_area.set_sending(False)
+            self._input_area.set_focus()
+
+    async def _send_message_via_local_agent(self, message: str, skip_history_add: bool = False):
+        """Send message via local TensorZero agent loop with local tool execution.
+
+        Used when offline - Spoke runs the agent loop and executes tools via `device`.
         """
         MAX_ITERATIONS = 5
 
@@ -729,11 +848,12 @@ class MainWindow(QMainWindow):
             # Add current message
             tz_messages.append(ChatMessage(role="user", content=message))
 
-            # Add to local history
-            self._conversation_history.append(
-                ChatMessage(role="user", content=message)
-            )
-            self._trim_history()
+            # Add to local history (skip if already added by Hub fallback)
+            if not skip_history_add:
+                self._conversation_history.append(
+                    ChatMessage(role="user", content=message)
+                )
+                self._trim_history()
 
             # Get system prompt
             system_prompt = None
