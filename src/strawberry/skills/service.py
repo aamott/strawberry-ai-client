@@ -358,21 +358,11 @@ class SkillService:
             return self.execute_code(code)
 
     def execute_code(self, code: str) -> SkillCallResult:
-        """Execute a code block containing skill calls (sync, direct).
+        """Execute a code block containing skill calls (sync, thread-safe).
 
-        IMPORTANT: Direct execution fallback
-
-        This is a fallback when the sandbox is unavailable. It's needed because:
-        1. Deno may not be installed (especially in development/testing)
-        2. Users should still be able to use local skills
-        3. The sandbox is primarily for security isolation, not functional requirement
-
-        SAFETY:
-        - Local device skills: SAFE (same process, no async issues)
-        - Remote device skills: Supported via HubClient *sync HTTP* fallback
-
-        SECURITY WARNING: This bypasses sandbox isolation. Only use for trusted code.
-        The LLM-generated code is still validated (no imports, limited builtins).
+        Uses RestrictedPython to compile and execute user code in a secure,
+        isolated environment. Output is captured via a per-execution print
+        function, not global sys.stdout manipulation.
 
         Args:
             code: Python code to execute
@@ -380,6 +370,8 @@ class SkillService:
         Returns:
             SkillCallResult with output or error
         """
+        from .restricted_executor import execute_restricted
+
         mode = self._get_effective_mode()
 
         # Enforce mode correctness: in OFFLINE/LOCAL mode there is no Hub client, so
@@ -393,83 +385,32 @@ class SkillService:
                 ),
             )
 
-        import io
-        import sys
-
         # Create device proxy for local skills
-        # This supports both device.* and devices.<this_device>.* syntax
         device = _DeviceProxy(self._loader)
 
-        try:
-            parsed = ast.parse(code)
-            for node in ast.walk(parsed):
-                if isinstance(node, ast.Import | ast.ImportFrom):
-                    return SkillCallResult(
-                        success=False,
-                        error="Import statements are not allowed in python_exec",
-                    )
-        except SyntaxError as e:
-            return SkillCallResult(success=False, error=f"SyntaxError: {e}")
+        # Prepare device manager for remote calls (if Hub is connected)
+        device_manager = None
+        if self.hub_client:
+            from .remote import DeviceManager
 
-        # Capture stdout
-        stdout_capture = io.StringIO()
-        old_stdout = sys.stdout
+            device_manager = DeviceManager(
+                local_loader=self._loader,
+                hub_client=self.hub_client,
+                local_device_name=normalize_device_name(self.device_name),
+            )
 
-        safe_builtins: dict[str, object] = {
-            "print": print,
-            "str": str,
-            "int": int,
-            "float": float,
-            "bool": bool,
-            "dict": dict,
-            "list": list,
-            "tuple": tuple,
-            "set": set,
-            "len": len,
-            "range": range,
-            "min": min,
-            "max": max,
-            "sum": sum,
-            "abs": abs,
-            "round": round,
-            "enumerate": enumerate,
-            "zip": zip,
-            "sorted": sorted,
-            "any": any,
-            "all": all,
-            "Exception": Exception,
-            "ValueError": ValueError,
-            "TypeError": TypeError,
-        }
+        # Execute with RestrictedPython
+        result = execute_restricted(
+            code=code,
+            device_proxy=device,
+            device_manager=device_manager,
+        )
 
-        try:
-            sys.stdout = stdout_capture
-
-            exec_globals: dict[str, object] = {
-                "__builtins__": safe_builtins,
-                "device": device,
-            }
-
-            # Expose devices for Hub-connected remote calls.
-            # This must not do any network I/O here; remote calls happen when user code calls it.
-            if self.hub_client:
-                from .remote import DeviceManager
-
-                device_manager = DeviceManager(
-                    local_loader=self._loader,
-                    hub_client=self.hub_client,
-                    local_device_name=normalize_device_name(self.device_name),
-                )
-                exec_globals["devices"] = device_manager
-                exec_globals["device_manager"] = device_manager
-
-            exec(code, exec_globals, {})
-            output = stdout_capture.getvalue().strip()
-            return SkillCallResult(success=True, result=output or "(no output)")
-        except Exception as e:
-            return SkillCallResult(success=False, error=f"Execution error: {e}")
-        finally:
-            sys.stdout = old_stdout
+        return SkillCallResult(
+            success=result.success,
+            result=result.output if result.success else None,
+            error=result.error,
+        )
 
     def _is_remote_device_call(self, code: str) -> bool:
         """Check if code calls a remote device (not the local device).

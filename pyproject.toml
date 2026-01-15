@@ -8,6 +8,7 @@ readme = "README.md"
 dependencies = [
     # Core
     "pydantic>=2.0",
+    "RestrictedPython>=8.0",
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "httpx>=0.25",
