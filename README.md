@@ -5,21 +5,21 @@ Voice assistant spoke for the Strawberry AI platform.
 ## Quick Start
 
 ```bash
-# Create a local virtualenv (recommended)
+# Create and activate a shared repo venv (from repo root)
 python3 -m venv .venv
 source .venv/bin/activate
 
 # Install core dependencies (terminal mode only)
-pip install -e .
+pip install -e ai-pc-spoke
 
 # Install with UI support (recommended for full experience)
-pip install -e ".[ui]"
+pip install -e "ai-pc-spoke[ui]"
 
 # Install with voice processing
-pip install -e ".[picovoice,silero]"
+pip install -e "ai-pc-spoke[picovoice,silero]"
 
 # Install everything (all features)
-pip install -e ".[all]"
+pip install -e "ai-pc-spoke[all]"
 ```
 
 ## Configuration
@@ -36,13 +36,13 @@ pip install -e ".[all]"
 
 ```bash
 # Terminal mode (no UI dependencies required)
-.venv/bin/strawberry
+../.venv/bin/strawberry
 
 # GUI mode (requires UI dependencies: pip install -e ".[ui]")
-.venv/bin/strawberry-gui
+../.venv/bin/strawberry-gui
 
 # Run tests
-.venv/bin/strawberry-test
+../.venv/bin/strawberry-test
 ```
 
 ## TODO (Backend Selection + UI Docs)
@@ -68,16 +68,16 @@ to avoid PATH / permission issues:
 
 ```bash
 # Apply auto-fixes
-.venv/bin/python -m ruff check --fix .
+../.venv/bin/python -m ruff check --fix .
 
 # Verify lint is clean
-.venv/bin/python -m ruff check .
+../.venv/bin/python -m ruff check .
 ```
 
 And run tests from the same venv:
 
 ```bash
-.venv/bin/python -m strawberry.testing.runner
+../.venv/bin/python -m strawberry.testing.runner
 ```
 
 **Note:** If you encounter `ModuleNotFoundError: No module named 'PySide6'`, you need to install the UI dependencies:
@@ -121,3 +121,12 @@ pip install -e ".[ui]"
 - **Terminal + Voice**: `pip install -e ".[picovoice]"`
 - **Full installation**: `pip install -e ".[all]"` (everything)
 
+
+
+# TODO
+
+- [ ] Add more skills
+- [ ] Make it load the same config and .env regardless of where the command is run from (eg. running python -m strawberry-gui from the ai-hub directory should still read the config from ai-pc-spoke/config/config.yaml)
+- [ ] Test deleting the config and loading from scratch (automatically recreate config.yaml and .env)
+- [ ] Make all settings accessible from the settings menu, make it easier to configure tensorzero models, fallback models, and API keys.
+- [ ] Make settings for custom wake words, VAD, STT, and TTS auto-populate with available options when the class is initialized. That way a user can add a custom wake word, VAD, STT, or TTS model and it will be detected, added to the list, and any API keys will be accessible from the settings menu. 
