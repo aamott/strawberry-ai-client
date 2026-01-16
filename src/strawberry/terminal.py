@@ -1,6 +1,8 @@
 """Terminal-based UI for Strawberry AI Spoke."""
 
 import asyncio
+import platform
+import shutil
 import signal
 import sys
 from pathlib import Path
@@ -75,6 +77,9 @@ class TerminalApp:
         # Initialize Hub client if configured
         self._init_hub_client()
 
+        # Warn about missing external dependencies
+        self._check_external_dependencies()
+
         # Disable colors if not a TTY
         if not sys.stdout.isatty():
             Colors.disable()
@@ -88,6 +93,15 @@ class TerminalApp:
                 timeout=self.settings.hub.timeout_seconds,
             )
             self._hub_client = HubClient(config)
+
+    def _check_external_dependencies(self) -> None:
+        """Warn if required external dependencies are missing."""
+        if platform.system() == "Linux" and shutil.which("playerctl") is None:
+            print(
+                f"{Colors.YELLOW}Warning: 'playerctl' is not installed. "
+                "MediaControlSkill will be limited on Linux."
+                f"{Colors.RESET}"
+            )
 
     def run(self) -> int:
         """Run the terminal application.

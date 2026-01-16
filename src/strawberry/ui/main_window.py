@@ -4,6 +4,8 @@ import ast
 import asyncio
 import logging
 import os
+import platform
+import shutil
 import traceback
 from pathlib import Path
 from typing import List, Optional
@@ -102,6 +104,7 @@ class MainWindow(QMainWindow):
 
         # Initialize skills and Hub connection
         self._init_skills()
+        self._check_external_dependencies()
         QTimer.singleShot(100, self._init_hub)
 
     async def _bootstrap_sessions(self) -> None:
@@ -361,6 +364,14 @@ class MainWindow(QMainWindow):
         else:
             self._chat_area.add_system_message(
                 f"No skills found in {skills_path}"
+            )
+
+    def _check_external_dependencies(self) -> None:
+        """Warn about missing external tools needed by skills."""
+        if platform.system() == "Linux" and shutil.which("playerctl") is None:
+            self._chat_area.add_system_message(
+                "Warning: 'playerctl' is not installed. MediaControlSkill will be "
+                "limited on Linux."
             )
 
     def _init_local_storage(self):
