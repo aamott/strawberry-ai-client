@@ -3,9 +3,25 @@
 import platform
 import subprocess
 
+from strawberry.config import get_settings
+
 
 class MediaControlSkill:
     """Controls media playback on the device."""
+
+    def _get_macos_player_app(self) -> str:
+        """Resolve the configured macOS media player application name.
+
+        Returns:
+            The macOS application name used in AppleScript commands.
+        """
+        settings = get_settings()
+        player = settings.media.macos_player.lower()
+        app_map = {
+            "spotify": "Spotify",
+            "music": "Music",
+        }
+        return app_map.get(player, "Spotify")
 
     def play(self) -> str:
         """Resume media playback."""
@@ -129,18 +145,37 @@ class MediaControlSkill:
                     pass
             elif system == "Darwin":  # macOS
                 # macOS uses AppleScript for media control
+                player_app = self._get_macos_player_app()
                 if command == "play":
-                    subprocess.run(["osascript", "-e", 'tell application "Spotify" to play'])
+                    subprocess.run(
+                        [
+                            "osascript",
+                            "-e",
+                            f'tell application "{player_app}" to play',
+                        ]
+                    )
                 elif command == "pause":
-                    subprocess.run(["osascript", "-e", 'tell application "Spotify" to pause'])
+                    subprocess.run(
+                        [
+                            "osascript",
+                            "-e",
+                            f'tell application "{player_app}" to pause',
+                        ]
+                    )
                 elif command == "next":
-                    subprocess.run(["osascript", "-e", 'tell application "Spotify" to next track'])
+                    subprocess.run(
+                        [
+                            "osascript",
+                            "-e",
+                            f'tell application "{player_app}" to next track',
+                        ]
+                    )
                 elif command == "previous":
                     subprocess.run(
                         [
                             "osascript",
                             "-e",
-                            'tell application "Spotify" to previous track',
+                            f'tell application "{player_app}" to previous track',
                         ]
                     )
             elif system == "Linux":

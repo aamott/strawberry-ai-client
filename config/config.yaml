@@ -45,6 +45,9 @@ skills:
     memory_limit_mb: 128  # Memory limit for sandbox
     deno_path: deno  # Path to Deno executable
 
+media:
+  macos_player: spotify  # spotify or music
+
 voice:
   audio_feedback_enabled: true  # Play sounds for wake word, recording, etc.
   push_to_talk_enabled: true    # Enable Ctrl+Space push-to-talk

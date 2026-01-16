@@ -79,6 +79,11 @@ class SkillsSettings(BaseModel):
     sandbox: SandboxSettings = Field(default_factory=SandboxSettings)
 
 
+class MediaSettings(BaseModel):
+    """Media control settings."""
+    macos_player: Literal["spotify", "music"] = "spotify"
+
+
 class TensorZeroSettings(BaseModel):
     """TensorZero gateway settings."""
     enabled: bool = True  # Use TensorZero for LLM routing
@@ -144,6 +149,7 @@ class Settings(BaseModel):
     stt: STTSettings = Field(default_factory=STTSettings)
     tts: TTSSettings = Field(default_factory=TTSSettings)
     skills: SkillsSettings = Field(default_factory=SkillsSettings)
+    media: MediaSettings = Field(default_factory=MediaSettings)
     voice: VoiceSettings = Field(default_factory=VoiceSettings)
     ui: UISettings = Field(default_factory=UISettings)
     llm: LLMConfig = Field(default_factory=LLMConfig)
