@@ -1,5 +1,6 @@
 """Conversation pipeline orchestrator."""
 
+import logging
 import re
 import threading
 import time
@@ -18,6 +19,8 @@ from ..vad.base import VADBackend
 from ..vad.processor import VADConfig, VADProcessor
 from ..wake.base import WakeWordDetector
 from .events import EventType, PipelineEvent
+
+logger = logging.getLogger(__name__)
 
 
 class PipelineState(Enum):
@@ -243,6 +246,7 @@ class ConversationPipeline:
 
         if keyword_index >= 0:
             keyword = self._wake_detector.keywords[keyword_index]
+            logger.info("Wake word detected: %s", keyword)
             self._emit(EventType.WAKE_WORD_DETECTED, {"keyword": keyword})
             self._start_recording()
 
@@ -266,6 +270,11 @@ class ConversationPipeline:
         # Check for timeout
         elapsed = time.time() - self._recording_start_time
         if elapsed > self.config.max_recording_duration:
+            logger.warning(
+                "Recording timed out after %.2fs (max %.2fs)",
+                elapsed,
+                self.config.max_recording_duration,
+            )
             self._finish_recording()
             return
 
@@ -273,6 +282,11 @@ class ConversationPipeline:
         speech_ended = self._vad_processor.process(frame)
 
         if speech_ended:
+            logger.info(
+                "VAD speech end after %.2fs (counter=%.2f)",
+                self._vad_processor.session_duration,
+                self._vad_processor.counter,
+            )
             self._emit(EventType.VAD_SPEECH_END)
             self._finish_recording()
 
@@ -291,6 +305,12 @@ class ConversationPipeline:
         else:
             audio = np.array([], dtype=np.int16)
         self._recording_buffer = []
+
+        if not self._vad_processor.speech_detected:
+            logger.info(
+                "Recording ended with no speech detected (duration=%.2fs)",
+                self._vad_processor.session_duration,
+            )
 
         # Process in separate thread with timeout to not block audio
         def processing_with_timeout():
@@ -329,6 +349,7 @@ class ConversationPipeline:
         try:
             result = self._stt_engine.transcribe(audio)
         except Exception as e:
+            logger.warning("STT failed: %s", e)
             self._emit(EventType.ERROR, {"error": str(e), "stage": "stt"})
             self._set_state(PipelineState.LISTENING)
             return
@@ -343,6 +364,7 @@ class ConversationPipeline:
 
         if not result.text.strip():
             # No speech detected
+            logger.info("Empty transcription received; returning to listening")
             self._set_state(PipelineState.LISTENING)
             return
 
@@ -351,6 +373,7 @@ class ConversationPipeline:
         try:
             response_text = self._response_handler(result.text)
         except Exception as e:
+            logger.warning("Response handler failed: %s", e)
             self._emit(EventType.ERROR, {"error": str(e), "stage": "response"})
             self._set_state(PipelineState.LISTENING)
             return
@@ -392,6 +415,7 @@ class ConversationPipeline:
                     blocking=True  # Wait for chunk to finish
                 )
         except Exception as e:
+            logger.warning("TTS playback failed: %s", e)
             self._emit(EventType.ERROR, {"error": str(e), "stage": "tts"})
 
         self._emit(EventType.TTS_COMPLETE)

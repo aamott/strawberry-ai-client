@@ -2,11 +2,12 @@
 
 import asyncio
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse, urlunparse
 
-from PySide6.QtCore import QUrl, Signal
+from PySide6.QtCore import QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -463,6 +464,44 @@ class SettingsDialog(QDialog):
             self._hub_token.setEchoMode(QLineEdit.EchoMode.Password)
             self._show_token_btn.setText("Show Token")
 
+    def _run_async_task(self, coro, on_result) -> None:
+        """Run an async task without blocking the UI.
+
+        Args:
+            coro: Coroutine to run.
+            on_result: Callback invoked with (result, error).
+        """
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            task = asyncio.create_task(coro)
+
+            def _handle_done(done_task):
+                try:
+                    result = done_task.result()
+                    error = None
+                except Exception as exc:
+                    result = None
+                    error = exc
+                QTimer.singleShot(0, lambda: on_result(result, error))
+
+            task.add_done_callback(_handle_done)
+            return
+
+        def _run_in_thread():
+            try:
+                result = asyncio.run(coro)
+                error = None
+            except Exception as exc:
+                result = None
+                error = exc
+            QTimer.singleShot(0, lambda: on_result(result, error))
+
+        threading.Thread(target=_run_in_thread, daemon=True).start()
+
     def _test_connection(self):
         """Test Hub connection with current settings."""
 
@@ -496,8 +535,18 @@ class SettingsDialog(QDialog):
             finally:
                 await client.close()
 
-        async def run_and_show() -> None:
-            success, message = await test()
+        def handle_result(result, error) -> None:
+            if error:
+                QMessageBox.warning(
+                    self,
+                    "Test Connection",
+                    f"✗ Connection failed:\n{error}",
+                )
+                return
+            if result:
+                success, message = result
+            else:
+                success, message = False, "Unknown error"
             if success:
                 QMessageBox.information(self, "Test Connection", f"✓ {message}")
             else:
@@ -507,13 +556,7 @@ class SettingsDialog(QDialog):
                     f"✗ Connection failed:\n{message}",
                 )
 
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(run_and_show())
-            return
-
-        # Fallback (no running loop)
-        loop.run_until_complete(run_and_show())
+        self._run_async_task(test(), handle_result)
 
     def _normalize_hub_url(self):
         """Normalize and validate Hub URL when field loses focus."""

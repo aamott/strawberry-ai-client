@@ -135,7 +135,8 @@ class HubConnectionManager(QObject):
             return
 
         try:
-            healthy = await self._client.health()
+            timeout = self._client.config.timeout
+            healthy = await asyncio.wait_for(self._client.health(), timeout=timeout)
             self._connected = healthy
 
             if healthy:
@@ -156,6 +157,11 @@ class HubConnectionManager(QObject):
                     "Hub is not responding. Check if the server is running."
                 )
 
+        except asyncio.TimeoutError:
+            err_summary = "TimeoutError: Hub health check timed out"
+            self._last_error = err_summary
+            self._emit_status(False, error=err_summary)
+            self.message.emit(f"Failed to connect to Hub: {err_summary}")
         except Exception as e:
             logger.exception("Failed to connect to Hub")
             err_summary = self._format_exception(e)
