@@ -6,6 +6,7 @@ own isolated output buffer, making it safe for concurrent use.
 """
 
 import logging
+import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -114,13 +115,22 @@ def execute_restricted(
         exec_globals["device_manager"] = device_manager
 
     try:
-        # Compile with RestrictedPython (this adds security guards)
-        # compile_restricted returns bytecode directly (or None on failure)
-        byte_code = compile_restricted(
-            source=code,
-            filename="<llm_code>",
-            mode="exec",
-        )
+        # Compile with RestrictedPython (this adds security guards).
+        # RestrictedPython emits a SyntaxWarning if `print()` is used without
+        # reading the injected `printed` variable. We collect output manually,
+        # so suppress that warning to avoid noisy test output.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"Line .* Prints, but never reads 'printed' variable.",
+                category=SyntaxWarning,
+            )
+            # compile_restricted returns bytecode directly (or None on failure)
+            byte_code = compile_restricted(
+                source=code,
+                filename="<llm_code>",
+                mode="exec",
+            )
 
         # compile_restricted returns None if the code is invalid
         if byte_code is None:

@@ -19,10 +19,8 @@ def _ensure_main_thread_event_loop() -> None:
     created_loop: asyncio.AbstractEventLoop | None = None
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError("Event loop is closed")
-    except Exception:
+        asyncio.get_running_loop()
+    except RuntimeError:
         created_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(created_loop)
 
