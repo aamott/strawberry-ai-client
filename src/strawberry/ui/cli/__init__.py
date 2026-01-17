@@ -1,1 +1,5 @@
-"""CLI UI package for Strawberry AI Spoke."""
+"""CLI UI for the Spoke."""
+
+from .main import main
+
+__all__ = ["main"]

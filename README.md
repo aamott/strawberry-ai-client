@@ -42,7 +42,7 @@ pip install -e "ai-pc-spoke[all]"
 ../.venv/bin/strawberry-gui
 
 # Run tests
-../.venv/bin/strawberry-test
+../.venv/bin/python -m pytest
 ```
 
 ## TODO (Backend Selection + UI Docs)
