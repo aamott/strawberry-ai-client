@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Any, ClassVar, Dict, Iterator, List
 
 import numpy as np
 
@@ -28,7 +28,17 @@ class TTSEngine(ABC):
     """Abstract base class for Text-to-Speech engines.
 
     All TTS backends must implement this interface.
+    
+    To make a module discoverable and configurable via the settings UI,
+    subclasses should define:
+        - name: Human-readable name shown in UI dropdown
+        - description: Help text for users
+        - get_settings_schema(): Returns list of SettingField for configuration
     """
+
+    # Module metadata for discovery (override in subclasses)
+    name: ClassVar[str] = "Unnamed TTS"
+    description: ClassVar[str] = ""
 
     @property
     @abstractmethod
@@ -47,6 +57,30 @@ class TTSEngine(ABC):
             Complete audio chunk
         """
         pass
+
+    @classmethod
+    def get_settings_schema(cls) -> List[Any]:
+        """Return the settings schema for this TTS provider.
+        
+        Override this method to define configurable settings for your TTS engine.
+        Returns a list of SettingField objects.
+        
+        Default implementation returns empty list (no configurable settings).
+        
+        Returns:
+            List of SettingField objects defining configurable options
+        """
+        return []
+    
+    @classmethod
+    def get_default_settings(cls) -> Dict[str, Any]:
+        """Return default values for all settings.
+        
+        Returns:
+            Dictionary mapping setting keys to their default values
+        """
+        schema = cls.get_settings_schema()
+        return {field.key: field.default for field in schema if hasattr(field, 'key')}
 
     def synthesize_stream(self, text: str) -> Iterator[AudioChunk]:
         """Synthesize text with streaming output.
@@ -75,4 +109,3 @@ class TTSEngine(ABC):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cleanup()
         return False
-

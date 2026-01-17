@@ -39,7 +39,7 @@ tts:
 
 skills:
   path: ./skills
-  allow_unsafe_exec: false  # Enable direct execution fallback if sandbox is unavailable
+  allow_unsafe_exec: true  # Enable direct execution fallback if sandbox is unavailable
   sandbox:
     enabled: true  # Use secure Pyodide sandbox (disable for debugging)
     timeout_seconds: 5.0  # Max execution time per code block

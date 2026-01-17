@@ -1,7 +1,7 @@
 """Event types for UI updates."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -53,3 +53,14 @@ class ToolCallResult(CoreEvent):
     success: bool
     result: Optional[str] = None
     error: Optional[str] = None
+
+
+@dataclass
+class SettingsChanged(CoreEvent):
+    """Configuration settings have changed."""
+    changed_keys: List[str] = field(default_factory=list)
+
+
+# Alias for backward compatibility
+CoreSettingsChanged = SettingsChanged
+

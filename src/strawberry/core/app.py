@@ -261,3 +261,121 @@ class SpokeCore:
                 yield event
         finally:
             self._subscribers.remove(queue)
+
+    # Settings API
+    def get_settings_schema(self) -> List[Any]:
+        """Get the core settings schema for UI rendering.
+        
+        Returns:
+            List of SettingField objects defining configurable options
+        """
+        from .settings_schema import CORE_SETTINGS_SCHEMA
+        return CORE_SETTINGS_SCHEMA
+
+    def get_settings(self) -> Dict[str, Any]:
+        """Get current settings values as a flat dictionary.
+        
+        Returns:
+            Dictionary mapping dot-separated keys to values.
+            Example: {"device.name": "My PC", "hub.url": "http://..."}
+        """
+        settings = self._settings
+        result = {}
+        
+        # Flatten Pydantic model to dot-separated keys
+        result["device.name"] = settings.device.name
+        result["device.id"] = settings.device.id
+        result["hub.url"] = settings.hub.url
+        result["hub.token"] = settings.hub.token or ""
+        result["hub.timeout_seconds"] = settings.hub.timeout_seconds
+        result["local_llm.enabled"] = settings.local_llm.enabled
+        result["local_llm.model"] = settings.local_llm.model
+        result["local_llm.url"] = settings.local_llm.url
+        result["stt.backend"] = settings.stt.backend
+        result["tts.backend"] = settings.tts.backend
+        result["voice.audio_feedback_enabled"] = settings.voice.audio_feedback_enabled
+        result["ui.theme"] = settings.ui.theme
+        
+        return result
+
+    async def update_settings(self, patch: Dict[str, Any]) -> None:
+        """Update settings with a partial update.
+        
+        Args:
+            patch: Dictionary of dot-separated keys to new values.
+                   Example: {"device.name": "New Name", "hub.url": "http://..."}
+        
+        Raises:
+            ValueError: If a key is not recognized
+        """
+        from ..config.persistence import save_settings
+        
+        # Apply patch to settings object
+        for key, value in patch.items():
+            parts = key.split(".")
+            if len(parts) == 2:
+                section, field = parts
+                section_obj = getattr(self._settings, section, None)
+                if section_obj and hasattr(section_obj, field):
+                    setattr(section_obj, field, value)
+                else:
+                    raise ValueError(f"Unknown setting: {key}")
+            else:
+                raise ValueError(f"Invalid key format: {key}")
+        
+        # Persist to disk
+        await asyncio.to_thread(save_settings, self._settings)
+        
+        # Emit settings changed event
+        from .events import SettingsChanged
+        await self._emit(SettingsChanged(changed_keys=list(patch.keys())))
+        
+        logger.info(f"Settings updated: {list(patch.keys())}")
+
+    def get_settings_options(self, provider: str) -> List[str]:
+        """Get dynamic options for a DYNAMIC_SELECT field.
+        
+        Args:
+            provider: The options_provider name from the SettingField
+            
+        Returns:
+            List of available options
+        """
+        if provider == "get_available_models":
+            # Try to get models from Ollama
+            try:
+                import httpx
+                url = self._settings.local_llm.url.replace("/v1", "")
+                response = httpx.get(f"{url}/api/tags", timeout=5.0)
+                if response.status_code == 200:
+                    models = response.json().get("models", [])
+                    return [m["name"] for m in models]
+            except Exception as e:
+                logger.warning(f"Failed to fetch Ollama models: {e}")
+            
+            # Fallback to common models
+            return ["llama3.2:3b", "llama3.2:1b", "gemma:7b", "mistral:7b"]
+        
+        raise ValueError(f"Unknown options provider: {provider}")
+
+    async def execute_settings_action(self, action: str) -> "ActionResult":
+        """Execute a settings action (e.g., hub OAuth flow).
+        
+        Args:
+            action: Action name from SettingField.action
+            
+        Returns:
+            ActionResult with instructions for the UI
+        """
+        from .settings_schema import ActionResult
+        
+        if action == "hub_oauth":
+            return ActionResult(
+                type="open_browser",
+                url=f"{self._settings.hub.url}/auth/device",
+                message="Opening browser to connect to Hub...",
+                pending=True,
+            )
+        
+        raise ValueError(f"Unknown action: {action}")
+

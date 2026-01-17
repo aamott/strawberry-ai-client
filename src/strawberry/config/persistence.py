@@ -76,3 +76,33 @@ def persist_settings_and_env(
         reload_env(env_path)
 
     return PersistenceResult(wrote_config=wrote_config, wrote_env=wrote_env)
+
+
+def save_settings(settings: "Settings", config_path: Path = DEFAULT_CONFIG_PATH) -> None:
+    """Save a Settings object to YAML config file.
+    
+    Args:
+        settings: The Settings instance to save
+        config_path: Path to the config.yaml file
+    """
+    from .settings import Settings
+    
+    # Convert Settings to dict (excluding defaults if they match)
+    settings_dict = settings.model_dump(exclude_unset=False)
+    
+    # Build flat updates for YAML preservation
+    yaml_updates = {}
+    for section_name, section_value in settings_dict.items():
+        if isinstance(section_value, dict):
+            for key, value in section_value.items():
+                yaml_updates[f"{section_name}.{key}"] = value
+    
+    # Apply updates preserving comments
+    if yaml_updates:
+        updates = []
+        for dotted, value in yaml_updates.items():
+            path = tuple(part for part in dotted.split(".") if part)
+            updates.append(YamlUpdate(path=path, value=value))
+        
+        apply_yaml_updates_preserve_comments(config_path, updates)
+

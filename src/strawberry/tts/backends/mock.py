@@ -13,6 +13,11 @@ class MockTTS(TTSEngine):
     Can be configured to return silence, sine waves, or custom audio.
     """
 
+    # Module metadata for discovery
+    name = "Mock TTS"
+    description = "Mock TTS engine for testing. Returns silence or tones."
+
+
     def __init__(
         self,
         sample_rate: int = 16000,

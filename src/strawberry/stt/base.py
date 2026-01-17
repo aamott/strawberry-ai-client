@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 
 import numpy as np
 
@@ -29,7 +29,17 @@ class STTEngine(ABC):
     """Abstract base class for Speech-to-Text engines.
 
     All STT backends must implement this interface.
+    
+    To make a module discoverable and configurable via the settings UI,
+    subclasses should define:
+        - name: Human-readable name shown in UI dropdown
+        - description: Help text for users
+        - get_settings_schema(): Returns list of SettingField for configuration
     """
+    
+    # Module metadata for discovery (override in subclasses)
+    name: ClassVar[str] = "Unnamed STT"
+    description: ClassVar[str] = ""
 
     @property
     @abstractmethod
@@ -48,6 +58,30 @@ class STTEngine(ABC):
             Transcription result
         """
         pass
+
+    @classmethod
+    def get_settings_schema(cls) -> List[Any]:
+        """Return the settings schema for this STT provider.
+        
+        Override this method to define configurable settings for your STT engine.
+        Returns a list of SettingField objects.
+        
+        Default implementation returns empty list (no configurable settings).
+        
+        Returns:
+            List of SettingField objects defining configurable options
+        """
+        return []
+    
+    @classmethod
+    def get_default_settings(cls) -> Dict[str, Any]:
+        """Return default values for all settings.
+        
+        Returns:
+            Dictionary mapping setting keys to their default values
+        """
+        schema = cls.get_settings_schema()
+        return {field.key: field.default for field in schema if hasattr(field, 'key')}
 
     def transcribe_file(self, file_path: str) -> TranscriptionResult:
         """Transcribe audio from file.
@@ -81,4 +115,5 @@ class STTEngine(ABC):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cleanup()
         return False
+
 

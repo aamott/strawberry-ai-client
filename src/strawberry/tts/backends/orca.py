@@ -5,7 +5,7 @@ Also requires a Picovoice access key.
 """
 
 import os
-from typing import Iterator, Optional
+from typing import Iterator, List, Optional
 
 import numpy as np
 
@@ -29,6 +29,33 @@ class OrcaTTS(TTSEngine):
     - Requires Picovoice license
     - Limited voice options
     """
+
+    # Module metadata for discovery
+    name = "Orca (Picovoice)"
+    description = "On-device text-to-speech using Picovoice Orca. Requires license key."
+
+    @classmethod
+    def get_settings_schema(cls) -> List:
+        """Return settings schema for Orca TTS configuration."""
+        from strawberry.core.settings_schema import FieldType, SettingField
+
+        return [
+            SettingField(
+                key="access_key",
+                label="Picovoice Access Key",
+                type=FieldType.PASSWORD,
+                secret=True,
+                description="API key from Picovoice Console",
+            ),
+            SettingField(
+                key="model_path",
+                label="Custom Model Path",
+                type=FieldType.TEXT,
+                default="",
+                description="Optional path to custom Orca model file",
+            ),
+        ]
+
 
     def __init__(
         self,

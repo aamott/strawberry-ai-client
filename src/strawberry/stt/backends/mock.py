@@ -13,6 +13,11 @@ class MockSTT(STTEngine):
     Can be configured to return specific transcriptions or
     use a custom transcription function.
     """
+    
+    # Module metadata for discovery
+    name = "Mock STT"
+    description = "Mock STT engine for testing. Returns preconfigured responses."
+
 
     def __init__(
         self,

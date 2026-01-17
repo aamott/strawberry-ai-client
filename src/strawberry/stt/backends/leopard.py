@@ -5,7 +5,7 @@ Also requires a Picovoice access key.
 """
 
 import os
-from typing import Optional
+from typing import List, Optional
 
 import numpy as np
 
@@ -29,6 +29,33 @@ class LeopardSTT(STTEngine):
     - Requires Picovoice license
     - Model files can be large
     """
+    
+    # Module metadata for discovery
+    name = "Leopard (Picovoice)"
+    description = "On-device speech-to-text using Picovoice Leopard. Requires license key."
+    
+    @classmethod
+    def get_settings_schema(cls) -> List:
+        """Return settings schema for Leopard STT configuration."""
+        from strawberry.core.settings_schema import FieldType, SettingField
+        
+        return [
+            SettingField(
+                key="access_key",
+                label="Picovoice Access Key",
+                type=FieldType.PASSWORD,
+                secret=True,
+                description="API key from Picovoice Console",
+            ),
+            SettingField(
+                key="model_path",
+                label="Custom Model Path",
+                type=FieldType.TEXT,
+                default="",
+                description="Optional path to custom Leopard model file",
+            ),
+        ]
+
 
     def __init__(
         self,
