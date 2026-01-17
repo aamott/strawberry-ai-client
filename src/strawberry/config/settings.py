@@ -76,6 +76,7 @@ class SandboxSettings(BaseModel):
 class SkillsSettings(BaseModel):
     """Skill runner settings."""
     path: str = "./skills"
+    allow_unsafe_exec: bool = False
     sandbox: SandboxSettings = Field(default_factory=SandboxSettings)
 
 

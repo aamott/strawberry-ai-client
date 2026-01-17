@@ -15,6 +15,7 @@ from PySide6.QtCore import QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
 
+from strawberry.skills.sandbox.executor import SandboxConfig
 from strawberry.skills.service import SkillService
 
 from ..config import Settings
@@ -351,7 +352,20 @@ class MainWindow(QMainWindow):
             project_root = Path(__file__).resolve().parents[3]
             skills_path = project_root / skills_path
 
-        self._skill_service = SkillService(skills_path, device_name=self.settings.device.name)
+        sandbox_settings = self.settings.skills.sandbox
+        sandbox_config = SandboxConfig(
+            enabled=sandbox_settings.enabled,
+            timeout_seconds=sandbox_settings.timeout_seconds,
+            memory_limit_mb=sandbox_settings.memory_limit_mb,
+            deno_path=sandbox_settings.deno_path,
+        )
+        self._skill_service = SkillService(
+            skills_path,
+            device_name=self.settings.device.name,
+            use_sandbox=sandbox_settings.enabled,
+            sandbox_config=sandbox_config,
+            allow_unsafe_exec=self.settings.skills.allow_unsafe_exec,
+        )
 
         # Load skills
         skills = self._skill_service.load_skills()

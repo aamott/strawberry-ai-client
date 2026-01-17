@@ -1,3 +1,6 @@
+**WARNING: Slightly Outdated!!!**
+This file is not entirely up to date. Skills can either be a single file, self-contained, or they can be their own git repo a directory with an __init__.py file and, if needed, a config.yaml, README.md, tests, and requirements.txt or pyproject.toml. See [skills-store.md](../docs/plans/skills-store.md) for more information.
+
 # New Skills for Strawberry AI
 
 This document summarizes the new skills implemented for the Strawberry AI voice assistant platform.

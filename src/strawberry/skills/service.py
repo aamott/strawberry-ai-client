@@ -92,6 +92,7 @@ class SkillService:
         use_sandbox: bool = True,
         sandbox_config: Optional[SandboxConfig] = None,
         device_name: Optional[str] = None,
+        allow_unsafe_exec: Optional[bool] = None,
     ):
         """Initialize skill service.
 
@@ -102,12 +103,16 @@ class SkillService:
             use_sandbox: Whether to use secure sandbox (default True)
             sandbox_config: Sandbox configuration (optional)
             device_name: Name of this device (for Hub registration)
+            allow_unsafe_exec: Allow direct execution outside sandbox
         """
         self.skills_path = Path(skills_path)
         self.hub_client = hub_client
         self.heartbeat_interval = heartbeat_interval
         self.use_sandbox = use_sandbox
         self.device_name = device_name or "local"
+        if allow_unsafe_exec is None:
+            allow_unsafe_exec = True
+        self.allow_unsafe_exec = allow_unsafe_exec
 
         self._loader = SkillLoader(skills_path)
         self._heartbeat_task: Optional[asyncio.Task] = None
@@ -148,6 +153,73 @@ class SkillService:
 
         return skills
 
+    def _ensure_skills_loaded(self) -> None:
+        """Ensure skills are loaded before access.
+
+        Keeps repeated guard checks centralized.
+        """
+        if not self._skills_loaded:
+            self.load_skills()
+
+    def _build_device_manager(self) -> Optional[Any]:
+        """Build a device manager for remote skill execution.
+
+        Returns:
+            DeviceManager instance when Hub is configured, otherwise None.
+        """
+        if not self.hub_client:
+            return None
+
+        from .remote import DeviceManager
+
+        return DeviceManager(
+            local_loader=self._loader,
+            hub_client=self.hub_client,
+            local_device_name=normalize_device_name(self.device_name),
+        )
+
+    def _build_tool_call_info(
+        self, code: str, result: SkillCallResult
+    ) -> Dict[str, Any]:
+        """Build tool call metadata from a skill execution result.
+
+        Args:
+            code: Executed code block.
+            result: Skill execution result.
+
+        Returns:
+            Tool call metadata dictionary.
+        """
+        return {
+            "code": code,
+            "success": result.success,
+            "result": result.result,
+            "error": result.error,
+        }
+
+    def _finalize_response(self, response: str, results: List[str]) -> str:
+        """Strip tool code blocks and append tool outputs.
+
+        Args:
+            response: Original LLM response.
+            results: Tool execution output lines.
+
+        Returns:
+            Cleaned response with appended results.
+        """
+        fence_pattern = r"```(?:python|tool_code|code|py)?\s*.*?```"
+        clean_response = re.sub(
+            fence_pattern,
+            "",
+            response,
+            flags=re.DOTALL | re.IGNORECASE,
+        ).strip()
+
+        if results:
+            clean_response = clean_response + "\n\n" + "\n".join(results)
+
+        return clean_response
+
     async def register_with_hub(self) -> bool:
         """Register loaded skills with the Hub.
 
@@ -158,8 +230,7 @@ class SkillService:
             logger.warning("No Hub client - skipping skill registration")
             return False
 
-        if not self._skills_loaded:
-            self.load_skills()
+        self._ensure_skills_loaded()
 
         skills_data = self._loader.get_registration_data()
 
@@ -213,8 +284,7 @@ class SkillService:
         Returns:
             System prompt string for LLM
         """
-        if not self._skills_loaded:
-            self.load_skills()
+        self._ensure_skills_loaded()
 
         skills = self._loader.get_all_skills()
 
@@ -347,6 +417,14 @@ class SkillService:
                     "Sandbox unavailable (Deno not installed), falling back to direct "
                     "execution"
                 )
+                if not self.allow_unsafe_exec:
+                    return SkillCallResult(
+                        success=False,
+                        error=(
+                            "Sandbox unavailable and unsafe execution is disabled. "
+                            "Enable skills.allow_unsafe_exec to allow fallback."
+                        ),
+                    )
                 return self.execute_code(code)
             return SkillCallResult(
                 success=result.success,
@@ -372,6 +450,32 @@ class SkillService:
         """
         from .restricted_executor import execute_restricted
 
+        if not self.allow_unsafe_exec and self.use_sandbox:
+            return SkillCallResult(
+                success=False,
+                error=(
+                    "Direct execution is disabled while sandbox mode is enabled. "
+                    "Use execute_code_async() or enable skills.allow_unsafe_exec."
+                ),
+            )
+
+        forbidden_names = {"__import__", "open", "eval", "exec", "compile", "input"}
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as exc:
+            return SkillCallResult(success=False, error=f"SyntaxError: {exc}")
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                return SkillCallResult(
+                    success=False,
+                    error="Import statements are not allowed in skill execution.",
+                )
+            if isinstance(node, ast.Name) and node.id in forbidden_names:
+                return SkillCallResult(
+                    success=False,
+                    error=f"Unsafe built-in '{node.id}' is not allowed.",
+                )
+
         mode = self._get_effective_mode()
 
         # Enforce mode correctness: in OFFLINE/LOCAL mode there is no Hub client, so
@@ -389,15 +493,7 @@ class SkillService:
         device = _DeviceProxy(self._loader)
 
         # Prepare device manager for remote calls (if Hub is connected)
-        device_manager = None
-        if self.hub_client:
-            from .remote import DeviceManager
-
-            device_manager = DeviceManager(
-                local_loader=self._loader,
-                hub_client=self.hub_client,
-                local_device_name=normalize_device_name(self.device_name),
-            )
+        device_manager = self._build_device_manager()
 
         # Execute with RestrictedPython
         result = execute_restricted(
@@ -461,30 +557,14 @@ class SkillService:
         for code in code_blocks:
             result = await self.execute_code_async(code)
 
-            tool_calls.append({
-                "code": code,
-                "success": result.success,
-                "result": result.result,
-                "error": result.error,
-            })
+            tool_calls.append(self._build_tool_call_info(code, result))
 
             if result.success and result.result:
                 results.append(f"Output:\n{result.result}")
             elif not result.success:
                 results.append(f"Error: {result.error}")
 
-        # Remove code blocks from response and append results
-        fence_pattern = r"```(?:python|tool_code|code|py)?\s*.*?```"
-        clean_response = re.sub(
-            fence_pattern,
-            "",
-            response,
-            flags=re.DOTALL | re.IGNORECASE,
-        ).strip()
-
-        if results:
-            clean_response = clean_response + "\n\n" + "\n".join(results)
-
+        clean_response = self._finalize_response(response, results)
         return clean_response, tool_calls
 
     def process_response(self, response: str) -> Tuple[str, List[Dict[str, Any]]]:
@@ -510,30 +590,14 @@ class SkillService:
         for code in code_blocks:
             result = self.execute_code(code)
 
-            tool_calls.append({
-                "code": code,
-                "success": result.success,
-                "result": result.result,
-                "error": result.error,
-            })
+            tool_calls.append(self._build_tool_call_info(code, result))
 
             if result.success and result.result:
                 results.append(f"Output:\n{result.result}")
             elif not result.success:
                 results.append(f"Error: {result.error}")
 
-        # Remove code blocks from response and append results
-        fence_pattern = r"```(?:python|tool_code|code|py)?\s*.*?```"
-        clean_response = re.sub(
-            fence_pattern,
-            "",
-            response,
-            flags=re.DOTALL | re.IGNORECASE,
-        ).strip()
-
-        if results:
-            clean_response = clean_response + "\n\n" + "\n".join(results)
-
+        clean_response = self._finalize_response(response, results)
         return clean_response, tool_calls
 
     def get_skill(self, name: str) -> Optional[SkillInfo]:
@@ -542,8 +606,7 @@ class SkillService:
 
     def get_all_skills(self) -> List[SkillInfo]:
         """Get all loaded skills."""
-        if not self._skills_loaded:
-            self.load_skills()
+        self._ensure_skills_loaded()
         return self._loader.get_all_skills()
 
     async def shutdown(self):
@@ -593,8 +656,7 @@ class SkillService:
             ValueError: If skill or method not found
             RuntimeError: If skill execution fails
         """
-        if not self._skills_loaded:
-            self.load_skills()
+        self._ensure_skills_loaded()
 
         # Get skill
         skill = self._loader.get_skill(skill_name)
@@ -652,14 +714,29 @@ class SkillService:
             return {"error": f"{type(e).__name__}: {e}\n{traceback.format_exc()}"}
 
     def set_hub_client(self, hub_client: Optional[HubClient]) -> None:
+        """Update the Hub client and reconfigure runtime mode.
+
+        Args:
+            hub_client: New Hub client instance or None.
+        """
         self.hub_client = hub_client
         self._configure_runtime_mode()
 
     def set_mode_override(self, mode: Optional[SkillMode]) -> None:
+        """Override the runtime mode for skill execution.
+
+        Args:
+            mode: Forced skill mode, or None to use automatic selection.
+        """
         self._mode_override = mode
         self._configure_runtime_mode()
 
     def _get_effective_mode(self) -> SkillMode:
+        """Resolve the current skill runtime mode.
+
+        Returns:
+            SkillMode.LOCAL if Hub is unavailable, otherwise SkillMode.REMOTE.
+        """
         if self._mode_override is not None:
             # Never report REMOTE if no Hub client is configured.
             if self._mode_override == SkillMode.REMOTE and not self.hub_client:
@@ -668,6 +745,7 @@ class SkillService:
         return SkillMode.REMOTE if self.hub_client else SkillMode.LOCAL
 
     def _configure_runtime_mode(self) -> None:
+        """Configure sandbox proxies for the current runtime mode."""
         if not self.use_sandbox:
             return
         if not self._sandbox or not self._gatekeeper or not self._proxy_gen:
@@ -676,14 +754,8 @@ class SkillService:
         mode = self._get_effective_mode()
 
         if mode == SkillMode.REMOTE:
-            from .remote import DeviceManager
-
             self._gatekeeper.set_device_manager(
-                DeviceManager(
-                    local_loader=self._loader,
-                    hub_client=self.hub_client,
-                    local_device_name=normalize_device_name(self.device_name),
-                )
+                self._build_device_manager()
             )
             self._proxy_gen.set_mode(SkillMode.REMOTE)
         else:
@@ -795,8 +867,7 @@ class SkillService:
         Returns:
             Result dict if method found and executed, None otherwise
         """
-        if not self._skills_loaded:
-            self.load_skills()
+        self._ensure_skills_loaded()
 
         # Search for the method across all skills
         for skill in self._loader.get_all_skills():
@@ -830,8 +901,7 @@ class SkillService:
         """
         import json
 
-        if not self._skills_loaded:
-            self.load_skills()
+        self._ensure_skills_loaded()
 
         # Use device proxy for search (has the search_skills method)
         device = _DeviceProxy(self._loader)
@@ -848,8 +918,7 @@ class SkillService:
         Returns:
             Function description string
         """
-        if not self._skills_loaded:
-            self.load_skills()
+        self._ensure_skills_loaded()
 
         device = _DeviceProxy(self._loader)
         return device.describe_function(path)
@@ -865,6 +934,11 @@ class _DeviceProxy:
     """
 
     def __init__(self, loader: SkillLoader):
+        """Initialize the device proxy.
+
+        Args:
+            loader: Skill loader used to resolve skills.
+        """
         self._loader = loader
 
     def search_skills(self, query: str = "", device_limit: int = 10) -> List[Dict[str, Any]]:
@@ -952,6 +1026,12 @@ class _SkillProxy:
     """Proxy for a specific skill class."""
 
     def __init__(self, loader: SkillLoader, skill_name: str):
+        """Initialize a proxy for a single skill.
+
+        Args:
+            loader: Skill loader used to resolve methods.
+            skill_name: Skill class name.
+        """
         self._loader = loader
         self._skill_name = skill_name
 
@@ -1183,9 +1263,22 @@ class _LocalDeviceSkillsProxy:
     """Proxy for accessing local device skills through device_manager."""
 
     def __init__(self, loader: SkillLoader):
+        """Initialize the local device proxy.
+
+        Args:
+            loader: Skill loader used to resolve skills.
+        """
         self._loader = loader
 
     def __getattr__(self, skill_name: str) -> "_SkillProxy":
+        """Resolve a skill class by name.
+
+        Args:
+            skill_name: Skill class name.
+
+        Returns:
+            Skill proxy for invoking methods.
+        """
         if skill_name.startswith("_"):
             raise AttributeError(skill_name)
         skill = self._loader.get_skill(skill_name)
@@ -1201,10 +1294,24 @@ class _RemoteDeviceProxy:
     """Proxy for accessing skills on a remote device."""
 
     def __init__(self, device_name: str, hub_client: Optional[HubClient]):
+        """Initialize the remote device proxy.
+
+        Args:
+            device_name: Normalized device name.
+            hub_client: Hub client used for remote calls.
+        """
         self._device_name = device_name
         self._hub_client = hub_client
 
     def __getattr__(self, skill_name: str) -> "_RemoteSkillProxy":
+        """Resolve a remote skill by name.
+
+        Args:
+            skill_name: Skill class name.
+
+        Returns:
+            Proxy for the remote skill.
+        """
         if skill_name.startswith("_"):
             raise AttributeError(skill_name)
         return _RemoteSkillProxy(self._device_name, skill_name, self._hub_client)
@@ -1214,6 +1321,13 @@ class _RemoteSkillProxy:
     """Proxy for a skill on a remote device."""
 
     def __init__(self, device_name: str, skill_name: str, hub_client: Optional[HubClient]):
+        """Initialize the remote skill proxy.
+
+        Args:
+            device_name: Target device name.
+            skill_name: Skill class name.
+            hub_client: Hub client used for remote calls.
+        """
         self._device_name = device_name
         self._skill_name = skill_name
         self._hub_client = hub_client

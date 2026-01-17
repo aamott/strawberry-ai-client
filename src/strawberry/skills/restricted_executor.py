@@ -85,6 +85,10 @@ def execute_restricted(
         }
     )
 
+    # Remove dangerous builtins even if present in safe_builtins.
+    for name in ("__import__", "open", "eval", "exec", "compile", "input"):
+        restricted_builtins.pop(name, None)
+
     # Local variables dict - PrintCollector stores output in 'printed'
     local_vars: Dict[str, Any] = {}
 
