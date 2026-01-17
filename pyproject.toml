@@ -54,6 +54,7 @@ all = [
 
 [project.scripts]
 strawberry = "strawberry.main:main"
+strawberry-cli = "strawberry.ui.cli.main:main"
 strawberry-gui = "strawberry.ui.app:main"
 strawberry-test = "strawberry.testing.runner:main"
 
@@ -73,5 +74,5 @@ select = ["E", "F", "I", "W"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "src/strawberry/ui/cli/tests"]
 
