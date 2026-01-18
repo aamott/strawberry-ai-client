@@ -61,6 +61,13 @@ class SettingsChanged(CoreEvent):
     changed_keys: List[str] = field(default_factory=list)
 
 
+@dataclass
+class VoiceStatusChanged(CoreEvent):
+    """Voice controller state has changed."""
+    state: str  # VoiceState name (STOPPED, IDLE, LISTENING, etc.)
+    previous_state: str = ""
+    session_id: str = ""
+
+
 # Alias for backward compatibility
 CoreSettingsChanged = SettingsChanged
-

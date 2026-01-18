@@ -9,6 +9,8 @@ from ..config import get_settings
 from ..llm.tensorzero_client import TensorZeroClient
 from ..models import ChatMessage
 from ..skills.service import SkillService
+from ..voice import VoiceConfig, VoiceController, VoiceState
+from ..voice import VoiceStatusChanged as VoiceEvent
 from .events import (
     CoreError,
     CoreEvent,
@@ -16,6 +18,7 @@ from .events import (
     MessageAdded,
     ToolCallResult,
     ToolCallStarted,
+    VoiceStatusChanged,
 )
 from .session import ChatSession
 
@@ -55,6 +58,9 @@ class SpokeCore:
         self._sessions: Dict[str, ChatSession] = {}
         self._subscribers: List[asyncio.Queue] = []
         self._started = False
+        
+        # Voice controller (lazy initialized)
+        self._voice: Optional[VoiceController] = None
 
         # Paths from settings
         skills_path = Path(self._settings.skills.path)
@@ -94,6 +100,11 @@ class SpokeCore:
 
     async def stop(self) -> None:
         """Shutdown core services."""
+        # Stop voice first
+        if self._voice:
+            await self._voice.stop()
+            self._voice = None
+        
         if self._llm:
             await self._llm.close()
             self._llm = None
@@ -105,11 +116,80 @@ class SpokeCore:
         self._started = False
         logger.info("SpokeCore stopped")
 
+    # ──────────────────────────────────────────────────────────────────────────
+    # Voice Control Methods
+    # ──────────────────────────────────────────────────────────────────────────
+    
+    async def start_voice(self) -> bool:
+        """Start voice controller.
+        
+        Returns:
+            True if started successfully
+        """
+        if self._voice and self._voice.state != VoiceState.STOPPED:
+            logger.warning("Voice already running")
+            return True
+        
+        # Create voice config from settings
+        voice_config = VoiceConfig(
+            wake_words=self._settings.wake.keywords or ["strawberry"],
+            sensitivity=getattr(self._settings.wake, 'sensitivity', 0.5),
+            sample_rate=16000,
+        )
+        
+        self._voice = VoiceController(
+            config=voice_config,
+            response_handler=self._handle_voice_transcription,
+        )
+        
+        # Subscribe to voice events and forward to core event stream
+        self._voice.add_listener(self._on_voice_event)
+        
+        result = await self._voice.start()
+        return result
+    
+    async def stop_voice(self) -> None:
+        """Stop voice controller."""
+        if self._voice:
+            await self._voice.stop()
+    
+    def voice_status(self) -> str:
+        """Get current voice state name.
+        
+        Returns:
+            State name (STOPPED, IDLE, LISTENING, PROCESSING, SPEAKING)
+        """
+        if not self._voice:
+            return "STOPPED"
+        return self._voice.state.name
+    
+    def _handle_voice_transcription(self, text: str) -> str:
+        """Handle voice transcription and generate response.
+        
+        This is called by VoiceController when speech is transcribed.
+        For now, returns a placeholder. Full integration would run agent loop.
+        """
+        logger.info(f"Voice transcription: {text}")
+        # TODO: Integrate with agent loop for real responses
+        return f"I heard: {text}"
+    
+    def _on_voice_event(self, event: VoiceEvent) -> None:
+        """Forward voice events to core event stream."""
+        # Convert voice event to core event
+        core_event = VoiceStatusChanged(
+            state=event.state.name,
+            previous_state=event.previous_state.name,
+            session_id=event.session_id,
+        )
+        # Emit asynchronously
+        asyncio.create_task(self._emit(core_event))
+
     def new_session(self) -> ChatSession:
         """Create a new chat session."""
         session = ChatSession()
         self._sessions[session.id] = session
         return session
+
 
     def get_session(self, session_id: str) -> Optional[ChatSession]:
         """Get session by ID."""
