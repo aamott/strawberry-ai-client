@@ -13,6 +13,7 @@ try:
     from .input_area import InputArea, MicState
     from .offline_banner import OfflineModeBanner
     from .rename_dialog import RenameDialog
+    from .schema_settings import SchemaSettingsWidget
     from .status_bar import StatusBar
     from .voice_indicator import VoiceIndicator
 
@@ -26,6 +27,7 @@ try:
         "MicState",
         "OfflineModeBanner",
         "RenameDialog",
+        "SchemaSettingsWidget",
         "StatusBar",
         "VoiceIndicator",
     ]

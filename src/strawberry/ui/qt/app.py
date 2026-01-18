@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_QASYNC = False
 
-from ..config import Settings, load_config
+from ...config import Settings, load_config
 from .main_window import MainWindow
 
 

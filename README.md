@@ -34,15 +34,43 @@ pip install -e "ai-pc-spoke[all]"
 
 ## Running
 
+### CLI Mode (Text Interface)
+The new SpokeCore-based CLI supports text chat and voice commands.
+
 ```bash
-# Terminal mode (no UI dependencies required)
-../.venv/bin/strawberry
+# Run CLI
+strawberry-cli
+# Or via python
+python -m strawberry.ui.cli.main
+```
+**Voice in CLI:** Type `/voice` to toggle voice mode (requires voice dependencies).
 
-# GUI mode (requires UI dependencies: pip install -e ".[ui]")
-../.venv/bin/strawberry-gui
+### GUI Mode (Qt Interface)
+The full graphical interface with chat bubble, history, and voice controls.
 
-# Run tests
-../.venv/bin/python -m pytest
+```bash
+# Run GUI
+strawberry-gui
+# Or via python
+python -m strawberry.ui.qt.app
+```
+**Voice in GUI:** Click the microphone icon to toggle voice listening.
+
+### Legacy Terminal Mode
+The classic terminal application (not based on SpokeCore).
+
+```bash
+# Run classic terminal
+strawberry
+# Run with voice enabled immediately
+strawberry --voice
+```
+
+## Running Tests
+```bash
+strawberry-test
+# Or via python
+python -m pytest
 ```
 
 ## TODO (Backend Selection + UI Docs)

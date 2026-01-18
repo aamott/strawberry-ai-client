@@ -10,7 +10,7 @@ from strawberry.llm.offline_tracker import OfflineModeTracker
 from strawberry.llm.tensorzero_client import ChatMessage, ChatResponse, TensorZeroClient
 from strawberry.storage.session_db import LocalSessionDB, SyncStatus
 from strawberry.storage.sync_manager import SyncManager
-from strawberry.ui.session_controller import SessionController
+from strawberry.ui.qt.session_controller import SessionController
 
 
 class TestOfflineModeTracker:

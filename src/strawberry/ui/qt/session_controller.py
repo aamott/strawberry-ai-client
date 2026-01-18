@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..models import ChatMessage
-from ..storage import LocalSessionDB, SyncManager, SyncStatus
+from ...models import ChatMessage
+from ...storage import LocalSessionDB, SyncManager, SyncStatus
 
 logger = logging.getLogger(__name__)
 

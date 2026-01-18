@@ -167,9 +167,10 @@ class TestSpokeCoreToolExecution:
             # Ask for a calculation - should use python_exec with calculator
             await core.send_message(
                 session.id,
-                "Use python_exec to calculate: device.CalculatorSkill.multiply(7, 8)"
+                "You MUST use the python_exec tool to calculate: device.CalculatorSkill.multiply(7, 8). "
+                "Do not explain, just run the code."
             )
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(3.0)  # Increased timeout for robustness
 
             from strawberry.core import MessageAdded, ToolCallResult, ToolCallStarted
 

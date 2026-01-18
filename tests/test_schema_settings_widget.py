@@ -59,7 +59,7 @@ class TestSchemaSettingsWidget:
 
     def test_widget_creation(self, qapp, simple_schema):
         """Widget should be created from schema."""
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
+        from strawberry.ui.qt.widgets.schema_settings import SchemaSettingsWidget
 
         widget = SchemaSettingsWidget(simple_schema)
         assert widget is not None
@@ -67,7 +67,7 @@ class TestSchemaSettingsWidget:
 
     def test_initial_values(self, qapp, simple_schema):
         """Widget should use provided initial values."""
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
+        from strawberry.ui.qt.widgets.schema_settings import SchemaSettingsWidget
 
         values = {"name": "Custom Name", "enabled": False}
         widget = SchemaSettingsWidget(simple_schema, values=values)
@@ -78,7 +78,7 @@ class TestSchemaSettingsWidget:
 
     def test_default_values(self, qapp, simple_schema):
         """Widget should use default values when not provided."""
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
+        from strawberry.ui.qt.widgets.schema_settings import SchemaSettingsWidget
 
         widget = SchemaSettingsWidget(simple_schema)
         result = widget.get_values()
@@ -87,7 +87,7 @@ class TestSchemaSettingsWidget:
 
     def test_value_changed_signal(self, qapp, simple_schema):
         """value_changed signal should be emitted on widget changes."""
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
+        from strawberry.ui.qt.widgets.schema_settings import SchemaSettingsWidget
 
         widget = SchemaSettingsWidget(simple_schema)
 
@@ -103,7 +103,7 @@ class TestSchemaSettingsWidget:
 
     def test_set_value(self, qapp, simple_schema):
         """set_value should update widget without triggering signals."""
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
+        from strawberry.ui.qt.widgets.schema_settings import SchemaSettingsWidget
 
         widget = SchemaSettingsWidget(simple_schema)
 
@@ -122,7 +122,7 @@ class TestSchemaSettingsWidget:
         """Fields should be grouped by group attribute."""
         from PySide6.QtWidgets import QGroupBox
 
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
+        from strawberry.ui.qt.widgets.schema_settings import SchemaSettingsWidget
 
         widget = SchemaSettingsWidget(simple_schema)
 
@@ -154,7 +154,7 @@ class TestActionField:
         """ACTION field should create a button."""
         from PySide6.QtWidgets import QPushButton
 
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
+        from strawberry.ui.qt.widgets.schema_settings import SchemaSettingsWidget
 
         widget = SchemaSettingsWidget(action_schema)
 
@@ -166,7 +166,7 @@ class TestActionField:
         """action_triggered signal should be emitted when button clicked."""
         from PySide6.QtWidgets import QPushButton
 
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
+        from strawberry.ui.qt.widgets.schema_settings import SchemaSettingsWidget
 
         widget = SchemaSettingsWidget(action_schema)
 
@@ -202,7 +202,7 @@ class TestDynamicSelect:
         """DYNAMIC_SELECT should call options_provider."""
         from PySide6.QtWidgets import QComboBox
 
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
+        from strawberry.ui.qt.widgets.schema_settings import SchemaSettingsWidget
 
         def mock_provider(name):
             if name == "get_models":

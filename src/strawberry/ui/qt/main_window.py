@@ -18,11 +18,11 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMainWindow, QVBoxLay
 from strawberry.skills.sandbox.executor import SandboxConfig
 from strawberry.skills.service import SkillService
 
-from ..config import Settings
-from ..config.persistence import persist_settings_and_env
-from ..hub.client import HubError
-from ..llm import OfflineModeTracker, TensorZeroClient
-from ..models import ChatMessage
+from ...config import Settings
+from ...config.persistence import persist_settings_and_env
+from ...hub.client import HubError
+from ...llm import OfflineModeTracker, TensorZeroClient
+from ...models import ChatMessage
 from .agent_helpers import (
     AgentLoopContext,
     ToolCallInfo,
@@ -45,6 +45,7 @@ from .widgets import (
     StatusBar,
     VoiceIndicator,
 )
+
 
 logger = logging.getLogger(__name__)
 

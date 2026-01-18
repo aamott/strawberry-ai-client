@@ -41,8 +41,8 @@ class TestChatHistorySidebar:
         """ChatHistorySidebar.set_sessions should populate item widgets."""
         from datetime import datetime, timezone
 
-        from strawberry.ui.theme import DARK_THEME
-        from strawberry.ui.widgets.chat_history import ChatHistorySidebar
+        from strawberry.ui.qt.theme import DARK_THEME
+        from strawberry.ui.qt.widgets.chat_history import ChatHistorySidebar
 
         sidebar = ChatHistorySidebar(theme=DARK_THEME)
 
@@ -69,8 +69,8 @@ class TestChatHistorySidebar:
 
     def test_empty_sessions_shows_empty_state(self):
         """Empty sessions list should show empty state label."""
-        from strawberry.ui.theme import DARK_THEME
-        from strawberry.ui.widgets.chat_history import ChatHistorySidebar
+        from strawberry.ui.qt.theme import DARK_THEME
+        from strawberry.ui.qt.widgets.chat_history import ChatHistorySidebar
 
         sidebar = ChatHistorySidebar(theme=DARK_THEME)
         sidebar.set_sessions([])
@@ -111,7 +111,7 @@ class TestMarkdownRenderer:
 
     def test_render_code_block(self):
         """Code blocks should be rendered as preformatted HTML."""
-        from strawberry.ui.markdown_renderer import render_markdown
+        from strawberry.ui.qt.markdown_renderer import render_markdown
 
         # render_markdown can accept None for theme
         md = "```python\nprint('hi')\n```"
@@ -122,7 +122,7 @@ class TestMarkdownRenderer:
 
     def test_render_headings(self):
         """Headings should render as h1, h2, h3."""
-        from strawberry.ui.markdown_renderer import render_markdown
+        from strawberry.ui.qt.markdown_renderer import render_markdown
 
         md = "# Heading 1\n## Heading 2\n### Heading 3"
         html = render_markdown(md, theme=None)
@@ -133,7 +133,7 @@ class TestMarkdownRenderer:
 
     def test_render_lists(self):
         """Lists should render as ul/ol."""
-        from strawberry.ui.markdown_renderer import render_markdown
+        from strawberry.ui.qt.markdown_renderer import render_markdown
 
         md = "- Item 1\n- Item 2\n- Item 3"
         html = render_markdown(md, theme=None)
@@ -143,7 +143,7 @@ class TestMarkdownRenderer:
 
     def test_render_bold_italic(self):
         """Bold and italic should render properly."""
-        from strawberry.ui.markdown_renderer import render_markdown
+        from strawberry.ui.qt.markdown_renderer import render_markdown
 
         md = "**bold** and *italic*"
         html = render_markdown(md, theme=None)
@@ -153,7 +153,7 @@ class TestMarkdownRenderer:
 
     def test_render_links(self):
         """Links should render as anchor tags."""
-        from strawberry.ui.markdown_renderer import render_markdown
+        from strawberry.ui.qt.markdown_renderer import render_markdown
 
         md = "[link](https://example.com)"
         html = render_markdown(md, theme=None)
@@ -197,7 +197,7 @@ class TestCodeBlockParsing:
 
     def test_parse_pure_text(self):
         """Pure text without code blocks."""
-        from strawberry.ui.widgets.assistant_turn_widget import _parse_chunks
+        from strawberry.ui.qt.widgets.assistant_turn_widget import _parse_chunks
 
         chunks = _parse_chunks("Hello world")
         assert len(chunks) == 1
@@ -205,7 +205,7 @@ class TestCodeBlockParsing:
 
     def test_parse_single_code_block(self):
         """Single code block."""
-        from strawberry.ui.widgets.assistant_turn_widget import _parse_chunks
+        from strawberry.ui.qt.widgets.assistant_turn_widget import _parse_chunks
 
         md = "```python\nprint('hi')\n```"
         chunks = _parse_chunks(md)
@@ -214,7 +214,7 @@ class TestCodeBlockParsing:
 
     def test_parse_text_and_code(self):
         """Text before and after code block."""
-        from strawberry.ui.widgets.assistant_turn_widget import _parse_chunks
+        from strawberry.ui.qt.widgets.assistant_turn_widget import _parse_chunks
 
         md = "Here is code:\n```python\nprint('hi')\n```\nDone."
         chunks = _parse_chunks(md)
@@ -225,7 +225,7 @@ class TestCodeBlockParsing:
 
     def test_parse_multiple_code_blocks(self):
         """Multiple code blocks."""
-        from strawberry.ui.widgets.assistant_turn_widget import _parse_chunks
+        from strawberry.ui.qt.widgets.assistant_turn_widget import _parse_chunks
 
         md = "```python\na=1\n```\ntext\n```javascript\nb=2\n```"
         chunks = _parse_chunks(md)
@@ -236,7 +236,7 @@ class TestCodeBlockParsing:
 
     def test_parse_output_block(self):
         """Test parsing of output/result blocks."""
-        from strawberry.ui.widgets.assistant_turn_widget import _parse_chunks
+        from strawberry.ui.qt.widgets.assistant_turn_widget import _parse_chunks
 
         # Test ```output ... ```
         md = "```output\nResult: 42\n```"
@@ -257,8 +257,8 @@ class TestCodeBlockWidget:
 
     def test_initial_state_collapsed(self):
         """Widget should start collapsed."""
-        from strawberry.ui.theme import DARK_THEME
-        from strawberry.ui.widgets.code_block_widget import CodeBlockWidget
+        from strawberry.ui.qt.theme import DARK_THEME
+        from strawberry.ui.qt.widgets.code_block_widget import CodeBlockWidget
 
         widget = CodeBlockWidget(code="print('hi')", theme=DARK_THEME)
         assert not widget.is_expanded()
@@ -266,8 +266,8 @@ class TestCodeBlockWidget:
 
     def test_toggle_expand(self):
         """Toggle should expand and collapse."""
-        from strawberry.ui.theme import DARK_THEME
-        from strawberry.ui.widgets.code_block_widget import CodeBlockWidget
+        from strawberry.ui.qt.theme import DARK_THEME
+        from strawberry.ui.qt.widgets.code_block_widget import CodeBlockWidget
 
         widget = CodeBlockWidget(code="print('hi')", theme=DARK_THEME)
         widget.set_expanded(True)
@@ -282,8 +282,8 @@ class TestOutputWidget:
 
     def test_init(self):
         """Widget initializes with correct content."""
-        from strawberry.ui.theme import DARK_THEME
-        from strawberry.ui.widgets.output_widget import OutputWidget
+        from strawberry.ui.qt.theme import DARK_THEME
+        from strawberry.ui.qt.widgets.output_widget import OutputWidget
 
         widget = OutputWidget(content="Test Output", theme=DARK_THEME)
         assert widget._text_label.text() == "Test Output"

@@ -7,7 +7,7 @@ reducing duplication between Hub and TensorZero paths.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from ..models import ChatMessage
+from ...models import ChatMessage
 
 
 @dataclass

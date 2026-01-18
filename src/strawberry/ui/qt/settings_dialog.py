@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..config import Settings
+from ...config import Settings
 from .theme import DARK_THEME, Theme, get_stylesheet
 
 
@@ -505,7 +505,7 @@ class SettingsDialog(QDialog):
     def _test_connection(self):
         """Test Hub connection with current settings."""
 
-        from ..hub import HubClient, HubConfig
+        from ...hub import HubClient, HubConfig
 
         url = self._hub_url.text().strip()
         token = self._hub_token.text().strip()

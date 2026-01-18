@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...core.settings_schema import FieldType, SettingField
+from ....core.settings_schema import FieldType, SettingField
 
 
 class SchemaSettingsWidget(QWidget):

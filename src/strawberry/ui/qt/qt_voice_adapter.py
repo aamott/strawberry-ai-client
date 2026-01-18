@@ -1,21 +1,21 @@
 """Qt adapter for the pure-Python VoiceController.
 
-This adapter wraps strawberry.voice.VoiceController and converts its events
-to Qt signals for thread-safe UI updates.
+This adapter wraps strawberry.voice.VoiceController or accepts an external
+controller from SpokeCore, converting its events to Qt signals for thread-safe
+UI updates.
 """
 
 import asyncio
 import logging
 import threading
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 
-from ..audio.feedback import FeedbackSound, get_feedback
-from ..config import Settings
-from ..voice import (
+from ...audio.feedback import FeedbackSound, get_feedback
+from ...voice import (
     VoiceConfig,
-    VoiceController,
+    VoiceController as CoreVoiceController,
     VoiceError,
     VoiceEvent,
     VoiceResponse,
@@ -26,14 +26,19 @@ from ..voice import (
     VoiceWakeWordDetected,
 )
 
+if TYPE_CHECKING:
+    from ...config import Settings
+    from ...core.app import SpokeCore
+
 logger = logging.getLogger(__name__)
 
 
 class QtVoiceAdapter(QObject):
     """Qt adapter for VoiceController.
 
-    Wraps the pure-Python VoiceController and emits Qt signals for UI updates.
-    Uses thread-safe signal emission for cross-thread communication.
+    Can be used in two modes:
+    1. Standalone: Creates its own VoiceController (legacy mode)
+    2. SpokeCore: Attaches to SpokeCore's VoiceController for unified lifecycle
 
     Signals:
         state_changed(str): Voice state changed (idle, listening, processing, etc.)
@@ -67,32 +72,48 @@ class QtVoiceAdapter(QObject):
 
     def __init__(
         self,
-        settings: Settings,
+        settings: Optional["Settings"] = None,
+        core: Optional["SpokeCore"] = None,
         response_handler: Optional[Callable[[str], str]] = None,
         parent: Optional[QObject] = None,
     ):
+        """Initialize the Qt voice adapter.
+
+        Args:
+            settings: Settings object (for standalone mode). If core is provided,
+                      settings are read from core instead.
+            core: Optional SpokeCore instance. If provided, uses SpokeCore's
+                  voice controller instead of creating a new one.
+            response_handler: Callback for processing transcriptions.
+            parent: Qt parent object.
+        """
         super().__init__(parent)
 
-        self.settings = settings
+        self._core = core
+        self._settings = settings
         self._response_handler = response_handler
         self._running = False
         self._current_state = "stopped"
         self._main_thread_id = threading.get_ident()
         self._push_to_talk_active = False
 
-        # Create the underlying pure-Python controller
-        self._controller: Optional[VoiceController] = None
+        # Controller can be external (from SpokeCore) or internal (created here)
+        self._controller: Optional[CoreVoiceController] = None
+        self._owns_controller = False  # True if we created the controller
 
-        # Audio feedback
-        self._audio_feedback = get_feedback(
-            enabled=settings.voice.audio_feedback_enabled
-        )
+        # Audio feedback - use settings from core if available
+        feedback_enabled = True
+        if core and hasattr(core, '_settings'):
+            feedback_enabled = core._settings.voice.audio_feedback_enabled
+        elif settings:
+            feedback_enabled = settings.voice.audio_feedback_enabled
+        self._audio_feedback = get_feedback(enabled=feedback_enabled)
 
         # Timer for audio level updates (placeholder)
         self._level_timer = QTimer(self)
         self._level_timer.timeout.connect(self._update_level)
 
-        # Connect internal signals to public signals (auto-queued)
+        # Connect internal signals to public signals (auto-queued for thread safety)
         self._emit_state.connect(
             self.state_changed.emit,
             Qt.ConnectionType.QueuedConnection,
@@ -131,6 +152,9 @@ class QtVoiceAdapter(QObject):
     def start(self) -> bool:
         """Start voice interaction.
 
+        In SpokeCore mode, starts voice via SpokeCore.
+        In standalone mode, creates and starts its own controller.
+
         Returns:
             True if started successfully, False otherwise
         """
@@ -138,28 +162,16 @@ class QtVoiceAdapter(QObject):
             return True
 
         try:
-            # Create voice config from settings
-            config = VoiceConfig(
-                wake_words=self.settings.wake.keywords or ["strawberry"],
-                sensitivity=getattr(self.settings.wake, 'sensitivity', 0.5),
-                sample_rate=16000,
-            )
-
-            # Create controller
-            self._controller = VoiceController(
-                config=config,
-                response_handler=self._response_handler,
-            )
-
-            # Subscribe to events
-            self._controller.add_listener(self._on_voice_event)
-
-            # Start controller (run in event loop)
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(self._controller.start())
+            if self._core:
+                # Use SpokeCore to manage voice lifecycle
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self._start_via_core())
+                else:
+                    asyncio.run(self._start_via_core())
             else:
-                asyncio.run(self._controller.start())
+                # Standalone mode: create our own controller
+                self._start_standalone()
 
             self._running = True
             self._level_timer.start(50)  # 20 FPS for level updates
@@ -175,6 +187,51 @@ class QtVoiceAdapter(QObject):
             self._emit_error.emit(str(e))
             return False
 
+    async def _start_via_core(self):
+        """Start voice using SpokeCore."""
+        await self._core.start_voice()
+
+        # Get the controller from SpokeCore and subscribe to its events
+        self._controller = self._core._voice
+        self._owns_controller = False
+
+        if self._controller:
+            self._controller.add_listener(self._on_voice_event)
+            if self._response_handler:
+                self._controller.set_response_handler(self._response_handler)
+
+    def _start_standalone(self):
+        """Start voice in standalone mode (creates own controller)."""
+        # Get settings from stored settings or use defaults
+        settings = self._settings
+        if not settings:
+            from ...config import get_settings
+            settings = get_settings()
+
+        # Create voice config from settings
+        config = VoiceConfig(
+            wake_words=settings.wake.keywords or ["strawberry"],
+            sensitivity=getattr(settings.wake, 'sensitivity', 0.5),
+            sample_rate=16000,
+        )
+
+        # Create controller
+        self._controller = CoreVoiceController(
+            config=config,
+            response_handler=self._response_handler,
+        )
+        self._owns_controller = True
+
+        # Subscribe to events
+        self._controller.add_listener(self._on_voice_event)
+
+        # Start controller (run in event loop)
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(self._controller.start())
+        else:
+            asyncio.run(self._controller.start())
+
     def stop(self):
         """Stop voice interaction."""
         if not self._running:
@@ -184,12 +241,24 @@ class QtVoiceAdapter(QObject):
         self._level_timer.stop()
 
         if self._controller:
-            # Stop controller
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(self._controller.stop())
-            else:
-                asyncio.run(self._controller.stop())
+            # Remove our listener
+            self._controller.remove_listener(self._on_voice_event)
+
+            # Only stop the controller if we own it
+            if self._owns_controller:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self._controller.stop())
+                else:
+                    asyncio.run(self._controller.stop())
+            elif self._core:
+                # Stop via SpokeCore
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self._core.stop_voice())
+                else:
+                    asyncio.run(self._core.stop_voice())
+
             self._controller = None
 
         # Play stop sound
@@ -201,6 +270,11 @@ class QtVoiceAdapter(QObject):
     def is_running(self) -> bool:
         """Check if voice is running."""
         return self._running
+
+    @property
+    def current_state(self) -> str:
+        """Get the current voice state as a string."""
+        return self._current_state
 
     def push_to_talk_start(self):
         """Start push-to-talk recording."""

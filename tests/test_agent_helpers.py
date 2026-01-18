@@ -6,7 +6,7 @@ These helpers are used by the Hub and TensorZero agent loops.
 from __future__ import annotations
 
 from strawberry.models import ChatMessage
-from strawberry.ui.agent_helpers import append_in_band_tool_feedback
+from strawberry.ui.qt.agent_helpers import append_in_band_tool_feedback
 
 
 def test_append_in_band_tool_feedback_appends_assistant_then_user() -> None:

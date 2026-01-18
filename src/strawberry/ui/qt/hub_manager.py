@@ -11,7 +11,7 @@ from typing import Callable, List, Optional
 
 from PySide6.QtCore import QObject, Signal
 
-from ..hub import HubClient, HubConfig
+from ...hub import HubClient, HubConfig
 
 logger = logging.getLogger(__name__)
 
