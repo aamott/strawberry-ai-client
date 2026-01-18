@@ -1,7 +1,7 @@
 """Abstract base class for wake word detection."""
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Any, ClassVar, Dict, List
 
 import numpy as np
 
@@ -10,7 +10,17 @@ class WakeWordDetector(ABC):
     """Abstract base class for wake word detection.
 
     All wake word backends must implement this interface.
+    
+    To make a module discoverable and configurable via the settings UI,
+    subclasses should define:
+        - name: Human-readable name shown in UI dropdown
+        - description: Help text for users
+        - get_settings_schema(): Returns list of SettingField for configuration
     """
+
+    # Module metadata for discovery (override in subclasses)
+    name: ClassVar[str] = "Unnamed Wake Word"
+    description: ClassVar[str] = ""
 
     @abstractmethod
     def __init__(self, keywords: List[str], sensitivity: float = 0.5):
@@ -54,6 +64,21 @@ class WakeWordDetector(ABC):
         """
         pass
 
+    @classmethod
+    def get_settings_schema(cls) -> List[Any]:
+        """Return the settings schema for this wake word provider.
+        
+        Override this method to define configurable settings.
+        Returns a list of SettingField objects.
+        """
+        return []
+
+    @classmethod
+    def get_default_settings(cls) -> Dict[str, Any]:
+        """Return default values for all settings."""
+        schema = cls.get_settings_schema()
+        return {field.key: field.default for field in schema if hasattr(field, 'key')}
+
     def cleanup(self) -> None:
         """Release any resources held by the detector.
 
@@ -67,4 +92,3 @@ class WakeWordDetector(ABC):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cleanup()
         return False
-

@@ -14,6 +14,11 @@ class MockWakeWordDetector(WakeWordDetector):
     or programmatically via trigger_on_next().
     """
 
+    # Module metadata for discovery
+    name = "Mock Wake Word"
+    description = "Mock wake word detector for testing. Returns configurable results."
+
+
     def __init__(
         self,
         keywords: List[str] = None,

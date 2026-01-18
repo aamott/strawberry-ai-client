@@ -16,6 +16,11 @@ class MockVAD(VADBackend):
     - Custom detection function
     """
 
+    # Module metadata for discovery
+    name = "Mock VAD"
+    description = "Mock VAD backend for testing. Returns configurable results."
+
+
     def __init__(
         self,
         sample_rate: int = 16000,
