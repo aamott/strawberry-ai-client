@@ -350,7 +350,8 @@ class MainWindow(QMainWindow):
         if not skills_path.is_absolute():
             # Resolve relative to project root, not cwd.
             # This ensures ./skills works even if launched from a different directory.
-            project_root = Path(__file__).resolve().parents[3]
+            from ...utils.paths import get_project_root
+            project_root = get_project_root()
             skills_path = project_root / skills_path
 
         sandbox_settings = self.settings.skills.sandbox

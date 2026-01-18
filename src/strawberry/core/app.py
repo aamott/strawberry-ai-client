@@ -70,7 +70,8 @@ class SpokeCore:
         skills_path = Path(self._settings.skills.path)
         if not skills_path.is_absolute():
             # Relative to ai-pc-spoke root
-            skills_path = Path(__file__).parent.parent.parent.parent / skills_path
+            from ..utils.paths import get_project_root
+            skills_path = get_project_root() / skills_path
 
         self._skills_path = skills_path
 
