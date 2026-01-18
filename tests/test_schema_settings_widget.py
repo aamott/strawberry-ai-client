@@ -4,7 +4,6 @@ import pytest
 
 from strawberry.core.settings_schema import FieldType, SettingField
 
-
 # Only run if PySide6 is available
 pytest.importorskip("PySide6")
 
@@ -13,7 +12,7 @@ pytest.importorskip("PySide6")
 def qapp():
     """Create a QApplication for testing."""
     from PySide6.QtWidgets import QApplication
-    
+
     app = QApplication.instance()
     if app is None:
         app = QApplication([])
@@ -121,8 +120,9 @@ class TestSchemaSettingsWidget:
 
     def test_groups_created(self, qapp, simple_schema):
         """Fields should be grouped by group attribute."""
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
         from PySide6.QtWidgets import QGroupBox
+
+        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
 
         widget = SchemaSettingsWidget(simple_schema)
 
@@ -152,8 +152,9 @@ class TestActionField:
 
     def test_action_button_created(self, qapp, action_schema):
         """ACTION field should create a button."""
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
         from PySide6.QtWidgets import QPushButton
+
+        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
 
         widget = SchemaSettingsWidget(action_schema)
 
@@ -163,8 +164,9 @@ class TestActionField:
 
     def test_action_signal(self, qapp, action_schema):
         """action_triggered signal should be emitted when button clicked."""
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
         from PySide6.QtWidgets import QPushButton
+
+        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
 
         widget = SchemaSettingsWidget(action_schema)
 
@@ -198,8 +200,9 @@ class TestDynamicSelect:
 
     def test_dynamic_options_populated(self, qapp, dynamic_schema):
         """DYNAMIC_SELECT should call options_provider."""
-        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
         from PySide6.QtWidgets import QComboBox
+
+        from strawberry.ui.widgets.schema_settings import SchemaSettingsWidget
 
         def mock_provider(name):
             if name == "get_models":
@@ -207,13 +210,13 @@ class TestDynamicSelect:
             return []
 
         widget = SchemaSettingsWidget(
-            dynamic_schema, 
+            dynamic_schema,
             options_provider=mock_provider
         )
 
         combos = widget.findChildren(QComboBox)
         assert len(combos) == 1
-        
+
         items = [combos[0].itemText(i) for i in range(combos[0].count())]
         assert items == ["model_a", "model_b", "model_c"]
 

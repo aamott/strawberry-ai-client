@@ -24,18 +24,18 @@ def discover_vad_modules() -> Dict[str, Type[VADBackend]]:
     """
     modules: Dict[str, Type[VADBackend]] = {}
     backends_path = Path(__file__).parent / "backends"
-    
+
     if not backends_path.exists():
         logger.warning(f"VAD backends directory not found: {backends_path}")
         return modules
-    
+
     for finder, name, ispkg in pkgutil.iter_modules([str(backends_path)]):
         if name.startswith("_"):
             continue
-            
+
         try:
             module = importlib.import_module(f"strawberry.vad.backends.{name}")
-            
+
             for attr_name in dir(module):
                 obj = getattr(module, attr_name)
                 if (
@@ -46,12 +46,12 @@ def discover_vad_modules() -> Dict[str, Type[VADBackend]]:
                     modules[name] = obj
                     logger.debug(f"Discovered VAD module: {name} -> {obj.__name__}")
                     break
-                    
+
         except ImportError as e:
             logger.warning(f"Failed to import VAD module '{name}': {e}")
         except Exception as e:
             logger.error(f"Error loading VAD module '{name}': {e}")
-    
+
     return modules
 
 
@@ -65,7 +65,7 @@ def list_vad_modules() -> list[dict]:
     """List all available VAD modules with their metadata."""
     modules = discover_vad_modules()
     result = []
-    
+
     for module_name, cls in modules.items():
         result.append({
             "name": module_name,
@@ -73,5 +73,5 @@ def list_vad_modules() -> list[dict]:
             "description": getattr(cls, "description", ""),
             "has_settings": len(cls.get_settings_schema()) > 0,
         })
-    
+
     return result

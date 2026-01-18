@@ -97,7 +97,7 @@ CORE_SETTINGS_SCHEMA: List[SettingField] = [
         description="Name of this device shown in Hub",
         group="general",
     ),
-    
+
     # Hub connection
     SettingField(
         key="hub.url",
@@ -123,7 +123,7 @@ CORE_SETTINGS_SCHEMA: List[SettingField] = [
         description="Launch browser to authenticate with Hub",
         group="hub",
     ),
-    
+
     # Offline LLM
     SettingField(
         key="local_llm.model",

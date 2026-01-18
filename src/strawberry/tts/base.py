@@ -71,7 +71,7 @@ class TTSEngine(ABC):
             List of SettingField objects defining configurable options
         """
         return []
-    
+
     @classmethod
     def get_default_settings(cls) -> Dict[str, Any]:
         """Return default values for all settings.

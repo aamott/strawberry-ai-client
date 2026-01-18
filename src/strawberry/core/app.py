@@ -58,7 +58,7 @@ class SpokeCore:
         self._sessions: Dict[str, ChatSession] = {}
         self._subscribers: List[asyncio.Queue] = []
         self._started = False
-        
+
         # Voice controller (lazy initialized)
         self._voice: Optional[VoiceController] = None
 
@@ -104,7 +104,7 @@ class SpokeCore:
         if self._voice:
             await self._voice.stop()
             self._voice = None
-        
+
         if self._llm:
             await self._llm.close()
             self._llm = None
@@ -119,7 +119,7 @@ class SpokeCore:
     # ──────────────────────────────────────────────────────────────────────────
     # Voice Control Methods
     # ──────────────────────────────────────────────────────────────────────────
-    
+
     async def start_voice(self) -> bool:
         """Start voice controller.
         
@@ -129,30 +129,30 @@ class SpokeCore:
         if self._voice and self._voice.state != VoiceState.STOPPED:
             logger.warning("Voice already running")
             return True
-        
+
         # Create voice config from settings
         voice_config = VoiceConfig(
             wake_words=self._settings.wake.keywords or ["strawberry"],
             sensitivity=getattr(self._settings.wake, 'sensitivity', 0.5),
             sample_rate=16000,
         )
-        
+
         self._voice = VoiceController(
             config=voice_config,
             response_handler=self._handle_voice_transcription,
         )
-        
+
         # Subscribe to voice events and forward to core event stream
         self._voice.add_listener(self._on_voice_event)
-        
+
         result = await self._voice.start()
         return result
-    
+
     async def stop_voice(self) -> None:
         """Stop voice controller."""
         if self._voice:
             await self._voice.stop()
-    
+
     def voice_status(self) -> str:
         """Get current voice state name.
         
@@ -162,7 +162,7 @@ class SpokeCore:
         if not self._voice:
             return "STOPPED"
         return self._voice.state.name
-    
+
     def _handle_voice_transcription(self, text: str) -> str:
         """Handle voice transcription and generate response.
         
@@ -172,7 +172,7 @@ class SpokeCore:
         logger.info(f"Voice transcription: {text}")
         # TODO: Integrate with agent loop for real responses
         return f"I heard: {text}"
-    
+
     def _on_voice_event(self, event: VoiceEvent) -> None:
         """Forward voice events to core event stream."""
         # Convert voice event to core event
@@ -361,7 +361,7 @@ class SpokeCore:
         """
         settings = self._settings
         result = {}
-        
+
         # Flatten Pydantic model to dot-separated keys
         result["device.name"] = settings.device.name
         result["device.id"] = settings.device.id
@@ -375,7 +375,7 @@ class SpokeCore:
         result["tts.backend"] = settings.tts.backend
         result["voice.audio_feedback_enabled"] = settings.voice.audio_feedback_enabled
         result["ui.theme"] = settings.ui.theme
-        
+
         return result
 
     async def update_settings(self, patch: Dict[str, Any]) -> None:
@@ -389,7 +389,7 @@ class SpokeCore:
             ValueError: If a key is not recognized
         """
         from ..config.persistence import save_settings
-        
+
         # Apply patch to settings object
         for key, value in patch.items():
             parts = key.split(".")
@@ -402,14 +402,14 @@ class SpokeCore:
                     raise ValueError(f"Unknown setting: {key}")
             else:
                 raise ValueError(f"Invalid key format: {key}")
-        
+
         # Persist to disk
         await asyncio.to_thread(save_settings, self._settings)
-        
+
         # Emit settings changed event
         from .events import SettingsChanged
         await self._emit(SettingsChanged(changed_keys=list(patch.keys())))
-        
+
         logger.info(f"Settings updated: {list(patch.keys())}")
 
     def get_settings_options(self, provider: str) -> List[str]:
@@ -432,10 +432,10 @@ class SpokeCore:
                     return [m["name"] for m in models]
             except Exception as e:
                 logger.warning(f"Failed to fetch Ollama models: {e}")
-            
+
             # Fallback to common models
             return ["llama3.2:3b", "llama3.2:1b", "gemma:7b", "mistral:7b"]
-        
+
         raise ValueError(f"Unknown options provider: {provider}")
 
     async def execute_settings_action(self, action: str) -> "ActionResult":
@@ -448,7 +448,7 @@ class SpokeCore:
             ActionResult with instructions for the UI
         """
         from .settings_schema import ActionResult
-        
+
         if action == "hub_oauth":
             return ActionResult(
                 type="open_browser",
@@ -456,6 +456,6 @@ class SpokeCore:
                 message="Opening browser to connect to Hub...",
                 pending=True,
             )
-        
+
         raise ValueError(f"Unknown action: {action}")
 

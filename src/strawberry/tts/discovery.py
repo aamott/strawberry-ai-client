@@ -27,19 +27,19 @@ def discover_tts_modules() -> Dict[str, Type[TTSEngine]]:
     """
     modules: Dict[str, Type[TTSEngine]] = {}
     backends_path = Path(__file__).parent / "backends"
-    
+
     if not backends_path.exists():
         logger.warning(f"TTS backends directory not found: {backends_path}")
         return modules
-    
+
     for finder, name, ispkg in pkgutil.iter_modules([str(backends_path)]):
         # Skip __pycache__ and private modules
         if name.startswith("_"):
             continue
-            
+
         try:
             module = importlib.import_module(f"strawberry.tts.backends.{name}")
-            
+
             # Find TTSEngine subclasses in the module
             for attr_name in dir(module):
                 obj = getattr(module, attr_name)
@@ -51,12 +51,12 @@ def discover_tts_modules() -> Dict[str, Type[TTSEngine]]:
                     modules[name] = obj
                     logger.debug(f"Discovered TTS module: {name} -> {obj.__name__}")
                     break  # One TTS class per module
-                    
+
         except ImportError as e:
             logger.warning(f"Failed to import TTS module '{name}': {e}")
         except Exception as e:
             logger.error(f"Error loading TTS module '{name}': {e}")
-    
+
     return modules
 
 
@@ -82,7 +82,7 @@ def list_tts_modules() -> list[dict]:
     """
     modules = discover_tts_modules()
     result = []
-    
+
     for module_name, cls in modules.items():
         result.append({
             "name": module_name,
@@ -90,5 +90,5 @@ def list_tts_modules() -> list[dict]:
             "description": getattr(cls, "description", ""),
             "has_settings": len(cls.get_settings_schema()) > 0,
         })
-    
+
     return result

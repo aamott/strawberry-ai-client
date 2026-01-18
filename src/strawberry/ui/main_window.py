@@ -32,9 +32,9 @@ from .agent_helpers import (
     get_final_display_content,
 )
 from .hub_manager import HubConnectionManager, HubStatus
+from .qt_voice_adapter import QtVoiceAdapter as VoiceController
 from .session_controller import SessionController
 from .theme import DARK_THEME, THEMES, get_stylesheet
-from .voice_controller import VoiceController
 from .widgets import (
     ChatArea,
     ChatHistorySidebar,

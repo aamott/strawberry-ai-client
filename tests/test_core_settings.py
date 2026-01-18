@@ -4,7 +4,6 @@ import pytest
 
 from strawberry.core import (
     CORE_SETTINGS_SCHEMA,
-    FieldType,
     SettingField,
     SettingsChanged,
     SpokeCore,
@@ -31,7 +30,7 @@ class TestSpokeCoreSettingsApi:
         """get_settings should return a dictionary of current values."""
         settings = core.get_settings()
         assert isinstance(settings, dict)
-        
+
         # Check expected keys exist
         assert "device.name" in settings
         assert "hub.url" in settings
@@ -40,7 +39,7 @@ class TestSpokeCoreSettingsApi:
     def test_get_settings_has_correct_types(self, core):
         """get_settings values should have correct types."""
         settings = core.get_settings()
-        
+
         assert isinstance(settings["device.name"], str)
         assert isinstance(settings["hub.url"], str)
         assert isinstance(settings["local_llm.enabled"], bool)
@@ -80,10 +79,10 @@ class TestSpokeCoreSettingsAsync:
     async def test_execute_settings_action_hub_oauth(self):
         """execute_settings_action should return ActionResult for hub_oauth."""
         from strawberry.core.settings_schema import ActionResult
-        
+
         core = SpokeCore()
         result = await core.execute_settings_action("hub_oauth")
-        
+
         assert isinstance(result, ActionResult)
         assert result.type == "open_browser"
         assert result.pending is True
@@ -91,6 +90,6 @@ class TestSpokeCoreSettingsAsync:
     async def test_execute_settings_action_unknown(self):
         """execute_settings_action should raise ValueError for unknown action."""
         core = SpokeCore()
-        
+
         with pytest.raises(ValueError, match="Unknown action"):
             await core.execute_settings_action("unknown_action")

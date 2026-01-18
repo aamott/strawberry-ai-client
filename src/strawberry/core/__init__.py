@@ -12,8 +12,8 @@ from .events import (
 )
 from .session import ChatSession
 from .settings_schema import (
-    ActionResult,
     CORE_SETTINGS_SCHEMA,
+    ActionResult,
     FieldType,
     SettingField,
     get_field_by_key,

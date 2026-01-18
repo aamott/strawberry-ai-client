@@ -29,16 +29,16 @@ class LeopardSTT(STTEngine):
     - Requires Picovoice license
     - Model files can be large
     """
-    
+
     # Module metadata for discovery
     name = "Leopard (Picovoice)"
     description = "On-device speech-to-text using Picovoice Leopard. Requires license key."
-    
+
     @classmethod
     def get_settings_schema(cls) -> List:
         """Return settings schema for Leopard STT configuration."""
         from strawberry.core.settings_schema import FieldType, SettingField
-        
+
         return [
             SettingField(
                 key="access_key",

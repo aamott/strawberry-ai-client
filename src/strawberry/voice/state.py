@@ -15,7 +15,7 @@ class VoiceState(Enum):
         Any → STOPPED (on stop)
         Any → ERROR (on error, then → STOPPED)
     """
-    
+
     STOPPED = auto()    # Voice is not running
     IDLE = auto()       # Waiting for wake word or PTT
     LISTENING = auto()  # Recording speech (VAD active)
@@ -26,7 +26,7 @@ class VoiceState(Enum):
 
 class VoiceStateError(Exception):
     """Exception raised for invalid state transitions."""
-    
+
     def __init__(self, current: VoiceState, attempted: VoiceState):
         self.current = current
         self.attempted = attempted

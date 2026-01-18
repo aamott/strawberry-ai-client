@@ -36,7 +36,7 @@ class STTEngine(ABC):
         - description: Help text for users
         - get_settings_schema(): Returns list of SettingField for configuration
     """
-    
+
     # Module metadata for discovery (override in subclasses)
     name: ClassVar[str] = "Unnamed STT"
     description: ClassVar[str] = ""
@@ -72,7 +72,7 @@ class STTEngine(ABC):
             List of SettingField objects defining configurable options
         """
         return []
-    
+
     @classmethod
     def get_default_settings(cls) -> Dict[str, Any]:
         """Return default values for all settings.
