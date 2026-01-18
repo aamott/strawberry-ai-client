@@ -14,9 +14,14 @@ frame loss between components.
 import asyncio
 import logging
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional
 
+import numpy as np
+
+from ..audio.backends.sounddevice_backend import SoundDeviceBackend
+from ..audio.stream import AudioStream
 from ..stt import STTEngine, discover_stt_modules
 from ..tts import TTSEngine, discover_tts_modules
 from ..vad import VADBackend, VADProcessor, discover_vad_modules
@@ -95,13 +100,13 @@ class VoiceConfig:
 
 class VoiceController:
     """Pure-Python voice controller.
-    
+
     Manages the voice interaction pipeline including wake word detection,
     speech recognition, and text-to-speech. Uses asyncio for event handling.
-    
+
     The audio stream is kept open throughout the voice session to prevent
     frame loss between wake word detection and STT.
-    
+
     Usage:
         controller = VoiceController(config)
         controller.add_listener(my_event_handler)
@@ -116,7 +121,7 @@ class VoiceController:
         response_handler: Optional[Callable[[str], str]] = None,
     ):
         """Initialize voice controller.
-        
+
         Args:
             config: Voice configuration
             response_handler: Async callback(transcription) -> response_text
@@ -138,8 +143,11 @@ class VoiceController:
         self._tts: Optional[TTSEngine] = None
 
         # Audio stream (kept open to avoid frame loss)
-        self._audio_stream = None
-        self._audio_buffer: List[bytes] = []
+        self._audio_backend: Optional[SoundDeviceBackend] = None
+        self._audio_stream: Optional[AudioStream] = None
+        self._recording_buffer: List[np.ndarray] = []
+        self._recording_start_time: float = 0
+        self._max_recording_duration: float = 30.0  # Max seconds to record
 
         # Event listeners
         self._listeners: List[Callable[[VoiceEvent], Any]] = []
@@ -159,7 +167,7 @@ class VoiceController:
 
     def add_listener(self, listener: Callable[[VoiceEvent], Any]) -> None:
         """Add event listener.
-        
+
         Args:
             listener: Callback function(event) for voice events
         """
@@ -183,10 +191,10 @@ class VoiceController:
 
     def _transition_to(self, new_state: VoiceState) -> None:
         """Transition to a new state.
-        
+
         Args:
             new_state: Target state
-            
+
         Raises:
             VoiceStateError: If transition is not valid
         """
@@ -205,7 +213,7 @@ class VoiceController:
 
     async def start(self) -> bool:
         """Start voice controller.
-        
+
         Returns:
             True if started successfully
         """
@@ -220,6 +228,12 @@ class VoiceController:
             # Generate new session ID
             self._session_counter += 1
             self._session_id = f"voice-{self._session_counter}"
+
+            # Start audio stream and subscribe to frames
+            if self._audio_stream:
+                self._audio_stream.subscribe(self._on_audio_frame)
+                self._audio_stream.start()
+                logger.info(f"Listening for wake words: {self._config.wake_words}")
 
             # Transition to IDLE
             self._transition_to(VoiceState.IDLE)
@@ -280,8 +294,7 @@ class VoiceController:
             wake_cls = wake_modules.get("mock")
             logger.warning(f"Wake backend '{self._config.wake_backend}' not found, using mock")
 
-        # Instantiate backends with graceful fallback on init errors
-        # (e.g., missing API keys)
+        # Instantiate wake word detector first to get required frame length
         if wake_cls:
             try:
                 self._wake_detector = wake_cls(
@@ -297,22 +310,63 @@ class VoiceController:
                         sensitivity=self._config.sensitivity,
                     )
 
+        # Initialize audio backend matching wake word detector's requirements
+        if self._wake_detector:
+            # Calculate frame_length_ms from wake detector's requirements
+            wake_frame_len = self._wake_detector.frame_length
+            wake_sample_rate = self._wake_detector.sample_rate
+            frame_ms = int(wake_frame_len * 1000 / wake_sample_rate)
+            self._audio_backend = SoundDeviceBackend(
+                sample_rate=wake_sample_rate,
+                frame_length_ms=frame_ms,
+            )
+            self._audio_stream = AudioStream(self._audio_backend)
+            logger.info(
+                f"Audio stream initialized: {wake_sample_rate}Hz, {frame_ms}ms frames"
+            )
+
         if vad_cls:
             try:
                 self._vad = vad_cls(sample_rate=self._config.sample_rate)
+                # Create VAD processor with default config
+                from ..vad.processor import VADConfig
+                frame_ms = int(
+                    self._wake_detector.frame_length * 1000
+                    / self._wake_detector.sample_rate
+                ) if self._wake_detector else 32
+                self._vad_processor = VADProcessor(
+                    self._vad,
+                    VADConfig(),
+                    frame_duration_ms=frame_ms,
+                )
             except Exception as e:
-                logger.warning(f"VAD backend '{vad_cls.__name__}' init failed: {e}, using mock")
+                logger.warning(f"VAD init failed: {e}, using mock")
                 mock_vad_cls = vad_modules.get("mock")
                 if mock_vad_cls:
                     self._vad = mock_vad_cls(sample_rate=self._config.sample_rate)
 
-        # STT and TTS classes are stored for lazy initialization
-        # They'll be initialized when needed with proper error handling
-        self._stt_cls = stt_cls
+        # Initialize STT engine
+        if stt_cls:
+            try:
+                self._stt = stt_cls()
+                logger.info(f"STT initialized: {stt_cls.__name__}")
+            except Exception as e:
+                logger.warning(f"STT init failed: {e}")
+
+        # Store TTS class for lazy initialization
         self._tts_cls = tts_cls
 
     async def _cleanup_components(self) -> None:
         """Cleanup voice pipeline components."""
+        # Stop audio stream first
+        if self._audio_stream:
+            self._audio_stream.unsubscribe(self._on_audio_frame)
+            self._audio_stream.stop()
+            self._audio_stream = None
+
+        if self._audio_backend:
+            self._audio_backend = None
+
         if self._wake_detector:
             self._wake_detector.cleanup()
             self._wake_detector = None
@@ -333,6 +387,134 @@ class VoiceController:
         """Set callback for processing transcriptions."""
         self._response_handler = handler
 
+    def _on_audio_frame(self, frame) -> None:
+        """Handle incoming audio frame based on current state.
+
+        This is called by the AudioStream for each audio frame.
+        - IDLE: Check for wake word detection
+        - LISTENING: Record audio and check VAD for speech end
+
+        Args:
+            frame: Audio samples as numpy array (int16)
+        """
+        if self._state == VoiceState.IDLE:
+            self._handle_idle(frame)
+        elif self._state == VoiceState.LISTENING:
+            self._handle_listening(frame)
+
+    def _handle_idle(self, frame) -> None:
+        """Process frame while in IDLE state - check for wake word."""
+        if not self._wake_detector:
+            return
+
+        try:
+            keyword_index = self._wake_detector.process(frame)
+
+            if keyword_index >= 0:
+                keyword = self._wake_detector.keywords[keyword_index]
+                logger.info(f"Wake word detected: {keyword}")
+
+                # Emit wake word event
+                self._emit(VoiceWakeWordDetected(
+                    keyword=keyword,
+                    keyword_index=keyword_index,
+                ))
+
+                # Start recording
+                self._start_recording()
+
+        except Exception as e:
+            logger.error(f"Error processing audio frame: {e}")
+
+    def _start_recording(self) -> None:
+        """Transition to listening and start recording audio."""
+        self._recording_buffer.clear()
+        self._recording_start_time = time.time()
+        if self._vad_processor:
+            self._vad_processor.reset()
+        self._transition_to(VoiceState.LISTENING)
+        self._emit(VoiceListening())
+        logger.info("Started recording")
+
+    def _handle_listening(self, frame) -> None:
+        """Process frame while recording - buffer audio and check VAD."""
+        # Add frame to recording buffer
+        self._recording_buffer.append(frame)
+
+        # Check for timeout
+        elapsed = time.time() - self._recording_start_time
+        if elapsed > self._max_recording_duration:
+            logger.warning(f"Recording timed out after {elapsed:.1f}s")
+            self._finish_recording()
+            return
+
+        # Check VAD for speech end
+        if self._vad_processor:
+            speech_ended = self._vad_processor.process(frame)
+            if speech_ended:
+                logger.info(
+                    f"VAD speech end after {self._vad_processor.session_duration:.2f}s"
+                )
+                self._finish_recording()
+        elif elapsed > 3.0:
+            # No VAD - use simple timeout
+            logger.info("Recording timeout (no VAD)")
+            self._finish_recording()
+
+    def _finish_recording(self) -> None:
+        """Process recorded audio through STT and response handler."""
+        self._transition_to(VoiceState.PROCESSING)
+
+        # Concatenate all recorded audio
+        if self._recording_buffer:
+            audio = np.concatenate(self._recording_buffer)
+        else:
+            audio = np.array([], dtype=np.int16)
+        self._recording_buffer.clear()
+
+        logger.info(f"Recording finished: {len(audio)} samples")
+
+        # Process in background thread to not block audio
+        threading.Thread(
+            target=self._process_audio_sync,
+            args=(audio,),
+            daemon=True,
+        ).start()
+
+    def _process_audio_sync(self, audio: np.ndarray) -> None:
+        """Process audio through STT and get response (sync, runs in thread)."""
+        try:
+            # Transcribe
+            if not self._stt:
+                logger.warning("No STT engine available")
+                self._transition_to(VoiceState.IDLE)
+                return
+
+            result = self._stt.transcribe(audio)
+            text = result.text.strip() if result.text else ""
+
+            if not text:
+                logger.info("Empty transcription, returning to idle")
+                self._transition_to(VoiceState.IDLE)
+                return
+
+            logger.info(f"Transcription: {text}")
+            self._emit(VoiceTranscription(text=text, is_final=True))
+
+            # Get response if handler set
+            if self._response_handler:
+                response = self._response_handler(text)
+                logger.info(f"Response: {response[:50]}...")
+                self._emit(VoiceResponse(text=response))
+
+            # Return to idle (TTS would be added here)
+            self._transition_to(VoiceState.IDLE)
+
+        except Exception as e:
+            logger.error(f"Error processing audio: {e}")
+            self._emit(VoiceError(error=str(e), exception=e))
+            self._transition_to(VoiceState.IDLE)
+
     async def push_to_talk_start(self) -> None:
         """Start push-to-talk recording."""
         if self._state != VoiceState.IDLE:
@@ -340,7 +522,7 @@ class VoiceController:
             return
 
         self._ptt_active = True
-        self._audio_buffer.clear()
+        self._recording_buffer.clear()
         self._transition_to(VoiceState.LISTENING)
         self._emit(VoiceListening())
 

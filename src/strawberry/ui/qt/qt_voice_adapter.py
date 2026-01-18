@@ -8,14 +8,13 @@ UI updates.
 import asyncio
 import logging
 import threading
-from typing import Callable, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Optional
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 
 from ...audio.feedback import FeedbackSound, get_feedback
 from ...voice import (
     VoiceConfig,
-    VoiceController as CoreVoiceController,
     VoiceError,
     VoiceEvent,
     VoiceResponse,
@@ -24,6 +23,9 @@ from ...voice import (
     VoiceStatusChanged,
     VoiceTranscription,
     VoiceWakeWordDetected,
+)
+from ...voice import (
+    VoiceController as CoreVoiceController,
 )
 
 if TYPE_CHECKING:
@@ -177,7 +179,7 @@ class QtVoiceAdapter(QObject):
             self._level_timer.start(50)  # 20 FPS for level updates
 
             # Play start sound
-            self._audio_feedback.play(FeedbackSound.LISTENING_START)
+            self._audio_feedback.play(FeedbackSound.READY)
 
             logger.info("QtVoiceAdapter started")
             return True
@@ -210,8 +212,8 @@ class QtVoiceAdapter(QObject):
 
         # Create voice config from settings
         config = VoiceConfig(
-            wake_words=settings.wake.keywords or ["strawberry"],
-            sensitivity=getattr(settings.wake, 'sensitivity', 0.5),
+            wake_words=settings.wake_word.keywords or ["strawberry"],
+            sensitivity=getattr(settings.wake_word, 'sensitivity', 0.5),
             sample_rate=16000,
         )
 
@@ -262,7 +264,7 @@ class QtVoiceAdapter(QObject):
             self._controller = None
 
         # Play stop sound
-        self._audio_feedback.play(FeedbackSound.LISTENING_STOP)
+        self._audio_feedback.play(FeedbackSound.RECORDING_END)
 
         self._emit_state.emit("stopped")
         logger.info("QtVoiceAdapter stopped")
@@ -286,7 +288,7 @@ class QtVoiceAdapter(QObject):
             return
 
         self._push_to_talk_active = True
-        self._audio_feedback.play(FeedbackSound.PTT_START)
+        self._audio_feedback.play(FeedbackSound.RECORDING_START)
 
         # Start PTT (run in event loop)
         loop = asyncio.get_event_loop()
@@ -299,7 +301,7 @@ class QtVoiceAdapter(QObject):
             return
 
         self._push_to_talk_active = False
-        self._audio_feedback.play(FeedbackSound.PTT_STOP)
+        self._audio_feedback.play(FeedbackSound.RECORDING_END)
 
         # Stop PTT (run in event loop)
         loop = asyncio.get_event_loop()

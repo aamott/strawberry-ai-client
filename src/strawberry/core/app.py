@@ -137,8 +137,8 @@ class SpokeCore:
 
         # Create voice config from settings
         voice_config = VoiceConfig(
-            wake_words=self._settings.wake.keywords or ["strawberry"],
-            sensitivity=getattr(self._settings.wake, 'sensitivity', 0.5),
+            wake_words=self._settings.wake_word.keywords or ["strawberry"],
+            sensitivity=getattr(self._settings.wake_word, 'sensitivity', 0.5),
             sample_rate=16000,
         )
 
