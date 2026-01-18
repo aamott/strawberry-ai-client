@@ -7,7 +7,6 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 from ..config import get_settings
 from ..llm.tensorzero_client import TensorZeroClient
-from ..models import ChatMessage
 from ..skills.service import SkillService
 from ..voice import VoiceConfig, VoiceController, VoiceState
 from ..voice import VoiceStatusChanged as VoiceEvent
@@ -21,6 +20,7 @@ from .events import (
     VoiceStatusChanged,
 )
 from .session import ChatSession
+from .settings_schema import ActionResult
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,10 @@ class SpokeCore:
 
         # Voice controller (lazy initialized)
         self._voice: Optional[VoiceController] = None
+
+        # Track mode state for mode notices (like QT UI)
+        self._last_online_state: Optional[bool] = None
+        self._pending_mode_notice: Optional[str] = None
 
         # Paths from settings
         skills_path = Path(self._settings.skills.path)
@@ -122,7 +126,7 @@ class SpokeCore:
 
     async def start_voice(self) -> bool:
         """Start voice controller.
-        
+
         Returns:
             True if started successfully
         """
@@ -155,7 +159,7 @@ class SpokeCore:
 
     def voice_status(self) -> str:
         """Get current voice state name.
-        
+
         Returns:
             State name (STOPPED, IDLE, LISTENING, PROCESSING, SPEAKING)
         """
@@ -165,7 +169,7 @@ class SpokeCore:
 
     def _handle_voice_transcription(self, text: str) -> str:
         """Handle voice transcription and generate response.
-        
+
         This is called by VoiceController when speech is transcribed.
         For now, returns a placeholder. Full integration would run agent loop.
         """
@@ -228,17 +232,38 @@ class SpokeCore:
             await self._emit(CoreError(error="Core not started"))
             return
 
-        system_prompt = self._skills.get_system_prompt()
+        # Check if online state changed and update mode notice
+        current_online = self.is_online()
+        if self._last_online_state is not None and current_online != self._last_online_state:
+            if current_online:
+                self._pending_mode_notice = (
+                    "Runtime mode switched to ONLINE (Hub). "
+                    "Remote devices API is available. "
+                    "Use devices.<Device>.<SkillName>.<method>(...)."
+                )
+            else:
+                self._pending_mode_notice = (
+                    "Runtime mode switched to OFFLINE/LOCAL. "
+                    "The Hub/remote devices API is unavailable. "
+                    "Use only device.<SkillName>.<method>(...)."
+                )
+        self._last_online_state = current_online
+
+        # Build system prompt with mode notice
+        system_prompt = self._skills.get_system_prompt(mode_notice=self._pending_mode_notice)
+        self._pending_mode_notice = None
 
         for iteration in range(max_iterations):
-            # Build messages for LLM
-            messages = [ChatMessage(role="system", content=system_prompt)]
-            messages.extend(session.messages)
+            # Build messages for LLM (skip system messages, use system_prompt param)
+            messages = []
+            for msg in session.messages:
+                if msg.role != "system":
+                    messages.append(msg)
 
-            # Get LLM response
-            response = await self._llm.chat(messages)
+            # Get LLM response with system prompt passed explicitly
+            response = await self._llm.chat(messages, system_prompt=system_prompt)
 
-            # Check for tool calls
+            # Check for native tool calls first
             if response.tool_calls:
                 for tool_call in response.tool_calls:
                     await self._emit(
@@ -274,6 +299,43 @@ class SpokeCore:
                 # Continue loop for more tool calls
                 continue
 
+            # Check for legacy code blocks (models that don't use native tool calls)
+            legacy_code_blocks = self._extract_legacy_code_blocks(response.content or "")
+            if legacy_code_blocks:
+                for code in legacy_code_blocks:
+                    await self._emit(
+                        ToolCallStarted(
+                            session_id=session.id,
+                            tool_name="python_exec",
+                            arguments={"code": code},
+                        )
+                    )
+
+                    # Execute via python_exec tool
+                    result = await self._skills.execute_tool_async(
+                        "python_exec", {"code": code}
+                    )
+
+                    success = "error" not in result
+                    result_text = result.get("result", result.get("error", ""))
+
+                    await self._emit(
+                        ToolCallResult(
+                            session_id=session.id,
+                            tool_name="python_exec",
+                            success=success,
+                            result=result_text if success else None,
+                            error=result_text if not success else None,
+                        )
+                    )
+
+                    # Add tool result to session for next iteration
+                    tool_msg = f"[Tool: python_exec]\n{result_text}"
+                    session.add_message("user", tool_msg)
+
+                # Continue loop for more iterations
+                continue
+
             # No tool calls - final response
             if response.content:
                 session.add_message("assistant", response.content)
@@ -285,6 +347,52 @@ class SpokeCore:
                     )
                 )
             break
+
+    def _extract_legacy_code_blocks(self, content: str) -> List[str]:
+        """Extract executable code blocks from LLM response.
+
+        Handles models that return code in fenced blocks instead of
+        using native tool calls. Looks for:
+        - ```tool_code ... ``` blocks
+        - ```python ... ``` blocks containing device.* calls
+        - Bare device.*/devices.* lines
+
+        Args:
+            content: LLM response text
+
+        Returns:
+            List of code strings to execute
+        """
+        import re
+
+        code_blocks = []
+
+        # Extract fenced code blocks
+        # Match ```tool_code, ```python, or just ``` with device calls
+        # Allow optional newline after opening fence
+        pattern = r"```(?:tool_code|python|py)?\s*\n?(.*?)```"
+        matches = re.findall(pattern, content, re.DOTALL | re.IGNORECASE)
+
+        for match in matches:
+            code = match.strip()
+            # Only include if it looks like a skill call
+            if any(prefix in code for prefix in [
+                "device.", "devices.", "device_manager.",
+                "print(device.", "print(devices."
+            ]):
+                code_blocks.append(code)
+
+        # Also check for bare device calls not in code blocks
+        if not code_blocks:
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped.startswith((
+                    "device.", "devices.", "device_manager.",
+                    "print(device.", "print(devices.", "print(device_manager."
+                )):
+                    code_blocks.append(stripped)
+
+        return code_blocks
 
     def get_system_prompt(self) -> str:
         """Get the current system prompt."""
@@ -345,7 +453,7 @@ class SpokeCore:
     # Settings API
     def get_settings_schema(self) -> List[Any]:
         """Get the core settings schema for UI rendering.
-        
+
         Returns:
             List of SettingField objects defining configurable options
         """
@@ -354,7 +462,7 @@ class SpokeCore:
 
     def get_settings(self) -> Dict[str, Any]:
         """Get current settings values as a flat dictionary.
-        
+
         Returns:
             Dictionary mapping dot-separated keys to values.
             Example: {"device.name": "My PC", "hub.url": "http://..."}
@@ -380,11 +488,11 @@ class SpokeCore:
 
     async def update_settings(self, patch: Dict[str, Any]) -> None:
         """Update settings with a partial update.
-        
+
         Args:
             patch: Dictionary of dot-separated keys to new values.
                    Example: {"device.name": "New Name", "hub.url": "http://..."}
-        
+
         Raises:
             ValueError: If a key is not recognized
         """
@@ -414,10 +522,10 @@ class SpokeCore:
 
     def get_settings_options(self, provider: str) -> List[str]:
         """Get dynamic options for a DYNAMIC_SELECT field.
-        
+
         Args:
             provider: The options_provider name from the SettingField
-            
+
         Returns:
             List of available options
         """
@@ -440,10 +548,10 @@ class SpokeCore:
 
     async def execute_settings_action(self, action: str) -> "ActionResult":
         """Execute a settings action (e.g., hub OAuth flow).
-        
+
         Args:
             action: Action name from SettingField.action
-            
+
         Returns:
             ActionResult with instructions for the UI
         """

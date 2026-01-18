@@ -85,6 +85,54 @@ def help_text() -> str:
     return f"""
 {BOLD}Commands:{RESET}
   {DIM}/clear{RESET}  Clear conversation
+  {DIM}/voice{RESET}  Toggle voice mode
   {DIM}/help{RESET}   Show this help
   {DIM}/quit{RESET}   Exit (or /q)
 """
+
+
+def status_bar(voice_state: str, width: int) -> str:
+    """Render the bottom status bar with voice state.
+
+    Args:
+        voice_state: Current voice state (OFF, STOPPED, IDLE, LISTENING, PROCESSING, SPEAKING)
+        width: Terminal width
+
+    Returns:
+        Formatted status bar string
+    """
+    # Voice state indicator
+    if voice_state in ("OFF", "STOPPED"):
+        voice_indicator = f"{GRAY}○ Off{RESET}"
+    elif voice_state == "IDLE":
+        voice_indicator = f"{BLUE}● Waiting{RESET}"
+    elif voice_state == "LISTENING":
+        voice_indicator = f"{GREEN}● Listening{RESET}"
+    elif voice_state in ("PROCESSING", "SPEAKING"):
+        voice_indicator = f"{YELLOW}● Processing{RESET}"
+    else:
+        voice_indicator = f"{GRAY}○ {voice_state}{RESET}"
+
+    # Left side: commands hint
+    left = f"{DIM}/voice | /help{RESET}"
+
+    # Right side: voice indicator
+    right = voice_indicator
+
+    # Calculate padding (accounting for ANSI codes)
+    # Visible chars only for left and right
+    left_visible = "/voice | /help"
+    right_visible_map = {
+        "OFF": "○ Off",
+        "STOPPED": "○ Off",
+        "IDLE": "● Waiting",
+        "LISTENING": "● Listening",
+        "PROCESSING": "● Processing",
+        "SPEAKING": "● Processing",
+    }
+    right_visible = right_visible_map.get(voice_state, f"○ {voice_state}")
+
+    padding_len = width - len(left_visible) - len(right_visible) - 2
+    padding = " " * max(0, padding_len)
+
+    return f"{DIM}─{RESET} {left}{padding}{right} {DIM}─{RESET}"

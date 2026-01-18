@@ -9,6 +9,7 @@ from .events import (
     SettingsChanged,
     ToolCallResult,
     ToolCallStarted,
+    VoiceStatusChanged,
 )
 from .session import ChatSession
 from .settings_schema import (
@@ -32,6 +33,7 @@ __all__ = [
     "CoreReady",
     "CoreError",
     "SettingsChanged",
+    "VoiceStatusChanged",
     # Settings schema
     "SettingField",
     "FieldType",
