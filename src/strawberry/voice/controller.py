@@ -13,6 +13,7 @@ frame loss between components.
 
 import asyncio
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from typing import Any, Callable, List, Optional
 import numpy as np
 
 from ..audio.backends.sounddevice_backend import SoundDeviceBackend
+from ..audio.playback import AudioPlayer
 from ..audio.stream import AudioStream
 from ..stt import STTEngine, discover_stt_modules
 from ..tts import TTSEngine, discover_tts_modules
@@ -141,6 +143,7 @@ class VoiceController:
         self._vad_processor: Optional[VADProcessor] = None
         self._stt: Optional[STTEngine] = None
         self._tts: Optional[TTSEngine] = None
+        self._audio_player: Optional[AudioPlayer] = None
 
         # Audio stream (kept open to avoid frame loss)
         self._audio_backend: Optional[SoundDeviceBackend] = None
@@ -353,8 +356,16 @@ class VoiceController:
             except Exception as e:
                 logger.warning(f"STT init failed: {e}")
 
-        # Store TTS class for lazy initialization
-        self._tts_cls = tts_cls
+        # Initialize TTS engine
+        if tts_cls:
+            try:
+                self._tts = tts_cls()
+                self._audio_player = AudioPlayer(
+                    sample_rate=self._tts.sample_rate if self._tts else 22050
+                )
+                logger.info(f"TTS initialized: {tts_cls.__name__}")
+            except Exception as e:
+                logger.warning(f"TTS init failed: {e}")
 
     async def _cleanup_components(self) -> None:
         """Cleanup voice pipeline components."""
@@ -507,13 +518,65 @@ class VoiceController:
                 logger.info(f"Response: {response[:50]}...")
                 self._emit(VoiceResponse(text=response))
 
-            # Return to idle (TTS would be added here)
-            self._transition_to(VoiceState.IDLE)
+                # Speak the response
+                self._speak_response(response)
+            else:
+                # No handler, return to idle
+                self._transition_to(VoiceState.IDLE)
 
         except Exception as e:
             logger.error(f"Error processing audio: {e}")
             self._emit(VoiceError(error=str(e), exception=e))
             self._transition_to(VoiceState.IDLE)
+
+    def _speak_response(self, text: str) -> None:
+        """Speak response text using TTS.
+
+        Strips code blocks and tool calls before speaking.
+        """
+        if not self._tts or not self._audio_player:
+            logger.warning("No TTS engine available")
+            self._transition_to(VoiceState.IDLE)
+            return
+
+        # Strip code blocks (```...```)
+        speakable_text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+        # Strip inline code (`...`)
+        speakable_text = re.sub(r"`[^`]+`", "", speakable_text)
+        # Clean up whitespace
+        speakable_text = re.sub(r"\s+", " ", speakable_text).strip()
+
+        if not speakable_text:
+            logger.info("No speakable text after filtering")
+            self._transition_to(VoiceState.IDLE)
+            return
+
+        try:
+            self._transition_to(VoiceState.SPEAKING)
+            self._emit(VoiceSpeaking(text=speakable_text))
+
+            # Synthesize and play audio (streaming)
+            for chunk in self._tts.synthesize_stream(speakable_text):
+                if self._state != VoiceState.SPEAKING:
+                    # Interrupted
+                    self._audio_player.stop()
+                    break
+                self._audio_player.play(
+                    chunk.audio,
+                    sample_rate=chunk.sample_rate,
+                    blocking=True,
+                )
+
+            logger.info("TTS playback complete")
+
+        except Exception as e:
+            logger.error(f"TTS playback failed: {e}")
+            self._emit(VoiceError(error=str(e), exception=e))
+
+        finally:
+            # Return to idle
+            if self._state == VoiceState.SPEAKING:
+                self._transition_to(VoiceState.IDLE)
 
     async def push_to_talk_start(self) -> None:
         """Start push-to-talk recording."""
