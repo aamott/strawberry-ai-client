@@ -105,5 +105,4 @@ ai-pc-spoke/
 - [ ] Add more skills
 - [ ] Test deleting the config and loading from scratch (automatically recreate config.yaml and .env)
 - [ ] Make a unified settings GUI, make it easier to configure tensorzero models, fallback models, and API keys.
-- [ ] IMPORTANT! Move skill registration to the core. Currently it's implemented in the QT UI.
-- [ ] Remove the legacy terminal mode.
+- [ ] Move `SYSTEM_PROMPT_TEMPLATE` from service.py to config.yaml (with fallback).
