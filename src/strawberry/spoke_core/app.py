@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 from ..config import get_settings
+from ..config.loader import load_config, reset_settings
 from ..hub import HubClient, HubConfig, HubError
 from ..llm.tensorzero_client import TensorZeroClient
 from ..skills.service import SkillService
@@ -52,7 +53,13 @@ class SpokeCore:
     """
 
     def __init__(self, settings_path: Optional[str] = None) -> None:
-        self._settings = get_settings()
+        """Initialize SpokeCore.
+
+        Args:
+            settings_path: Optional path to a config.yaml to load instead of the
+                default project config.
+        """
+        self._settings = self._load_settings(settings_path)
         self._llm: Optional[TensorZeroClient] = None
         self._skills: Optional[SkillService] = None
         self._hub_client: Optional[HubClient] = None
@@ -73,6 +80,27 @@ class SpokeCore:
             skills_path = get_project_root() / skills_path
 
         self._skills_path = skills_path
+
+    def _load_settings(self, settings_path: Optional[str]) -> Any:
+        """Load settings with optional config path override.
+
+        Args:
+            settings_path: Optional path to a config.yaml to load.
+
+        Returns:
+            Loaded Settings instance.
+        """
+        if not settings_path:
+            return get_settings()
+
+        config_path = Path(settings_path)
+        if not config_path.is_absolute():
+            from ..utils.paths import get_project_root
+            config_path = get_project_root() / config_path
+
+        reset_settings()
+        logger.info("Loading settings override from %s", config_path)
+        return load_config(config_path=config_path)
 
     async def start(self) -> None:
         """Initialize core services."""

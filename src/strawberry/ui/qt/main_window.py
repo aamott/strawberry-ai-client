@@ -1751,6 +1751,10 @@ class MainWindow(QMainWindow):
         """Handle window close."""
         self.closing.emit()
 
+        if self._core_subscription:
+            self._core_subscription.cancel()
+            self._core_subscription = None
+
         # Cleanup voice
         if self._voice_controller:
             loop = asyncio.get_event_loop()
