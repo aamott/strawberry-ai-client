@@ -1,13 +1,13 @@
 """Tests for STT module discovery."""
 
 
-from strawberry.stt import (
+from strawberry.voice.stt import (
     STTEngine,
     discover_stt_modules,
     get_stt_module,
     list_stt_modules,
 )
-from strawberry.stt.backends.mock import MockSTT
+from strawberry.voice.stt.backends.mock import MockSTT
 
 
 class TestDiscoverSttModules:
@@ -83,7 +83,7 @@ class TestSttEngineSettingsSchema:
 
     def test_leopard_has_settings(self):
         """LeopardSTT should have configurable settings."""
-        from strawberry.stt.backends.leopard import LeopardSTT
+        from strawberry.voice.stt.backends.leopard import LeopardSTT
 
         schema = LeopardSTT.get_settings_schema()
         assert len(schema) > 0
@@ -94,8 +94,8 @@ class TestSttEngineSettingsSchema:
 
     def test_leopard_settings_are_valid(self):
         """LeopardSTT settings should be valid SettingField objects."""
-        from strawberry.core.settings_schema import SettingField
-        from strawberry.stt.backends.leopard import LeopardSTT
+        from strawberry.spoke_core.settings_schema import SettingField
+        from strawberry.voice.stt.backends.leopard import LeopardSTT
 
         schema = LeopardSTT.get_settings_schema()
         for field in schema:
@@ -103,7 +103,7 @@ class TestSttEngineSettingsSchema:
 
     def test_get_default_settings(self):
         """get_default_settings should return defaults from schema."""
-        from strawberry.stt.backends.leopard import LeopardSTT
+        from strawberry.voice.stt.backends.leopard import LeopardSTT
 
         defaults = LeopardSTT.get_default_settings()
         assert isinstance(defaults, dict)

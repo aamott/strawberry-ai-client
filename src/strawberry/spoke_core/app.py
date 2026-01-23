@@ -6,18 +6,18 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 from ..config import get_settings
+from ..hub import HubClient, HubConfig, HubError
 from ..llm.tensorzero_client import TensorZeroClient
 from ..skills.service import SkillService
-from ..voice import VoiceConfig, VoiceController, VoiceState
-from ..voice import VoiceStatusChanged as VoiceEvent
 from .events import (
+    ConnectionChanged,
     CoreError,
     CoreEvent,
     CoreReady,
     MessageAdded,
+    ModeChanged,
     ToolCallResult,
     ToolCallStarted,
-    VoiceStatusChanged,
 )
 from .session import ChatSession
 from .settings_schema import ActionResult
@@ -55,12 +55,11 @@ class SpokeCore:
         self._settings = get_settings()
         self._llm: Optional[TensorZeroClient] = None
         self._skills: Optional[SkillService] = None
+        self._hub_client: Optional[HubClient] = None
         self._sessions: Dict[str, ChatSession] = {}
         self._subscribers: List[asyncio.Queue] = []
         self._started = False
-
-        # Voice controller (lazy initialized)
-        self._voice: Optional[VoiceController] = None
+        self._hub_connected = False
 
         # Track mode state for mode notices (like QT UI)
         self._last_online_state: Optional[bool] = None
@@ -105,10 +104,11 @@ class SpokeCore:
 
     async def stop(self) -> None:
         """Shutdown core services."""
-        # Stop voice first
-        if self._voice:
-            await self._voice.stop()
-            self._voice = None
+        # Close hub connection
+        if self._hub_client:
+            await self._hub_client.close()
+            self._hub_client = None
+            self._hub_connected = False
 
         if self._llm:
             await self._llm.close()
@@ -120,74 +120,6 @@ class SpokeCore:
 
         self._started = False
         logger.info("SpokeCore stopped")
-
-    # ──────────────────────────────────────────────────────────────────────────
-    # Voice Control Methods
-    # ──────────────────────────────────────────────────────────────────────────
-
-    async def start_voice(self) -> bool:
-        """Start voice controller.
-
-        Returns:
-            True if started successfully
-        """
-        if self._voice and self._voice.state != VoiceState.STOPPED:
-            logger.warning("Voice already running")
-            return True
-
-        # Create voice config from settings
-        voice_config = VoiceConfig(
-            wake_words=self._settings.wake_word.keywords or ["strawberry"],
-            sensitivity=getattr(self._settings.wake_word, 'sensitivity', 0.5),
-            sample_rate=16000,
-        )
-
-        self._voice = VoiceController(
-            config=voice_config,
-            response_handler=self._handle_voice_transcription,
-        )
-
-        # Subscribe to voice events and forward to core event stream
-        self._voice.add_listener(self._on_voice_event)
-
-        result = await self._voice.start()
-        return result
-
-    async def stop_voice(self) -> None:
-        """Stop voice controller."""
-        if self._voice:
-            await self._voice.stop()
-
-    def voice_status(self) -> str:
-        """Get current voice state name.
-
-        Returns:
-            State name (STOPPED, IDLE, LISTENING, PROCESSING, SPEAKING)
-        """
-        if not self._voice:
-            return "STOPPED"
-        return self._voice.state.name
-
-    def _handle_voice_transcription(self, text: str) -> str:
-        """Handle voice transcription and generate response.
-
-        This is called by VoiceController when speech is transcribed.
-        For now, returns a placeholder. Full integration would run agent loop.
-        """
-        logger.info(f"Voice transcription: {text}")
-        # TODO: Integrate with agent loop for real responses
-        return f"I heard: {text}"
-
-    def _on_voice_event(self, event: VoiceEvent) -> None:
-        """Forward voice events to core event stream."""
-        # Convert voice event to core event
-        core_event = VoiceStatusChanged(
-            state=event.state.name,
-            previous_state=event.previous_state.name,
-            session_id=event.session_id,
-        )
-        # Emit asynchronously
-        asyncio.create_task(self._emit(core_event))
 
     def new_session(self) -> ChatSession:
         """Create a new chat session."""
@@ -228,8 +160,14 @@ class SpokeCore:
             session.busy = False
 
     async def _agent_loop(self, session: ChatSession, max_iterations: int = 5) -> None:
-        """Run the agent loop with tool execution."""
-        if not self._llm or not self._skills:
+        """Run the agent loop with tool execution.
+
+        When online (connected to Hub), routes chat through Hub with enable_tools=True
+        so the Hub runs the agent loop and executes skills on registered devices.
+
+        When offline, runs the agent loop locally using TensorZeroClient.
+        """
+        if not self._skills:
             await self._emit(CoreError(error="Core not started"))
             return
 
@@ -249,6 +187,56 @@ class SpokeCore:
                     "Use only device.<SkillName>.<method>(...)."
                 )
         self._last_online_state = current_online
+
+        # Route based on online/offline mode
+        if current_online and self._hub_client:
+            await self._agent_loop_hub(session)
+        else:
+            await self._agent_loop_local(session, max_iterations)
+
+    async def _agent_loop_hub(self, session: ChatSession) -> None:
+        """Run agent loop via Hub (Hub executes tools on registered devices)."""
+        from ..models import ChatMessage
+
+        # Build system prompt with mode notice
+        system_prompt = self._skills.get_system_prompt(mode_notice=self._pending_mode_notice)
+        self._pending_mode_notice = None
+
+        # Build messages for Hub
+        messages = [ChatMessage(role="system", content=system_prompt)]
+        for msg in session.messages:
+            if msg.role != "system":
+                messages.append(ChatMessage(role=msg.role, content=msg.content))
+
+        # Send to Hub with enable_tools=True - Hub runs the agent loop
+        try:
+            response = await self._hub_client.chat(
+                messages=messages,
+                enable_tools=True,  # Hub executes skills
+            )
+
+            # Add response to session
+            if response.content:
+                session.add_message("assistant", response.content)
+                await self._emit(
+                    MessageAdded(
+                        session_id=session.id,
+                        role="assistant",
+                        content=response.content,
+                    )
+                )
+
+        except HubError as e:
+            logger.error(f"Hub chat failed: {e}")
+            await self._emit(CoreError(error=f"Hub error: {e}"))
+
+    async def _agent_loop_local(
+        self, session: ChatSession, max_iterations: int = 5
+    ) -> None:
+        """Run agent loop locally (for offline mode)."""
+        if not self._llm:
+            await self._emit(CoreError(error="Local LLM not available"))
+            return
 
         # Build system prompt with mode notice
         system_prompt = self._skills.get_system_prompt(mode_notice=self._pending_mode_notice)
@@ -403,8 +391,157 @@ class SpokeCore:
 
     def is_online(self) -> bool:
         """Check if connected to Hub."""
-        # TODO: Implement Hub connection check
-        return False
+        return self._hub_connected and self._hub_client is not None
+
+    @property
+    def hub_client(self) -> Optional[HubClient]:
+        """Get the hub client if connected."""
+        return self._hub_client if self._hub_connected else None
+
+    async def connect_hub(self) -> bool:
+        """Connect to the Hub using settings.
+
+        Returns:
+            True if connection succeeded, False otherwise.
+        """
+        hub_settings = self._settings.hub
+        if not hub_settings.token:
+            logger.warning("Hub token not configured - skipping hub connection")
+            await self._emit(ConnectionChanged(
+                connected=False,
+                error="Hub token not configured",
+            ))
+            return False
+
+        try:
+            config = HubConfig(
+                url=hub_settings.url,
+                token=hub_settings.token,
+                timeout=hub_settings.timeout_seconds,
+            )
+            self._hub_client = HubClient(config)
+
+            # Check health
+            healthy = await asyncio.wait_for(
+                self._hub_client.health(),
+                timeout=hub_settings.timeout_seconds,
+            )
+            if not healthy:
+                await self._emit(ConnectionChanged(
+                    connected=False,
+                    url=hub_settings.url,
+                    error="Hub is not responding",
+                ))
+                return False
+
+            # Verify auth
+            try:
+                await asyncio.wait_for(
+                    self._hub_client.get_device_info(),
+                    timeout=hub_settings.timeout_seconds,
+                )
+            except HubError as e:
+                await self._emit(ConnectionChanged(
+                    connected=False,
+                    url=hub_settings.url,
+                    error=f"Hub authentication failed: {e}",
+                ))
+                return False
+
+            self._hub_connected = True
+            await self._emit(ConnectionChanged(
+                connected=True,
+                url=hub_settings.url,
+            ))
+            logger.info(f"Connected to Hub at {hub_settings.url}")
+
+            # Register skills with hub
+            await self._register_skills_with_hub()
+
+            # Connect WebSocket for skill execution requests
+            asyncio.create_task(self._hub_client.connect_websocket())
+
+            # Emit mode change
+            await self._emit(ModeChanged(
+                online=True,
+                message="Connected to Hub. Remote devices API is available.",
+            ))
+
+            return True
+
+        except asyncio.TimeoutError:
+            logger.warning("Hub connection timed out")
+            await self._emit(ConnectionChanged(
+                connected=False,
+                url=hub_settings.url,
+                error="Connection timed out",
+            ))
+            return False
+        except Exception as e:
+            logger.exception("Failed to connect to Hub")
+            await self._emit(ConnectionChanged(
+                connected=False,
+                error=str(e),
+            ))
+            return False
+
+    async def disconnect_hub(self) -> None:
+        """Disconnect from the Hub."""
+        if self._hub_client:
+            await self._hub_client.close()
+            self._hub_client = None
+
+        was_connected = self._hub_connected
+        self._hub_connected = False
+
+        if was_connected:
+            await self._emit(ConnectionChanged(connected=False))
+            await self._emit(ModeChanged(
+                online=False,
+                message="Disconnected from Hub. Running in local mode.",
+            ))
+            logger.info("Disconnected from Hub")
+
+    async def _register_skills_with_hub(self) -> bool:
+        """Register skills with Hub and start heartbeat.
+
+        Returns:
+            True if registration succeeded.
+        """
+        if not self._hub_client or not self._skills:
+            return False
+
+        # Attach hub client to skill service (enables remote device mode)
+        self._skills.set_hub_client(self._hub_client)
+
+        # Set up skill callback for Hub -> Spoke skill execution
+        async def _ws_skill_callback(
+            skill_name: str,
+            method_name: str,
+            args: list,
+            kwargs: dict,
+        ):
+            return await self._skills.execute_skill_by_name(
+                skill_name, method_name, args, kwargs
+            )
+
+        self._hub_client.set_skill_callback(_ws_skill_callback)
+
+        # Register skills
+        try:
+            success = await self._skills.register_with_hub()
+            if success:
+                skills = self._skills.get_all_skills()
+                logger.info(f"Registered {len(skills)} skill(s) with Hub")
+                # Start heartbeat
+                await self._skills.start_heartbeat()
+                return True
+            else:
+                logger.warning("Failed to register skills with Hub")
+                return False
+        except HubError as e:
+            logger.error(f"Failed to register skills with Hub: {e}")
+            return False
 
     def get_model_info(self) -> str:
         """Get current model name."""

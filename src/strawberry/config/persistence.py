@@ -17,11 +17,13 @@ from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 
+from ..utils.paths import get_project_root
 from .env_file import update_env_file
+from .settings import Settings
 from .yaml_file import YamlUpdate, apply_yaml_updates_preserve_comments
 
-DEFAULT_CONFIG_PATH = Path("config/config.yaml")
-DEFAULT_ENV_PATH = Path(".env")
+DEFAULT_CONFIG_PATH = get_project_root() / "src" / "config" / "config.yaml"
+DEFAULT_ENV_PATH = get_project_root() / ".env"
 
 
 @dataclass(frozen=True)
@@ -80,7 +82,7 @@ def persist_settings_and_env(
 
 def save_settings(settings: "Settings", config_path: Path = DEFAULT_CONFIG_PATH) -> None:
     """Save a Settings object to YAML config file.
-    
+
     Args:
         settings: The Settings instance to save
         config_path: Path to the config.yaml file

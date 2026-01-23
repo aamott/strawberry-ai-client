@@ -7,8 +7,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import numpy as np
 
-from strawberry.tts.backends.mock import MockTTS, generate_tone_audio
-from strawberry.tts.base import AudioChunk
+from strawberry.voice.tts.backends.mock import MockTTS, generate_tone_audio
+from strawberry.voice.tts.base import AudioChunk
 
 # --- AudioChunk Tests ---
 

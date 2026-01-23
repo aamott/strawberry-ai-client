@@ -62,12 +62,20 @@ class SettingsChanged(CoreEvent):
 
 
 @dataclass
-class VoiceStatusChanged(CoreEvent):
-    """Voice controller state has changed."""
-    state: str  # VoiceState name (STOPPED, IDLE, LISTENING, etc.)
-    previous_state: str = ""
-    session_id: str = ""
+class ConnectionChanged(CoreEvent):
+    """Hub connection status changed."""
+    connected: bool
+    url: Optional[str] = None
+    error: Optional[str] = None
+
+
+@dataclass
+class ModeChanged(CoreEvent):
+    """Online/offline mode changed."""
+    online: bool
+    message: str = ""
 
 
 # Alias for backward compatibility
 CoreSettingsChanged = SettingsChanged
+

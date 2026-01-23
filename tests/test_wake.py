@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import numpy as np
 
-from strawberry.wake.backends.mock import MockWakeWordDetector
+from strawberry.voice.wakeword.backends.mock import MockWakeWordDetector
 
 
 def make_frame(length: int = 512) -> np.ndarray:

@@ -10,3 +10,8 @@ def get_orca_tts():
     from .orca import OrcaTTS
     return OrcaTTS
 
+
+def get_pocket_tts():
+    """Get PocketTTS class (requires pocket-tts)."""
+    from .pocket import PocketTTS
+    return PocketTTS

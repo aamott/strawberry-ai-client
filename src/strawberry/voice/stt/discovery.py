@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 def discover_stt_modules() -> Dict[str, Type[STTEngine]]:
     """Scan the stt/backends directory for STTEngine subclasses.
-    
+
     Discovers all modules in the backends directory that contain
     classes inheriting from STTEngine.
-    
+
     Returns:
         Dictionary mapping module names to STTEngine subclasses.
         Example: {"leopard": LeopardSTT, "mock": MockSTT}
@@ -38,7 +38,7 @@ def discover_stt_modules() -> Dict[str, Type[STTEngine]]:
             continue
 
         try:
-            module = importlib.import_module(f"strawberry.stt.backends.{name}")
+            module = importlib.import_module(f"strawberry.voice.stt.backends.{name}")
 
             # Find STTEngine subclasses in the module
             for attr_name in dir(module):
@@ -62,10 +62,10 @@ def discover_stt_modules() -> Dict[str, Type[STTEngine]]:
 
 def get_stt_module(name: str) -> Type[STTEngine] | None:
     """Get a specific STT module by name.
-    
+
     Args:
         name: Module name (e.g., "leopard", "mock")
-        
+
     Returns:
         The STTEngine subclass, or None if not found
     """
@@ -75,7 +75,7 @@ def get_stt_module(name: str) -> Type[STTEngine] | None:
 
 def list_stt_modules() -> list[dict]:
     """List all available STT modules with their metadata.
-    
+
     Returns:
         List of dictionaries with module info:
         [{"name": "leopard", "display_name": "Leopard (Picovoice)", "description": "..."}]

@@ -1,160 +1,254 @@
-#!/usr/bin/env python3
-"""CLI UI main entrypoint."""
+"""CLI UI entrypoint for the Spoke.
 
-# Suppress TensorZero Rust logs before any imports
-import os
-
-os.environ.setdefault("RUST_LOG", "error")
+Uses SpokeCore for chat and skill execution with async event handling.
+"""
 
 import asyncio
-import sys
+import logging
+from pathlib import Path
+from typing import Optional
 
-from ...core import (
+from ...spoke_core import (
+    ConnectionChanged,
     CoreError,
     CoreEvent,
     CoreReady,
     MessageAdded,
+    ModeChanged,
     SpokeCore,
     ToolCallResult,
     ToolCallStarted,
-    VoiceStatusChanged,
 )
-from . import renderer as r
+from . import renderer
 
-# Track voice state for status bar
-_voice_state = "OFF"
+# Configure logging to file instead of console
+LOG_DIR = Path(__file__).parent.parent.parent.parent.parent / ".cli-logs"
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / "cli.log"
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler(LOG_FILE)],
+)
+logger = logging.getLogger(__name__)
+
+# Suppress console output from libraries
+for log_name in ["httpx", "httpcore", "asyncio", "urllib3"]:
+    logging.getLogger(log_name).setLevel(logging.WARNING)
 
 
-def _render_status_bar(voice_state: str) -> None:
-    """Render the bottom status bar with voice state."""
-    # Move cursor to bottom, print status bar, move back
-    width = r.get_width()
-    bar = r.status_bar(voice_state, width)
-    sys.stdout.write(f"\r{bar}\n")
-    sys.stdout.flush()
+class CLIApp:
+    """CLI application using SpokeCore."""
 
+    def __init__(self) -> None:
+        self._core = SpokeCore()
+        self._session_id: Optional[str] = None
+        self._running = False
+        self._last_tool_result: Optional[str] = None
+        self._pending_tool_calls: dict = {}
 
-async def run_cli() -> None:
-    """Run the CLI event loop."""
-    global _voice_state
+    async def run(self) -> None:
+        """Main run loop."""
+        self._running = True
 
-    core = SpokeCore()
+        try:
+            # Start core
+            await self._core.start()
 
-    # Print header
-    cwd = os.getcwd()
-    status = "online" if core.is_online() else "offline"
-    print(r.header("strawberry-cli", status, core.get_model_info(), cwd))
-    print()
+            # Create session
+            session = self._core.new_session()
+            self._session_id = session.id
 
-    # Start core
-    try:
-        await core.start()
-    except Exception as e:
-        print(r.error_message(f"Failed to start: {e}"))
-        return
+            # Try to connect to hub (blocking - wait for result before showing welcome)
+            await self._try_connect_hub()
 
-    # Create session
-    session = core.new_session()
+            # Print welcome (now shows correct online/offline status)
+            renderer.print_welcome(
+                model=self._core.get_model_info(),
+                online=self._core.is_online(),
+            )
 
-    # Track last online state for mode notice
-    last_online_state = core.is_online()
+            # Run input loop and event handler concurrently
+            await asyncio.gather(
+                self._input_loop(),
+                self._event_loop(),
+            )
 
-    # Event handler
-    def handle_event(event: CoreEvent) -> None:
-        global _voice_state
+        except KeyboardInterrupt:
+            renderer.print_system("Interrupted")
+        except Exception as e:
+            logger.exception("CLI error")
+            renderer.print_error(str(e))
+        finally:
+            self._running = False
+            await self._core.stop()
+
+    async def _try_connect_hub(self) -> None:
+        """Try to connect to hub before showing welcome."""
+        try:
+            await self._core.connect_hub()
+            # Connection status will be shown in welcome message
+        except Exception as e:
+            logger.warning(f"Hub connection failed: {e}")
+            # Will show as local mode in welcome
+
+    async def _input_loop(self) -> None:
+        """Handle user input."""
+        try:
+            # Try to use aioconsole for non-blocking input
+            from aioconsole import ainput
+            use_aioconsole = True
+        except ImportError:
+            use_aioconsole = False
+            logger.warning("aioconsole not available, using blocking input")
+
+        while self._running:
+            try:
+                prompt = renderer.print_prompt()
+
+                if use_aioconsole:
+                    user_input = await ainput(prompt)
+                else:
+                    # Fallback to blocking input in thread
+                    user_input = await asyncio.to_thread(input, prompt)
+
+                user_input = user_input.strip()
+                if not user_input:
+                    continue
+
+                # Handle slash commands
+                if user_input.startswith("/"):
+                    await self._handle_command(user_input)
+                    continue
+
+                # Send message to core
+                if self._session_id:
+                    await self._core.send_message(self._session_id, user_input)
+
+            except EOFError:
+                break
+            except asyncio.CancelledError:
+                break
+
+    async def _event_loop(self) -> None:
+        """Handle events from SpokeCore."""
+        try:
+            async for event in self._core.events():
+                if not self._running:
+                    break
+                await self._handle_event(event)
+        except asyncio.CancelledError:
+            pass
+
+    async def _handle_event(self, event: CoreEvent) -> None:
+        """Process a single event.
+
+        Args:
+            event: The event to handle
+        """
         if isinstance(event, CoreReady):
-            pass  # Already printed header
+            logger.info("Core ready")
+
         elif isinstance(event, CoreError):
-            print(r.error_message(event.error))
+            renderer.print_error(event.error)
+
         elif isinstance(event, MessageAdded):
             if event.role == "assistant":
-                print(r.assistant_message(event.content))
+                renderer.print_assistant(event.content)
+            elif event.role == "system":
+                renderer.print_system(event.content)
+            # User messages are not echoed (user already sees their input)
+
         elif isinstance(event, ToolCallStarted):
-            args_preview = str(list(event.arguments.values())[0])[:50] if event.arguments else ""
-            print(r.tool_call_started(event.tool_name, args_preview))
+            # Build args preview
+            args_preview = ", ".join(
+                f"{k}={v!r}" for k, v in list(event.arguments.items())[:2]
+            )
+            renderer.print_tool_call(event.tool_name, args_preview)
+            # Track for /last command
+            self._pending_tool_calls[event.tool_name] = event.arguments
+
         elif isinstance(event, ToolCallResult):
-            result_text = event.result if event.success else (event.error or "Unknown error")
-            print(r.tool_call_result(event.success, result_text))
-        elif isinstance(event, VoiceStatusChanged):
-            _voice_state = event.state
+            # Update the tool call line with result
+            output = event.result if event.success else event.error
+            renderer.print_tool_result(
+                event.tool_name,
+                event.success,
+                event.result,
+                event.error,
+            )
+            # Store for /last command
+            self._last_tool_result = output
+            self._pending_tool_calls.pop(event.tool_name, None)
 
-    subscription = core.subscribe(handle_event)
+        elif isinstance(event, ConnectionChanged):
+            if event.connected:
+                renderer.print_system(f"Connected to Hub ({event.url})")
+            elif event.error:
+                renderer.print_system(f"Hub: {event.error}")
 
-    # Print initial status bar
-    _render_status_bar(_voice_state)
+        elif isinstance(event, ModeChanged):
+            renderer.print_system(event.message)
 
-    try:
-        while True:
-            print(r.separator())
+    async def _handle_command(self, command: str) -> None:
+        """Handle a slash command.
 
-            # Get input
-            try:
-                user_input = input(r.user_prompt()).strip()
-            except (KeyboardInterrupt, EOFError):
-                break
+        Args:
+            command: The command string starting with /
+        """
+        cmd = command.lower().split()[0]
 
-            if not user_input:
-                continue
+        if cmd in ("/help", "/h"):
+            renderer.print_help()
 
-            # Handle commands
-            if user_input in ("/q", "/quit", "exit"):
-                break
-            elif user_input == "/clear":
+        elif cmd in ("/quit", "/q", "/exit"):
+            renderer.print_system("Goodbye!")
+            self._running = False
+
+        elif cmd == "/clear":
+            session = self._core.get_session(self._session_id) if self._session_id else None
+            if session:
                 session.clear()
-                print(r.info_message("Cleared conversation"))
-                continue
-            elif user_input == "/help":
-                print(r.help_text())
-                continue
-            elif user_input == "/voice":
-                # Toggle voice
-                if _voice_state == "OFF" or _voice_state == "STOPPED":
-                    success = await core.start_voice()
-                    if success:
-                        print(r.info_message("Voice started"))
-                    else:
-                        print(r.error_message("Failed to start voice"))
-                else:
-                    await core.stop_voice()
-                    print(r.info_message("Voice stopped"))
-                _render_status_bar(_voice_state)
-                continue
+            renderer.clear_screen()
+            renderer.print_welcome(
+                model=self._core.get_model_info(),
+                online=self._core.is_online(),
+            )
+            renderer.print_system("Conversation cleared")
 
-            # Check if online state changed - inject mode notice
-            current_online = core.is_online()
-            if current_online != last_online_state:
-                if current_online:
-                    print(r.info_message(
-                        "Runtime mode: ONLINE (Hub). "
-                        "Remote devices are available via devices.<Device>.<Skill>.<method>()."
-                    ))
-                else:
-                    print(r.info_message(
-                        "Runtime mode: OFFLINE/LOCAL. "
-                        "Use device.<Skill>.<method>() for local skills only."
-                    ))
-                last_online_state = current_online
+        elif cmd == "/last":
+            if self._last_tool_result:
+                print(f"\n{self._last_tool_result}\n")
+            else:
+                renderer.print_system("No tool output available")
 
-            # Send message
-            print(r.separator())
-            await core.send_message(session.id, user_input)
-            await asyncio.sleep(0)  # Yield to process pending events
+        elif cmd == "/connect":
+            renderer.print_system("Connecting to Hub...")
+            connected = await self._core.connect_hub()
+            if connected:
+                renderer.print_system("Connected!")
+            else:
+                renderer.print_system("Connection failed")
 
-            # Render status bar after response
-            _render_status_bar(_voice_state)
+        elif cmd == "/status":
+            online = self._core.is_online()
+            model = self._core.get_model_info()
+            status = "Online (Hub)" if online else "Local"
+            renderer.print_status(f"Mode: {status} | Model: {model}")
 
-    finally:
-        subscription.cancel()
-        await core.stop()
-        print(r.info_message("Goodbye!"))
+        else:
+            renderer.print_error(f"Unknown command: {cmd}")
+            renderer.print_system("Type /help for available commands")
 
 
 def main() -> None:
-    """Entrypoint for strawberry-cli command."""
+    """CLI entrypoint."""
+    app = CLIApp()
     try:
-        asyncio.run(run_cli())
+        asyncio.run(app.run())
     except KeyboardInterrupt:
-        pass
+        print()  # Clean exit on Ctrl+C
 
 
 if __name__ == "__main__":

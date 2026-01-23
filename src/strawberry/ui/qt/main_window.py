@@ -10,7 +10,6 @@ import traceback
 from pathlib import Path
 from typing import List, Optional
 
-import httpx
 from PySide6.QtCore import QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
@@ -23,6 +22,18 @@ from ...config.persistence import persist_settings_and_env
 from ...hub.client import HubError
 from ...llm import OfflineModeTracker, TensorZeroClient
 from ...models import ChatMessage
+from ...voice import (
+    VoiceConfig,
+    VoiceController,
+    VoiceError,
+    VoiceEvent,
+    VoiceResponse,
+    VoiceState,
+    VoiceStatusChanged,
+    VoiceTranscription,
+    VoiceWakeWordDetected,
+)
+from ...voice.audio.feedback import FeedbackSound, get_feedback
 from .agent_helpers import (
     AgentLoopContext,
     ToolCallInfo,
@@ -32,7 +43,6 @@ from .agent_helpers import (
     get_final_display_content,
 )
 from .hub_manager import HubConnectionManager, HubStatus
-from .qt_voice_adapter import QtVoiceAdapter as VoiceController
 from .session_controller import SessionController
 from .theme import DARK_THEME, THEMES, get_stylesheet
 from .widgets import (
@@ -45,7 +55,6 @@ from .widgets import (
     StatusBar,
     VoiceIndicator,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -558,7 +567,13 @@ class MainWindow(QMainWindow):
         hub_client.set_skill_callback(_ws_skill_callback)
 
         # Register skills
-        success = await self._skill_service.register_with_hub()
+        try:
+            success = await self._skill_service.register_with_hub()
+        except HubError as e:
+            self._chat_area.add_system_message(
+                f"Failed to register skills with Hub: {e} (running in local mode)"
+            )
+            return
 
         if success:
             skills = self._skill_service.get_all_skills()
@@ -1371,21 +1386,41 @@ class MainWindow(QMainWindow):
 
         # Create voice controller if needed
         if self._voice_controller is None:
-            self._voice_controller = VoiceController(
-                settings=self.settings,
-                response_handler=self._handle_voice_transcription,
+            # Create config from settings
+            voice_config = VoiceConfig(
+                wake_words=self.settings.wake_word.keywords or ["strawberry"],
+                sensitivity=getattr(self.settings.wake_word, 'sensitivity', 0.5),
+                sample_rate=16000,
+                stt_backend=self.settings.stt.backend,
+                tts_backend=self.settings.tts.backend,
+                vad_backend=self.settings.vad.backend,
+                wake_backend=self.settings.wake_word.backend,
             )
 
-            # Connect signals
-            self._voice_controller.state_changed.connect(self._on_voice_state_changed)
-            self._voice_controller.level_changed.connect(self._voice_indicator.set_level)
-            self._voice_controller.wake_word_detected.connect(self._on_wake_word_detected)
-            self._voice_controller.transcription_ready.connect(self._on_transcription_ready)
-            self._voice_controller.response_ready.connect(self._on_voice_response)
-            self._voice_controller.error_occurred.connect(self._on_voice_error)
+            self._voice_controller = VoiceController(
+                config=voice_config,
+                response_handler=self._voice_agent_handler,
+            )
 
-        # Start voice
-        if self._voice_controller.start():
+            # Subscribe to voice events (called from voice thread)
+            self._voice_controller.add_listener(self._on_voice_event)
+
+            # Audio feedback
+            self._audio_feedback = get_feedback(
+                enabled=self.settings.voice.audio_feedback_enabled
+            )
+
+        # Start voice (async)
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(self._start_voice_async())
+        else:
+            asyncio.run(self._start_voice_async())
+
+    async def _start_voice_async(self):
+        """Start voice controller asynchronously."""
+        if self._voice_controller and await self._voice_controller.start():
+            self._audio_feedback.play(FeedbackSound.READY)
             self._chat_area.add_system_message(
                 f"Voice mode enabled. Say '{self.settings.wake_word.keywords[0]}' to activate."
             )
@@ -1396,82 +1431,153 @@ class MainWindow(QMainWindow):
     def _disable_voice(self):
         """Disable voice interaction."""
         if self._voice_controller:
-            self._voice_controller.stop()
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._voice_controller.stop())
+            else:
+                asyncio.run(self._voice_controller.stop())
 
         self._voice_indicator.setVisible(False)
         self._voice_indicator.set_voice_enabled(False)
         self._chat_area.add_system_message("Voice mode disabled")
 
-    def _handle_voice_transcription(self, text: str) -> str:
-        """Handle transcription from voice - get LLM response.
+    def _on_voice_event(self, event: VoiceEvent):
+        """Handle voice events (called from voice thread).
 
-        This is called from a background thread, so we use a thread-safe
-        approach to get the response from the async Hub client.
+        Uses QTimer.singleShot for thread-safe UI updates.
         """
-        if not self._hub_manager.client or not self._connected:
-            return f"Hub not connected. You said: {text}"
+        # Schedule handling on Qt main thread
+        QTimer.singleShot(0, lambda: self._handle_voice_event(event))
 
-        # Use a new event loop in this thread for the async call
-        # Create a new event loop for this thread
-        loop = asyncio.new_event_loop()
-        try:
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(self._get_voice_response_async(text))
-            return result
-        except Exception as e:
-            return f"Error: {e}"
-        finally:
-            try:
-                loop.close()
-            except Exception:
-                pass
+    def _handle_voice_event(self, event: VoiceEvent):
+        """Process voice event on main Qt thread.
 
-    async def _get_voice_response_async(self, text: str) -> str:
-        """Get response from Hub for voice transcription (async).
-
-        Creates a fresh HTTP client since we're in a different thread/loop.
+        Handles state changes, transcriptions, and responses from VoiceController.
+        Maps VoiceEvent types to existing handler methods.
         """
-        try:
-            # Create a new client for this request (thread-safe)
-            async with httpx.AsyncClient(
-                base_url=self.settings.hub.url,
-                timeout=30.0,
-            ) as client:
-                # Build message history
-                messages = [
-                    {"role": m.role, "content": m.content}
-                    for m in self._conversation_history
-                ]
-                messages.append({"role": "user", "content": text})
+        if isinstance(event, VoiceStatusChanged):
+            # Map VoiceState enum to lowercase string for UI
+            state_map = {
+                VoiceState.STOPPED: "stopped",
+                VoiceState.IDLE: "idle",
+                VoiceState.LISTENING: "listening",
+                VoiceState.PROCESSING: "processing",
+                VoiceState.SPEAKING: "speaking",
+                VoiceState.ERROR: "error",
+            }
+            state_str = state_map.get(event.state, "idle")
+            self._on_voice_state_changed(state_str)
 
-                # Use the correct endpoint: /api/v1/chat/completions (OpenAI-compatible)
-                response = await client.post(
-                    "/api/v1/chat/completions",
-                    json={
-                        "messages": messages,
-                        "temperature": 0.7,
-                    },
-                    headers={"Authorization": f"Bearer {self.settings.hub.token}"},
+        elif isinstance(event, VoiceWakeWordDetected):
+            self._on_wake_word_detected(event.keyword)
+
+        elif isinstance(event, VoiceTranscription):
+            if event.is_final:
+                self._on_transcription_ready(event.text)
+
+        elif isinstance(event, VoiceResponse):
+            self._on_voice_response(event.text)
+
+        elif isinstance(event, VoiceError):
+            self._on_voice_error(event.error)
+
+    def _voice_agent_handler(self, text: str) -> str:
+        """Handle voice transcription via local agent loop.
+
+        Uses TensorZeroClient + SkillService for both online (Hub) and offline
+        (local Ollama) modes. Called from voice thread.
+
+        Args:
+            text: Transcribed speech text
+
+        Returns:
+            Response text for TTS
+        """
+        if not self._tensorzero_client or not self._skill_service:
+            return "I'm not ready yet. Please try again."
+
+        try:
+            # Run async agent in sync context (voice runs in thread)
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(
+                    lambda: asyncio.run(self._voice_agent_async(text))
                 )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    # Parse OpenAI-compatible response format
-                    choice = data.get("choices", [{}])[0]
-                    response_text = choice.get("message", {}).get("content", "")
-
-                    # Update conversation history (thread-safe - just appending)
-                    self._conversation_history.append(ChatMessage(role="user", content=text))
-                    self._conversation_history.append(
-                        ChatMessage(role="assistant", content=response_text)
-                    )
-
-                    return response_text
-                else:
-                    return f"Hub error: {response.status_code}"
-
+                return future.result(timeout=60.0)
         except Exception as e:
-            return f"Error: {e}"
+            logger.error(f"Voice agent error: {e}")
+            return f"Sorry, I encountered an error: {e}"
+
+    async def _voice_agent_async(self, text: str) -> str:
+        """Async voice agent loop - uses same agent loop as text chat.
+
+        Args:
+            text: User's transcribed speech
+
+        Returns:
+            Response text for TTS
+        """
+        MAX_ITERATIONS = 5
+
+        if not self._tensorzero_client or not self._skill_service:
+            return "I'm not ready yet."
+
+        # Get system prompt from skill service
+        system_prompt = self._skill_service.get_system_prompt(
+            mode_notice=self._pending_mode_notice
+        )
+        self._pending_mode_notice = None
+
+        # Build messages with conversation history
+        tz_messages = [
+            ChatMessage(role=m.role, content=m.content)
+            for m in self._conversation_history
+            if m.role != "system"  # Skip system messages in history
+        ]
+        tz_messages.append(ChatMessage(role="user", content=text))
+
+        # Run agent loop (same as text chat)
+        final_response = None
+
+        for iteration in range(MAX_ITERATIONS):
+            logger.debug(f"[Voice Agent] Iteration {iteration + 1}/{MAX_ITERATIONS}")
+
+            # Call TensorZero
+            response = await self._tensorzero_client.chat(
+                messages=tz_messages,
+                system_prompt=system_prompt,
+            )
+
+            # Check for tool calls
+            if response.tool_calls:
+                # Execute tools
+                tool_outputs = []
+                for tool_call in response.tool_calls:
+                    result = await self._skill_service.execute_tool_async(
+                        tool_call.name,
+                        tool_call.arguments,
+                    )
+                    output = result.get("result", result.get("error", ""))
+                    tool_outputs.append(f"[{tool_call.name}]: {output}")
+
+                # Add assistant response and tool results to messages
+                if response.content:
+                    tz_messages.append(ChatMessage(role="assistant", content=response.content))
+                tz_messages.append(
+                    ChatMessage(role="user", content="\n".join(tool_outputs))
+                )
+                final_response = response
+                continue
+
+            # No tool calls - we have a final text response
+            final_response = response
+            break
+
+        # Return the final text response
+        if final_response and final_response.content:
+            return final_response.content
+
+        return "I processed your request but have no response."
 
     @Slot(str)
     def _on_voice_state_changed(self, state: str):
@@ -1493,13 +1599,17 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_transcription_ready(self, text: str):
-        """Handle transcription completion."""
+        """Handle transcription completion - update UI and history."""
         self._chat_area.add_message(text, is_user=True)
+        # Add user message to conversation history for future context
+        self._conversation_history.append(ChatMessage(role="user", content=text))
 
     @Slot(str)
     def _on_voice_response(self, text: str):
-        """Handle voice response."""
+        """Handle voice response - update UI and history."""
         self._chat_area.add_message(text, is_user=False)
+        # Add assistant message to conversation history
+        self._conversation_history.append(ChatMessage(role="assistant", content=text))
 
     @Slot(str)
     def _on_voice_error(self, error: str):
@@ -1694,7 +1804,11 @@ class MainWindow(QMainWindow):
 
         # Cleanup voice
         if self._voice_controller:
-            self._voice_controller.stop()
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._voice_controller.stop())
+            else:
+                asyncio.run(self._voice_controller.stop())
 
         # Cleanup Hub connection
         asyncio.ensure_future(self._hub_manager.close())

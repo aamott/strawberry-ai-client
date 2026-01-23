@@ -5,10 +5,10 @@ from enum import Enum, auto
 
 class VoiceState(Enum):
     """States for the voice controller state machine.
-    
+
     State transitions:
         STOPPED → IDLE (on start)
-        IDLE → LISTENING (on wakeword or PTT)  
+        IDLE → LISTENING (on wakeword or PTT)
         LISTENING → PROCESSING (on silence/end of speech)
         PROCESSING → SPEAKING (on TTS start) or IDLE (on skip TTS)
         SPEAKING → IDLE (on TTS complete)
@@ -40,7 +40,12 @@ VALID_TRANSITIONS = {
     VoiceState.STOPPED: {VoiceState.IDLE},
     VoiceState.IDLE: {VoiceState.LISTENING, VoiceState.STOPPED},
     VoiceState.LISTENING: {VoiceState.PROCESSING, VoiceState.IDLE, VoiceState.STOPPED},
-    VoiceState.PROCESSING: {VoiceState.SPEAKING, VoiceState.IDLE, VoiceState.STOPPED, VoiceState.ERROR},
+    VoiceState.PROCESSING: {
+        VoiceState.SPEAKING,
+        VoiceState.IDLE,
+        VoiceState.STOPPED,
+        VoiceState.ERROR,
+    },
     VoiceState.SPEAKING: {VoiceState.IDLE, VoiceState.STOPPED},
     VoiceState.ERROR: {VoiceState.STOPPED},
 }

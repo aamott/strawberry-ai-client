@@ -2,7 +2,7 @@
 
 import pytest
 
-from strawberry.core import (
+from strawberry.spoke_core import (
     CORE_SETTINGS_SCHEMA,
     SettingField,
     SettingsChanged,
@@ -78,7 +78,7 @@ class TestSpokeCoreSettingsAsync:
 
     async def test_execute_settings_action_hub_oauth(self):
         """execute_settings_action should return ActionResult for hub_oauth."""
-        from strawberry.core.settings_schema import ActionResult
+        from strawberry.spoke_core.settings_schema import ActionResult
 
         core = SpokeCore()
         result = await core.execute_settings_action("hub_oauth")

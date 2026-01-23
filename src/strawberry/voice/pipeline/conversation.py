@@ -17,7 +17,7 @@ from ..stt.base import STTEngine
 from ..tts.base import TTSEngine
 from ..vad.base import VADBackend
 from ..vad.processor import VADConfig, VADProcessor
-from ..wake.base import WakeWordDetector
+from ..wakeword.base import WakeWordDetector
 from .events import EventType, PipelineEvent
 
 logger = logging.getLogger(__name__)

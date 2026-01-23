@@ -7,8 +7,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import numpy as np
 
-from strawberry.vad.backends.mock import MockVAD
-from strawberry.vad.processor import VADConfig, VADProcessor
+from strawberry.voice.vad.backends.mock import MockVAD
+from strawberry.voice.vad.processor import VADConfig, VADProcessor
 
 
 def make_frame(length: int = 480) -> np.ndarray:

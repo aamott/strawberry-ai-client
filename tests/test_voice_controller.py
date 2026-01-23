@@ -12,12 +12,27 @@ from strawberry.voice import (
 )
 
 
+def make_test_voice_config() -> VoiceConfig:
+    """Create a VoiceConfig that uses mock backends for tests.
+
+    Returns:
+        VoiceConfig configured for deterministic, dependency-free tests.
+    """
+    return VoiceConfig(
+        stt_backend="mock",
+        tts_backend="mock",
+        vad_backend="mock",
+        wake_backend="mock",
+        wake_words=["test_wake_word"],
+    )
+
+
 class TestVoiceState:
     """Tests for VoiceState enum and transitions."""
 
     def test_initial_state_is_stopped(self):
         """VoiceController should start in STOPPED state."""
-        config = VoiceConfig()
+        config = make_test_voice_config()
         controller = VoiceController(config)
         assert controller.state == VoiceState.STOPPED
 
@@ -83,7 +98,7 @@ class TestVoiceControllerAsync:
 
     async def test_start_transitions_to_idle(self):
         """start() should transition state to IDLE."""
-        config = VoiceConfig()
+        config = make_test_voice_config()
         controller = VoiceController(config)
 
         # Track events
@@ -103,7 +118,7 @@ class TestVoiceControllerAsync:
 
     async def test_stop_transitions_to_stopped(self):
         """stop() should transition state to STOPPED."""
-        config = VoiceConfig()
+        config = make_test_voice_config()
         controller = VoiceController(config)
 
         await controller.start()
@@ -114,7 +129,7 @@ class TestVoiceControllerAsync:
 
     async def test_session_id_generated_on_start(self):
         """session_id should be generated when started."""
-        config = VoiceConfig()
+        config = make_test_voice_config()
         controller = VoiceController(config)
 
         assert controller.session_id == ""
@@ -126,7 +141,7 @@ class TestVoiceControllerAsync:
 
     async def test_ptt_transitions_to_listening(self):
         """push_to_talk_start should transition to LISTENING."""
-        config = VoiceConfig()
+        config = make_test_voice_config()
         controller = VoiceController(config)
 
         await controller.start()
@@ -138,7 +153,7 @@ class TestVoiceControllerAsync:
 
     async def test_cannot_start_ptt_when_not_idle(self):
         """PTT should not work when not in IDLE state."""
-        config = VoiceConfig()
+        config = make_test_voice_config()
         controller = VoiceController(config)
 
         # Not started yet - should not change state
@@ -147,7 +162,7 @@ class TestVoiceControllerAsync:
 
     async def test_listener_receives_events(self):
         """Event listeners should receive all events."""
-        config = VoiceConfig()
+        config = make_test_voice_config()
         controller = VoiceController(config)
 
         events = []
@@ -161,11 +176,12 @@ class TestVoiceControllerAsync:
 
     async def test_remove_listener(self):
         """Removed listeners should not receive events."""
-        config = VoiceConfig()
+        config = make_test_voice_config()
         controller = VoiceController(config)
 
         events = []
-        listener = lambda e: events.append(e)
+        def listener(e):
+            return events.append(e)
 
         controller.add_listener(listener)
         controller.remove_listener(listener)

@@ -1,4 +1,4 @@
-"""Abstract base class for wake word detection."""
+"""Abstract base class for Voice Activity Detection backends."""
 
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Dict, List
@@ -6,11 +6,11 @@ from typing import Any, ClassVar, Dict, List
 import numpy as np
 
 
-class WakeWordDetector(ABC):
-    """Abstract base class for wake word detection.
+class VADBackend(ABC):
+    """Abstract base class for Voice Activity Detection.
 
-    All wake word backends must implement this interface.
-    
+    All VAD backends must implement this interface to be pluggable.
+
     To make a module discoverable and configurable via the settings UI,
     subclasses should define:
         - name: Human-readable name shown in UI dropdown
@@ -19,55 +19,46 @@ class WakeWordDetector(ABC):
     """
 
     # Module metadata for discovery (override in subclasses)
-    name: ClassVar[str] = "Unnamed Wake Word"
+    name: ClassVar[str] = "Unnamed VAD"
     description: ClassVar[str] = ""
 
     @abstractmethod
-    def __init__(self, keywords: List[str], sensitivity: float = 0.5):
-        """Initialize the wake word detector.
+    def __init__(self, sample_rate: int = 16000):
+        """Initialize the VAD backend.
 
         Args:
-            keywords: List of wake words to detect
-            sensitivity: Detection sensitivity (0.0 to 1.0)
-                        Higher = more sensitive, more false positives
-                        Lower = less sensitive, fewer false positives
+            sample_rate: Expected audio sample rate in Hz
         """
         pass
 
-    @property
     @abstractmethod
-    def keywords(self) -> List[str]:
-        """List of wake words being detected."""
-        pass
-
-    @property
-    @abstractmethod
-    def frame_length(self) -> int:
-        """Required audio frame length in samples."""
-        pass
-
-    @property
-    @abstractmethod
-    def sample_rate(self) -> int:
-        """Required audio sample rate in Hz."""
-        pass
-
-    @abstractmethod
-    def process(self, audio_frame: np.ndarray) -> int:
-        """Process an audio frame for wake word detection.
+    def is_speech(self, audio_frame: np.ndarray) -> bool:
+        """Determine if audio frame contains speech.
 
         Args:
-            audio_frame: Audio samples (int16), must be frame_length samples
+            audio_frame: Audio samples (int16)
 
         Returns:
-            Index of detected keyword (0-based), or -1 if none detected
+            True if speech detected, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def get_probability(self, audio_frame: np.ndarray) -> float:
+        """Get speech probability for audio frame.
+
+        Args:
+            audio_frame: Audio samples (int16)
+
+        Returns:
+            Probability of speech (0.0 to 1.0)
         """
         pass
 
     @classmethod
     def get_settings_schema(cls) -> List[Any]:
-        """Return the settings schema for this wake word provider.
-        
+        """Return the settings schema for this VAD provider.
+
         Override this method to define configurable settings.
         Returns a list of SettingField objects.
         """
@@ -80,7 +71,7 @@ class WakeWordDetector(ABC):
         return {field.key: field.default for field in schema if hasattr(field, 'key')}
 
     def cleanup(self) -> None:
-        """Release any resources held by the detector.
+        """Release any resources held by the backend.
 
         Override in subclasses that need cleanup.
         """

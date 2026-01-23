@@ -7,8 +7,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import numpy as np
 
-from strawberry.stt.backends.mock import MockSTT
-from strawberry.stt.base import TranscriptionResult
+from strawberry.voice.stt.backends.mock import MockSTT
+from strawberry.voice.stt.base import TranscriptionResult
 
 
 def make_audio(duration_sec: float = 1.0, sample_rate: int = 16000) -> np.ndarray:

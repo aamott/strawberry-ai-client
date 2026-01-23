@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def discover_wake_modules() -> Dict[str, Type[WakeWordDetector]]:
     """Scan the wake/backends directory for WakeWordDetector subclasses.
-    
+
     Returns:
         Dictionary mapping module names to WakeWordDetector subclasses.
         Example: {"porcupine": PorcupineDetector, "mock": MockWakeWordDetector}
@@ -34,7 +34,7 @@ def discover_wake_modules() -> Dict[str, Type[WakeWordDetector]]:
             continue
 
         try:
-            module = importlib.import_module(f"strawberry.wake.backends.{name}")
+            module = importlib.import_module(f"strawberry.voice.wakeword.backends.{name}")
 
             for attr_name in dir(module):
                 obj = getattr(module, attr_name)

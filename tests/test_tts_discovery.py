@@ -1,13 +1,13 @@
 """Tests for TTS module discovery."""
 
 
-from strawberry.tts import (
+from strawberry.voice.tts import (
     TTSEngine,
     discover_tts_modules,
     get_tts_module,
     list_tts_modules,
 )
-from strawberry.tts.backends.mock import MockTTS
+from strawberry.voice.tts.backends.mock import MockTTS
 
 
 class TestDiscoverTtsModules:
@@ -83,7 +83,7 @@ class TestTtsEngineSettingsSchema:
 
     def test_orca_has_settings(self):
         """OrcaTTS should have configurable settings."""
-        from strawberry.tts.backends.orca import OrcaTTS
+        from strawberry.voice.tts.backends.orca import OrcaTTS
 
         schema = OrcaTTS.get_settings_schema()
         assert len(schema) > 0
@@ -94,8 +94,8 @@ class TestTtsEngineSettingsSchema:
 
     def test_orca_settings_are_valid(self):
         """OrcaTTS settings should be valid SettingField objects."""
-        from strawberry.core.settings_schema import SettingField
-        from strawberry.tts.backends.orca import OrcaTTS
+        from strawberry.spoke_core.settings_schema import SettingField
+        from strawberry.voice.tts.backends.orca import OrcaTTS
 
         schema = OrcaTTS.get_settings_schema()
         for field in schema:
@@ -103,9 +103,35 @@ class TestTtsEngineSettingsSchema:
 
     def test_get_default_settings(self):
         """get_default_settings should return defaults from schema."""
-        from strawberry.tts.backends.orca import OrcaTTS
+        from strawberry.voice.tts.backends.orca import OrcaTTS
 
         defaults = OrcaTTS.get_default_settings()
         assert isinstance(defaults, dict)
         # model_path has a default of ""
         assert "model_path" in defaults
+
+
+class TestTtsBackendsMatchSettings:
+    """Test that discovered TTS backends are valid in Settings schema."""
+
+    def test_discovered_backends_are_allowed_in_settings(self):
+        """All discovered TTS backends should be valid values in TTSSettings.
+
+        This prevents the bug where a new backend is added to discovery
+        but not to the Settings Literal type, causing validation errors.
+        """
+        from typing import get_args
+
+        from strawberry.config.settings import TTSSettings
+
+        discovered = discover_tts_modules()
+
+        # Get allowed backend values from TTSSettings.backend Literal type
+        backend_field = TTSSettings.model_fields["backend"]
+        allowed_backends = get_args(backend_field.annotation)
+
+        for backend_name in discovered.keys():
+            assert backend_name in allowed_backends, (
+                f"TTS backend '{backend_name}' was discovered but is not in "
+                f"TTSSettings.backend Literal type. Add it to settings.py!"
+            )

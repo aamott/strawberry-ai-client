@@ -6,18 +6,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from strawberry.audio.backends.mock import MockAudioBackend
-from strawberry.pipeline.conversation import (
+from strawberry.voice.audio.backends.mock import MockAudioBackend
+from strawberry.voice.pipeline.conversation import (
     ConversationPipeline,
     PipelineConfig,
     PipelineState,
 )
-from strawberry.pipeline.events import EventType
-from strawberry.stt.backends.mock import MockSTT
-from strawberry.tts.backends.mock import MockTTS
-from strawberry.vad.backends.mock import MockVAD
-from strawberry.vad.processor import VADConfig
-from strawberry.wake.backends.mock import MockWakeWordDetector
+from strawberry.voice.pipeline.events import EventType
+from strawberry.voice.stt.backends.mock import MockSTT
+from strawberry.voice.tts.backends.mock import MockTTS
+from strawberry.voice.vad.backends.mock import MockVAD
+from strawberry.voice.vad.processor import VADConfig
+from strawberry.voice.wakeword.backends.mock import MockWakeWordDetector
 
 
 def create_pipeline(

@@ -2,14 +2,15 @@
 
 from .app import SpokeCore
 from .events import (
+    ConnectionChanged,
     CoreError,
     CoreEvent,
     CoreReady,
     MessageAdded,
+    ModeChanged,
     SettingsChanged,
     ToolCallResult,
     ToolCallStarted,
-    VoiceStatusChanged,
 )
 from .session import ChatSession
 from .settings_schema import (
@@ -33,7 +34,8 @@ __all__ = [
     "CoreReady",
     "CoreError",
     "SettingsChanged",
-    "VoiceStatusChanged",
+    "ConnectionChanged",
+    "ModeChanged",
     # Settings schema
     "SettingField",
     "FieldType",

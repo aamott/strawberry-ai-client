@@ -11,7 +11,7 @@ from typing import Any, Callable, List, Optional
 
 class FieldType(Enum):
     """Types of setting fields for UI rendering.
-    
+
     TEXT: Simple text input
     PASSWORD: Masked text input, typically stored in .env
     NUMBER: Numeric input (int or float)
@@ -32,7 +32,7 @@ class FieldType(Enum):
 @dataclass
 class SettingField:
     """Definition of a single setting field for UI rendering.
-    
+
     Attributes:
         key: Dot-separated path to the setting (e.g., "hub.url")
         label: Human-readable label for the UI
@@ -73,7 +73,7 @@ class SettingField:
 @dataclass
 class ActionResult:
     """Result from executing a settings action.
-    
+
     Attributes:
         type: Action type ("open_browser", "show_dialog", "success", "error")
         url: URL to open for "open_browser" type
@@ -147,26 +147,26 @@ CORE_SETTINGS_SCHEMA: List[SettingField] = [
 
 def get_field_by_key(schema: List[SettingField], key: str) -> Optional[SettingField]:
     """Find a field in a schema by its key.
-    
+
     Args:
         schema: List of SettingField objects
         key: The key to search for
-        
+
     Returns:
         The matching SettingField or None
     """
-    for field in schema:
-        if field.key == key:
-            return field
+    for setting_field in schema:
+        if setting_field.key == key:
+            return setting_field
     return None
 
 
 def group_fields(schema: List[SettingField]) -> dict[str, List[SettingField]]:
     """Group fields by their group attribute.
-    
+
     Args:
         schema: List of SettingField objects
-        
+
     Returns:
         Dictionary mapping group names to lists of fields
     """

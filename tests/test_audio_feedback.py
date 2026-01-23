@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from strawberry.audio.feedback import (
+from strawberry.voice.audio.feedback import (
     SOUND_CONFIGS,
     AudioFeedback,
     FeedbackSound,

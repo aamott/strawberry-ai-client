@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def discover_vad_modules() -> Dict[str, Type[VADBackend]]:
     """Scan the vad/backends directory for VADBackend subclasses.
-    
+
     Returns:
         Dictionary mapping module names to VADBackend subclasses.
         Example: {"silero": SileroVAD, "mock": MockVAD}
@@ -34,7 +34,7 @@ def discover_vad_modules() -> Dict[str, Type[VADBackend]]:
             continue
 
         try:
-            module = importlib.import_module(f"strawberry.vad.backends.{name}")
+            module = importlib.import_module(f"strawberry.voice.vad.backends.{name}")
 
             for attr_name in dir(module):
                 obj = getattr(module, attr_name)

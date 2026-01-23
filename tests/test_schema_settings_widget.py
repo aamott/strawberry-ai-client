@@ -2,7 +2,7 @@
 
 import pytest
 
-from strawberry.core.settings_schema import FieldType, SettingField
+from strawberry.spoke_core.settings_schema import FieldType, SettingField
 
 # Only run if PySide6 is available
 pytest.importorskip("PySide6")

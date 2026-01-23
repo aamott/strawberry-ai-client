@@ -2,7 +2,7 @@
 
 import pytest
 
-from strawberry.core.settings_schema import (
+from strawberry.spoke_core.settings_schema import (
     CORE_SETTINGS_SCHEMA,
     ActionResult,
     FieldType,

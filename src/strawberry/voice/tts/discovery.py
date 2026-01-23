@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 def discover_tts_modules() -> Dict[str, Type[TTSEngine]]:
     """Scan the tts/backends directory for TTSEngine subclasses.
-    
+
     Discovers all modules in the backends directory that contain
     classes inheriting from TTSEngine.
-    
+
     Returns:
         Dictionary mapping module names to TTSEngine subclasses.
         Example: {"orca": OrcaTTS, "mock": MockTTS}
@@ -38,7 +38,7 @@ def discover_tts_modules() -> Dict[str, Type[TTSEngine]]:
             continue
 
         try:
-            module = importlib.import_module(f"strawberry.tts.backends.{name}")
+            module = importlib.import_module(f"strawberry.voice.tts.backends.{name}")
 
             # Find TTSEngine subclasses in the module
             for attr_name in dir(module):
@@ -62,10 +62,10 @@ def discover_tts_modules() -> Dict[str, Type[TTSEngine]]:
 
 def get_tts_module(name: str) -> Type[TTSEngine] | None:
     """Get a specific TTS module by name.
-    
+
     Args:
         name: Module name (e.g., "orca", "mock")
-        
+
     Returns:
         The TTSEngine subclass, or None if not found
     """
@@ -75,7 +75,7 @@ def get_tts_module(name: str) -> Type[TTSEngine] | None:
 
 def list_tts_modules() -> list[dict]:
     """List all available TTS modules with their metadata.
-    
+
     Returns:
         List of dictionaries with module info:
         [{"name": "orca", "display_name": "Orca (Picovoice)", "description": "..."}]

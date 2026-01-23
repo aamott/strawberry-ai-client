@@ -21,14 +21,14 @@ from typing import Any, Callable, List, Optional
 
 import numpy as np
 
-from ..audio.backends.sounddevice_backend import SoundDeviceBackend
-from ..audio.playback import AudioPlayer
-from ..audio.stream import AudioStream
-from ..stt import STTEngine, discover_stt_modules
-from ..tts import TTSEngine, discover_tts_modules
-from ..vad import VADBackend, VADProcessor, discover_vad_modules
-from ..wake import WakeWordDetector, discover_wake_modules
+from .audio.backends.sounddevice_backend import SoundDeviceBackend
+from .audio.playback import AudioPlayer
+from .audio.stream import AudioStream
 from .state import VoiceState, VoiceStateError, can_transition
+from .stt import STTEngine, discover_stt_modules
+from .tts import TTSEngine, discover_tts_modules
+from .vad import VADBackend, VADProcessor, discover_vad_modules
+from .wakeword import WakeWordDetector, discover_wake_modules
 
 logger = logging.getLogger(__name__)
 
@@ -280,22 +280,29 @@ class VoiceController:
         vad_cls = vad_modules.get(self._config.vad_backend)
         wake_cls = wake_modules.get(self._config.wake_backend)
 
-        # Fallback to mock if not found
         if not stt_cls:
-            stt_cls = stt_modules.get("mock")
-            logger.warning(f"STT backend '{self._config.stt_backend}' not found, using mock")
+            raise RuntimeError(
+                f"STT backend '{self._config.stt_backend}' not found. "
+                "Check settings and available STT modules."
+            )
 
         if not tts_cls:
-            tts_cls = tts_modules.get("mock")
-            logger.warning(f"TTS backend '{self._config.tts_backend}' not found, using mock")
+            raise RuntimeError(
+                f"TTS backend '{self._config.tts_backend}' not found. "
+                "Check settings and available TTS modules."
+            )
 
         if not vad_cls:
-            vad_cls = vad_modules.get("mock")
-            logger.warning(f"VAD backend '{self._config.vad_backend}' not found, using mock")
+            raise RuntimeError(
+                f"VAD backend '{self._config.vad_backend}' not found. "
+                "Check settings and available VAD modules."
+            )
 
         if not wake_cls:
-            wake_cls = wake_modules.get("mock")
-            logger.warning(f"Wake backend '{self._config.wake_backend}' not found, using mock")
+            raise RuntimeError(
+                f"Wake backend '{self._config.wake_backend}' not found. "
+                "Check settings and available wake modules."
+            )
 
         # Instantiate wake word detector first to get required frame length
         if wake_cls:
@@ -305,13 +312,11 @@ class VoiceController:
                     sensitivity=self._config.sensitivity,
                 )
             except Exception as e:
-                logger.warning(f"Wake backend '{wake_cls.__name__}' init failed: {e}, using mock")
-                mock_wake_cls = wake_modules.get("mock")
-                if mock_wake_cls:
-                    self._wake_detector = mock_wake_cls(
-                        keywords=self._config.wake_words,
-                        sensitivity=self._config.sensitivity,
-                    )
+                logger.error(f"Wake backend '{wake_cls.__name__}' init failed: {e}")
+                raise RuntimeError(
+                    "Wake word initialization failed. Check wake word settings, "
+                    "backend dependencies, and API keys."
+                ) from e
 
         # Initialize audio backend matching wake word detector's requirements
         if self._wake_detector:
@@ -332,7 +337,7 @@ class VoiceController:
             try:
                 self._vad = vad_cls(sample_rate=self._config.sample_rate)
                 # Create VAD processor with default config
-                from ..vad.processor import VADConfig
+                from .vad.processor import VADConfig
                 frame_ms = int(
                     self._wake_detector.frame_length * 1000
                     / self._wake_detector.sample_rate
@@ -343,10 +348,10 @@ class VoiceController:
                     frame_duration_ms=frame_ms,
                 )
             except Exception as e:
-                logger.warning(f"VAD init failed: {e}, using mock")
-                mock_vad_cls = vad_modules.get("mock")
-                if mock_vad_cls:
-                    self._vad = mock_vad_cls(sample_rate=self._config.sample_rate)
+                logger.error(f"VAD init failed: {e}")
+                raise RuntimeError(
+                    "VAD initialization failed. Check VAD settings and dependencies."
+                ) from e
 
         # Initialize STT engine
         if stt_cls:
@@ -354,7 +359,10 @@ class VoiceController:
                 self._stt = stt_cls()
                 logger.info(f"STT initialized: {stt_cls.__name__}")
             except Exception as e:
-                logger.warning(f"STT init failed: {e}")
+                logger.error(f"STT init failed: {e}")
+                raise RuntimeError(
+                    "STT initialization failed. Check STT settings and dependencies."
+                ) from e
 
         # Initialize TTS engine
         if tts_cls:
@@ -365,7 +373,10 @@ class VoiceController:
                 )
                 logger.info(f"TTS initialized: {tts_cls.__name__}")
             except Exception as e:
-                logger.warning(f"TTS init failed: {e}")
+                logger.error(f"TTS init failed: {e}")
+                raise RuntimeError(
+                    "TTS initialization failed. Check TTS settings and dependencies."
+                ) from e
 
     async def _cleanup_components(self) -> None:
         """Cleanup voice pipeline components."""

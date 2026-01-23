@@ -21,12 +21,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ....core.settings_schema import FieldType, SettingField
+from ....spoke_core.settings_schema import FieldType, SettingField
 
 
 class SchemaSettingsWidget(QWidget):
     """Widget that auto-renders settings from a SettingField schema.
-    
+
     Signals:
         value_changed(str, Any): Emitted when a field value changes (key, value)
         action_triggered(str): Emitted when an ACTION button is clicked
@@ -43,7 +43,7 @@ class SchemaSettingsWidget(QWidget):
         parent: Optional[QWidget] = None,
     ):
         """Initialize the schema settings widget.
-        
+
         Args:
             schema: List of SettingField definitions
             values: Current values for each field (by key)
@@ -210,7 +210,7 @@ class SchemaSettingsWidget(QWidget):
 
     def get_values(self) -> Dict[str, Any]:
         """Get all current field values.
-        
+
         Returns:
             Dictionary mapping keys to current values
         """
@@ -218,7 +218,7 @@ class SchemaSettingsWidget(QWidget):
 
     def set_values(self, values: Dict[str, Any]):
         """Set multiple field values at once.
-        
+
         Args:
             values: Dictionary mapping keys to new values
         """
@@ -227,7 +227,7 @@ class SchemaSettingsWidget(QWidget):
 
     def set_value(self, key: str, value: Any):
         """Set a single field value.
-        
+
         Args:
             key: The field key
             value: The new value
@@ -259,7 +259,7 @@ class SchemaSettingsWidget(QWidget):
 
     def refresh_dynamic_options(self, key: str):
         """Refresh options for a DYNAMIC_SELECT field.
-        
+
         Args:
             key: The field key to refresh
         """

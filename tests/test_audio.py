@@ -9,11 +9,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import numpy as np
 
-from strawberry.audio.backends.mock import (
+from strawberry.voice.audio.backends.mock import (
     MockAudioBackend,
     generate_sine_wave,
 )
-from strawberry.audio.stream import AudioStream
+from strawberry.voice.audio.stream import AudioStream
 
 # --- MockAudioBackend Tests ---
 

@@ -108,6 +108,31 @@ hub:
         reset_settings()
 
 
+def test_get_settings_loads_env_and_yaml(tmp_path):
+    """get_settings should load .env and YAML when uninitialized."""
+    reset_settings()
+
+    env_path = tmp_path / ".env"
+    env_path.write_text("HUB_DEVICE_TOKEN=env-token\n", encoding="utf-8")
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+hub:
+  url: "http://testhub:8000"
+""",
+        encoding="utf-8",
+    )
+
+    try:
+        settings = get_settings(config_path=config_path, env_path=env_path)
+
+        assert settings.hub.url == "http://testhub:8000"
+        assert settings.hub.token == "env-token"
+    finally:
+        reset_settings()
+
+
 def test_get_settings_returns_defaults():
     """get_settings() should return defaults if not loaded."""
     reset_settings()

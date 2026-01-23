@@ -1,0 +1,13 @@
+# Strawberry AI Spoke Configuration
+device:
+  name: "Strawberry Spoke"
+hub:
+  url: "http://localhost:8000"
+  token: "${HUB_TOKEN}"
+skills:
+  path: ./skills
+ui:
+  theme: dark
+  start_minimized: false
+  show_waveform: true
+

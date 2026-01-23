@@ -15,6 +15,7 @@ except ImportError:
     HAS_QASYNC = False
 
 from ...config import Settings, load_config
+from ...utils.paths import get_project_root
 from .main_window import MainWindow
 
 
@@ -222,7 +223,7 @@ def main():
     parser.add_argument(
         "-c", "--config",
         type=Path,
-        default=Path("config/config.yaml"),
+        default=get_project_root() / "src" / "config" / "config.yaml",
         help="Path to configuration file",
     )
     parser.add_argument(

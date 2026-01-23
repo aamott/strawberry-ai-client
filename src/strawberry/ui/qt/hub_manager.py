@@ -11,7 +11,7 @@ from typing import Callable, List, Optional
 
 from PySide6.QtCore import QObject, Signal
 
-from ...hub import HubClient, HubConfig
+from ...hub import HubClient, HubConfig, HubError
 
 logger = logging.getLogger(__name__)
 
@@ -137,25 +137,38 @@ class HubConnectionManager(QObject):
         try:
             timeout = self._client.config.timeout
             healthy = await asyncio.wait_for(self._client.health(), timeout=timeout)
-            self._connected = healthy
-
-            if healthy:
-                self._emit_status(True)
-                self.message.emit("Connected to Hub. Ready to chat!")
-
-                # Connect WebSocket for skill execution requests
-                asyncio.create_task(self._client.connect_websocket())
-
-                # Trigger skill registration callback
-                if self._on_connected_callback:
-                    self._on_connected_callback()
-            else:
+            if not healthy:
                 self._emit_status(
                     False, error="Hub is not responding. Check if the server is running."
                 )
                 self.message.emit(
                     "Hub is not responding. Check if the server is running."
                 )
+                return
+
+            # Health endpoint does not validate auth. Verify token works.
+            try:
+                await asyncio.wait_for(self._client.get_device_info(), timeout=timeout)
+            except HubError as e:
+                err_summary = self._format_exception(e)
+                self._last_error = err_summary
+                self._emit_status(False, error=err_summary)
+                self.message.emit(
+                    "Hub authentication failed. Update your device token in Settings "
+                    "(Environment tab)."
+                )
+                return
+
+            self._connected = True
+            self._emit_status(True)
+            self.message.emit("Connected to Hub. Ready to chat!")
+
+            # Connect WebSocket for skill execution requests
+            asyncio.create_task(self._client.connect_websocket())
+
+            # Trigger skill registration callback
+            if self._on_connected_callback:
+                self._on_connected_callback()
 
         except asyncio.TimeoutError:
             err_summary = "TimeoutError: Hub health check timed out"

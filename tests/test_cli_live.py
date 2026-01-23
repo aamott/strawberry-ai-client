@@ -53,7 +53,7 @@ class TestSpokeCoreToolExecution:
     @pytest.fixture
     async def core(self):
         """Create and start a SpokeCore instance."""
-        from strawberry.core import SpokeCore
+        from strawberry.spoke_core import SpokeCore
 
         core = SpokeCore()
         await core.start()
@@ -86,7 +86,7 @@ class TestSpokeCoreToolExecution:
             await asyncio.sleep(0.5)  # Allow events to process
 
             # Should have received at least a MessageAdded event
-            from strawberry.core import MessageAdded
+            from strawberry.spoke_core import MessageAdded
             message_events = [e for e in events if isinstance(e, MessageAdded)]
             assert len(message_events) >= 1, f"Expected message events, got: {events}"
 
@@ -121,7 +121,7 @@ class TestSpokeCoreToolExecution:
             )
             await asyncio.sleep(2.0)  # Allow time for LLM + tool execution
 
-            from strawberry.core import ToolCallResult, ToolCallStarted
+            from strawberry.spoke_core import ToolCallResult, ToolCallStarted
 
             tool_starts = [e for e in events if isinstance(e, ToolCallStarted)]
             tool_results = [e for e in events if isinstance(e, ToolCallResult)]
@@ -167,12 +167,15 @@ class TestSpokeCoreToolExecution:
             # Ask for a calculation - should use python_exec with calculator
             await core.send_message(
                 session.id,
-                "You MUST use the python_exec tool to calculate: device.CalculatorSkill.multiply(7, 8). "
-                "Do not explain, just run the code."
+                (
+                    "You MUST use the python_exec tool to calculate: "
+                    "device.CalculatorSkill.multiply(7, 8). "
+                    "Do not explain, just run the code."
+                )
             )
             await asyncio.sleep(3.0)  # Increased timeout for robustness
 
-            from strawberry.core import MessageAdded, ToolCallResult, ToolCallStarted
+            from strawberry.spoke_core import MessageAdded, ToolCallResult, ToolCallStarted
 
             tool_starts = [e for e in events if isinstance(e, ToolCallStarted)]
             tool_results = [e for e in events if isinstance(e, ToolCallResult)]
@@ -268,7 +271,7 @@ if __name__ == "__main__":
         print("Running CLI live integration tests...")
         print(f"GOOGLE_AI_STUDIO_API_KEY set: {bool(os.environ.get('GOOGLE_AI_STUDIO_API_KEY'))}")
 
-        from strawberry.core import MessageAdded, SpokeCore, ToolCallResult, ToolCallStarted
+        from strawberry.spoke_core import MessageAdded, SpokeCore, ToolCallResult, ToolCallStarted
 
         core = SpokeCore()
         await core.start()

@@ -5,7 +5,7 @@ from pathlib import Path
 
 def get_project_root() -> Path:
     """Get the project root directory (ai-pc-spoke).
-    
+
     Returns:
         Path to the project root.
     """
@@ -19,7 +19,7 @@ def get_project_root() -> Path:
 
 def get_skills_dir() -> Path:
     """Get the default skills directory.
-    
+
     Returns:
         Path to the skills directory (project_root/skills).
     """
