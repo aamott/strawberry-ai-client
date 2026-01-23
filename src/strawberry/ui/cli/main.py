@@ -116,7 +116,8 @@ class CLIApp:
         self._core = SpokeCore()
         self._session_id: Optional[str] = None
         self._running = False
-        self._awaiting_response = False
+        self._response_event = asyncio.Event()
+        self._response_event.set()
         self._last_tool_result: Optional[str] = None
         self._pending_tool_calls: dict = {}
 
@@ -183,12 +184,10 @@ class CLIApp:
                         await asyncio.sleep(0.05)
                         continue
 
-                if self._awaiting_response:
-                    await asyncio.sleep(0.05)
-                    continue
+                if not self._response_event.is_set():
+                    await self._response_event.wait()
 
                 prompt = renderer.print_prompt()
-                renderer.set_prompt_active(True)
                 sys.stdout.write(prompt)
                 sys.stdout.flush()
 
@@ -197,11 +196,13 @@ class CLIApp:
                 else:
                     user_input = await asyncio.to_thread(sys.stdin.readline)
 
-                renderer.set_prompt_active(False)
-
                 user_input = user_input.strip()
                 if not user_input:
                     continue
+
+                if not sys.stdin.isatty():
+                    sys.stdout.write(f"{user_input}\n")
+                    sys.stdout.flush()
 
                 # Handle slash commands
                 if user_input.startswith("/"):
@@ -210,8 +211,9 @@ class CLIApp:
 
                 # Send message to core
                 if self._session_id:
-                    self._awaiting_response = True
+                    self._response_event.clear()
                     await self._core.send_message(self._session_id, user_input)
+                    await self._response_event.wait()
 
             except EOFError:
                 break
@@ -239,22 +241,28 @@ class CLIApp:
 
         elif isinstance(event, CoreError):
             renderer.print_error(event.error)
-            self._awaiting_response = False
+            self._response_event.set()
 
         elif isinstance(event, MessageAdded):
             if event.role == "assistant":
                 renderer.print_assistant(event.content)
-                self._awaiting_response = False
+                self._response_event.set()
             elif event.role == "system":
                 renderer.print_system(event.content)
             # User messages are not echoed (user already sees their input)
 
         elif isinstance(event, ToolCallStarted):
-            # Build args preview
-            args_preview = ", ".join(
-                f"{k}={v!r}" for k, v in list(event.arguments.items())[:2]
-            )
-            renderer.print_tool_call(event.tool_name, args_preview)
+            if event.tool_name == "python_exec" and "code" in event.arguments:
+                renderer.print_tool_call(
+                    event.tool_name,
+                    str(event.arguments.get("code") or ""),
+                )
+            else:
+                # Build args preview
+                args_preview = ", ".join(
+                    f"{k}={v!r}" for k, v in list(event.arguments.items())[:2]
+                )
+                renderer.print_tool_call(event.tool_name, args_preview)
             # Track for /last command
             self._pending_tool_calls[event.tool_name] = event.arguments
 

@@ -27,19 +27,6 @@ class Colors:
     BG_GREEN = "\033[42m"
 
 
-_PROMPT_ACTIVE = False
-
-
-def set_prompt_active(active: bool) -> None:
-    """Set whether the CLI prompt is currently waiting for user input.
-
-    Args:
-        active: True when prompt is visible and waiting for input.
-    """
-    global _PROMPT_ACTIVE
-    _PROMPT_ACTIVE = active
-
-
 def styled(text: str, *styles: str) -> str:
     """Apply ANSI styles to text.
 
@@ -92,6 +79,23 @@ def print_tool_call(
         result_preview: Preview of result (max 40 chars)
         success: Whether the tool call succeeded
     """
+    if tool_name == "python_exec" and "\n" in args_preview:
+        call_part = styled(f"* {tool_name}", Colors.CYAN)
+        args_part = styled("(code=)", Colors.DIM)
+        if result_preview is not None:
+            arrow = styled(" → ", Colors.GRAY)
+            if success:
+                result_part = styled(result_preview[:40] + "...", Colors.GREEN)
+            else:
+                result_part = styled(result_preview[:40] + "...", Colors.RED)
+            print(f"{call_part}{args_part}{arrow}{result_part}")
+            return
+
+        print(f"{call_part}{args_part} ...")
+        for line in args_preview.splitlines():
+            print(styled(f"  {line}", Colors.DIM))
+        return
+
     # Truncate previews
     if len(args_preview) > 40:
         args_preview = args_preview[:37] + "..."
@@ -120,7 +124,7 @@ def print_tool_result(
     result: Optional[str] = None,
     error: Optional[str] = None,
 ) -> None:
-    """Print tool result (updates the previous tool call line).
+    """Print tool result on a new line.
 
     Args:
         tool_name: Name of the tool
@@ -128,11 +132,8 @@ def print_tool_result(
         result: Result text if success
         error: Error text if failed
     """
-    # Move cursor up and clear line to update when prompt isn't active
-    if not _PROMPT_ACTIVE:
-        sys.stdout.write("\033[1A\033[2K")
-    else:
-        sys.stdout.write("\n")
+    # Print tool results on a new line to avoid overwriting prompt/input lines
+    sys.stdout.write("\n")
 
     output = result if success else error
     preview = output[:40] + "..." if output and len(output) > 40 else (output or "")

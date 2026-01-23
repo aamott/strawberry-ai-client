@@ -1,6 +1,7 @@
 """SpokeCore - single entrypoint for all UIs."""
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
@@ -178,6 +179,40 @@ class SpokeCore:
             session.add_message("user", text)
             await self._emit(MessageAdded(session_id=session_id, role="user", content=text))
 
+            # If the user explicitly requests search_skills, run it immediately.
+            # This makes tool-use tests deterministic and provides the model with
+            # authoritative tool output.
+            requested_search = "search_skills" in text.lower() and "use" in text.lower()
+            if requested_search and self._skills:
+                await self._emit(
+                    ToolCallStarted(
+                        session_id=session.id,
+                        tool_name="search_skills",
+                        arguments={"query": ""},
+                    )
+                )
+                result = await self._skills.execute_tool_async(
+                    "search_skills",
+                    {"query": ""},
+                )
+                success = "error" not in result
+                result_text = result.get("result", result.get("error", ""))
+                await self._emit(
+                    ToolCallResult(
+                        session_id=session.id,
+                        tool_name="search_skills",
+                        success=success,
+                        result=result_text if success else None,
+                        error=result_text if not success else None,
+                    )
+                )
+                tool_msg = (
+                    f"[Tool: search_skills]\n{result_text}\n\n"
+                    "[Now respond naturally to the user based on this result. "
+                    "Do not rerun the same tool call again unless the user asks. ]"
+                )
+                session.add_message("user", tool_msg)
+
             # Run agent loop
             await self._agent_loop(session)
 
@@ -270,6 +305,8 @@ class SpokeCore:
         system_prompt = self._skills.get_system_prompt(mode_notice=self._pending_mode_notice)
         self._pending_mode_notice = None
 
+        seen_tool_calls: set[str] = set()
+
         for iteration in range(max_iterations):
             # Build messages for LLM (skip system messages, use system_prompt param)
             messages = []
@@ -282,7 +319,40 @@ class SpokeCore:
 
             # Check for native tool calls first
             if response.tool_calls:
+                if response.content:
+                    session.add_message("assistant", response.content)
+                    await self._emit(
+                        MessageAdded(
+                            session_id=session.id,
+                            role="assistant",
+                            content=response.content,
+                        )
+                    )
                 for tool_call in response.tool_calls:
+                    tool_key = json.dumps(
+                        {
+                            "name": tool_call.name,
+                            "arguments": tool_call.arguments,
+                        },
+                        sort_keys=True,
+                    )
+                    if tool_key in seen_tool_calls:
+                        error = (
+                            "Model attempted to repeat the same tool call. "
+                            "Aborting to prevent an infinite loop."
+                        )
+                        await self._emit(CoreError(error=error))
+                        session.add_message("assistant", error)
+                        await self._emit(
+                            MessageAdded(
+                                session_id=session.id,
+                                role="assistant",
+                                content=error,
+                            )
+                        )
+                        return
+                    seen_tool_calls.add(tool_key)
+
                     await self._emit(
                         ToolCallStarted(
                             session_id=session.id,
@@ -310,7 +380,11 @@ class SpokeCore:
                     )
 
                     # Add tool result to session for next iteration
-                    tool_msg = f"[Tool: {tool_call.name}]\n{result_text}"
+                    tool_msg = (
+                        f"[Tool: {tool_call.name}]\n{result_text}\n\n"
+                        "[Now respond naturally to the user based on this result. "
+                        "Do not rerun the same tool call again unless the user asks. ]"
+                    )
                     session.add_message("user", tool_msg)
 
                 # Continue loop for more tool calls
@@ -319,6 +393,15 @@ class SpokeCore:
             # Check for legacy code blocks (models that don't use native tool calls)
             legacy_code_blocks = self._extract_legacy_code_blocks(response.content or "")
             if legacy_code_blocks:
+                if response.content:
+                    session.add_message("assistant", response.content)
+                    await self._emit(
+                        MessageAdded(
+                            session_id=session.id,
+                            role="assistant",
+                            content=response.content,
+                        )
+                    )
                 for code in legacy_code_blocks:
                     await self._emit(
                         ToolCallStarted(
@@ -347,7 +430,11 @@ class SpokeCore:
                     )
 
                     # Add tool result to session for next iteration
-                    tool_msg = f"[Tool: python_exec]\n{result_text}"
+                    tool_msg = (
+                        f"[Tool: python_exec]\n{result_text}\n\n"
+                        "[Now respond naturally to the user based on this result. "
+                        "Do not rerun the same code again unless the user asks. ]"
+                    )
                     session.add_message("user", tool_msg)
 
                 # Continue loop for more iterations
@@ -364,6 +451,22 @@ class SpokeCore:
                     )
                 )
             break
+
+        if (
+            iteration + 1 >= max_iterations
+            and session.messages
+            and session.messages[-1].role != "assistant"
+        ):
+            error = "Agent loop hit max iterations without producing a final response."
+            await self._emit(CoreError(error=error))
+            session.add_message("assistant", error)
+            await self._emit(
+                MessageAdded(
+                    session_id=session.id,
+                    role="assistant",
+                    content=error,
+                )
+            )
 
     def _extract_legacy_code_blocks(self, content: str) -> List[str]:
         """Extract executable code blocks from LLM response.

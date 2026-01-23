@@ -72,6 +72,11 @@ class SkillService:
         "- Remote: python_exec({{\"code\": \"print(devices.living_room_pc."
         "MediaControlSkill.set_volume(level=20))\"}})\n"
         "\n"
+        "Example Flow (recommended):\n"
+        "1. search_skills({{\"query\": \"multiply\"}})\n"
+        "2. describe_function({{\"path\": \"CalculatorSkill.multiply\"}})\n"
+        "3. python_exec({{\"code\": \"print(device.CalculatorSkill.multiply(a=128, b=5))\"}})\n"
+        "\n"
         "## Available Skills\n"
         "\n"
         "{skill_descriptions}\n"
@@ -81,7 +86,12 @@ class SkillService:
         "1. Use python_exec to call skills - do NOT call skill methods directly as tools.\n"
         "2. Do NOT output code blocks or ```tool_outputs``` - use actual tool calls.\n"
         "3. Keep responses concise and friendly.\n"
-        "4. If you need a skill result, call python_exec with the appropriate code."
+        "4. If you need a skill result, call python_exec with the appropriate code.\n"
+        "5. Do NOT ask the user for permission to use skills/tools. Use them when needed.\n"
+        "6. Do NOT rerun the same tool call to double-check; use the first result.\n"
+        "7. After tool calls complete, ALWAYS provide a final natural-language answer.\n"
+        "8. If a tool call fails with 'Unknown tool', immediately switch to python_exec "
+        "and proceed."
     )
 
     def __init__(
@@ -839,55 +849,19 @@ class SkillService:
                     return {"error": result.error}
 
             else:
-                # Try to handle skill method calls directly
-                # The model might call "multiply" instead of python_exec
-                result = await self._try_execute_skill_method_async(
-                    tool_name, arguments
-                )
-                if result is not None:
-                    return result
-                return {"error": f"Unknown tool: {tool_name}"}
+                return {
+                    "error": (
+                        f"Unknown tool: {tool_name}. "
+                        "Use one of the available tools: search_skills, "
+                        "describe_function, python_exec. "
+                        "To call a skill method like multiply, use python_exec with code like: "
+                        "print(device.CalculatorSkill.multiply(a=5, b=3))"
+                    )
+                }
 
         except Exception as e:
             import traceback
             return {"error": f"{type(e).__name__}: {e}\n{traceback.format_exc()}"}
-
-    async def _try_execute_skill_method_async(
-        self, method_name: str, arguments: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """Try to execute a skill method by name.
-
-        The model sometimes calls skill methods directly instead of using python_exec.
-        This method tries to find and execute the method.
-
-        Args:
-            method_name: Method name (e.g., "multiply", "get_current_time")
-            arguments: Method arguments
-
-        Returns:
-            Result dict if method found and executed, None otherwise
-        """
-        self._ensure_skills_loaded()
-
-        # Search for the method across all skills
-        for skill in self._loader.get_all_skills():
-            for method in skill.methods:
-                if method.name == method_name:
-                    # Found the method - wrap in python_exec
-                    args_str = ", ".join(
-                        f"{k}={repr(v)}" for k, v in arguments.items()
-                    )
-                    code = f"print(device.{skill.name}.{method_name}({args_str}))"
-                    logger.info(
-                        f"Auto-wrapping skill method call: {method_name} -> {code}"
-                    )
-                    result = await self.execute_code_async(code)
-                    if result.success:
-                        return {"result": result.result or "(no output)"}
-                    else:
-                        return {"error": result.error}
-
-        return None
 
     def _execute_search_skills(self, query: str, device_limit: int = 10) -> str:
         """Execute search_skills tool.
