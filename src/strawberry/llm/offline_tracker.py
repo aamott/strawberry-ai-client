@@ -64,6 +64,14 @@ class OfflineModeTracker:
                 except Exception as e:
                     logger.error(f"Error in offline mode listener: {e}")
 
+    def set_offline_state(self, offline: bool) -> None:
+        """Set offline state explicitly.
+
+        Args:
+            offline: True to mark offline mode, False to mark online.
+        """
+        self._set_offline(offline)
+
     @property
     def is_offline(self) -> bool:
         """Check if currently in offline mode."""

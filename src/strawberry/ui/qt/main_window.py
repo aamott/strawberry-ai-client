@@ -22,6 +22,7 @@ from ...config.persistence import persist_settings_and_env
 from ...hub.client import HubError
 from ...llm import OfflineModeTracker, TensorZeroClient
 from ...models import ChatMessage
+from ...spoke_core import ConnectionChanged, CoreError, ModeChanged, SpokeCore
 from ...voice import (
     VoiceConfig,
     VoiceController,
@@ -42,7 +43,6 @@ from .agent_helpers import (
     format_tool_output_message,
     get_final_display_content,
 )
-from .hub_manager import HubConnectionManager, HubStatus
 from .session_controller import SessionController
 from .theme import DARK_THEME, THEMES, get_stylesheet
 from .widgets import (
@@ -80,7 +80,8 @@ class MainWindow(QMainWindow):
 
         self.settings = settings
         self._theme = THEMES.get(settings.ui.theme, DARK_THEME)
-        self._hub_manager = HubConnectionManager(self)
+        self._core = SpokeCore()
+        self._core_subscription = None
         self._conversation_history: List[ChatMessage] = []
         self._connected = False
         self._voice_controller: Optional[VoiceController] = None
@@ -98,13 +99,12 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._apply_theme()
 
-        # Connect hub manager signals
-        self._hub_manager.status_changed.connect(self._on_hub_status_changed)
-        self._hub_manager.message.connect(self._on_hub_message)
-
         # Initialize offline mode components
         self._init_local_storage()
         self._init_tensorzero()
+
+        # Start SpokeCore and hook hub events
+        QTimer.singleShot(0, lambda: asyncio.ensure_future(self._start_core()))
 
         # Ensure we have at least one session and populate sidebar.
         # We schedule via QTimer so this runs after the Qt event loop is active.
@@ -116,7 +116,44 @@ class MainWindow(QMainWindow):
         # Initialize skills and Hub connection
         self._init_skills()
         self._check_external_dependencies()
-        QTimer.singleShot(100, self._init_hub)
+        QTimer.singleShot(100, lambda: asyncio.ensure_future(self._connect_hub()))
+
+    async def _start_core(self) -> None:
+        """Start SpokeCore and subscribe to hub events."""
+        try:
+            await self._core.start()
+
+            def _handler(event):
+                return asyncio.ensure_future(self._handle_core_event(event))
+
+            self._core_subscription = self._core.subscribe(_handler)
+        except Exception as exc:
+            logger.exception("Failed to start SpokeCore")
+            self._chat_area.add_system_message(f"Failed to start core: {exc}")
+
+    async def _connect_hub(self) -> None:
+        """Connect to the Hub using SpokeCore."""
+        await self._core.connect_hub()
+
+    async def _handle_core_event(self, event) -> None:
+        """Handle SpokeCore events for hub connection and mode updates."""
+        if isinstance(event, ConnectionChanged):
+            self._connected = event.connected
+            self._update_hub_status(event.connected)
+
+            if event.connected and self._sessions and self._core.hub_client:
+                self._sessions.set_hub_client(self._core.hub_client)
+
+            if event.error:
+                self._chat_area.add_system_message(event.error)
+
+        elif isinstance(event, ModeChanged):
+            self._offline_tracker.set_offline_state(not event.online)
+            if event.message:
+                self._chat_area.add_system_message(event.message)
+
+        elif isinstance(event, CoreError):
+            self._chat_area.add_system_message(f"Core error: {event.error}")
 
     async def _bootstrap_sessions(self) -> None:
         """Ensure sessions are ready and visible in the sidebar.
@@ -478,43 +515,6 @@ class MainWindow(QMainWindow):
         finally:
             self._offline_banner.set_syncing(False)
 
-    def _init_hub(self):
-        """Initialize Hub connection via HubConnectionManager."""
-        # Set callback for when connection is established
-        self._hub_manager.set_on_connected_callback(self._on_hub_connected)
-
-        # Initialize connection
-        self._hub_manager.initialize(
-            url=self.settings.hub.url,
-            token=self.settings.hub.token or "",
-            timeout=self.settings.hub.timeout_seconds,
-        )
-
-    def _on_hub_connected(self):
-        """Called when Hub connection is established."""
-        # Update session controller with hub client
-        if self._sessions and self._hub_manager.client:
-            self._sessions.set_hub_client(self._hub_manager.client)
-
-        if self._hub_manager.client and self._skill_service:
-            self._chat_area.add_system_message(
-                "Runtime mode: Online  devices API enabled (legacy alias: device_manager)"
-            )
-
-        # Register skills with Hub
-        asyncio.ensure_future(self._register_skills_with_hub())
-
-    @Slot(object)
-    def _on_hub_status_changed(self, status: HubStatus):
-        """Handle Hub status change from HubConnectionManager."""
-        self._connected = status.connected
-        self._update_hub_status(status.connected)
-
-    @Slot(str)
-    def _on_hub_message(self, message: str):
-        """Handle system message from HubConnectionManager."""
-        self._chat_area.add_system_message(message)
-
     @Slot(bool)
     def _update_hub_status(self, connected: bool):
         """Update Hub connection status UI."""
@@ -541,58 +541,6 @@ class MainWindow(QMainWindow):
             border-radius: 6px;
             border: 1px solid {self._theme.border};
         """)
-
-    async def _register_skills_with_hub(self):
-        """Register skills with Hub and start heartbeat."""
-        hub_client = self._hub_manager.client
-        if not self._skill_service or not hub_client:
-            return
-
-        # Attach hub client on skill service (also switches runtime mode to multi-device)
-        self._skill_service.set_hub_client(hub_client)
-
-        # Ensure Hub -> Spoke skill execution requests can be handled.
-        # Without this, HubClient receives `skill_request` messages but raises
-        # RuntimeError("No skill callback registered").
-        async def _ws_skill_callback(
-            skill_name: str,
-            method_name: str,
-            args: list,
-            kwargs: dict,
-        ):
-            return await self._skill_service.execute_skill_by_name(
-                skill_name, method_name, args, kwargs
-            )
-
-        hub_client.set_skill_callback(_ws_skill_callback)
-
-        # Register skills
-        try:
-            success = await self._skill_service.register_with_hub()
-        except HubError as e:
-            self._chat_area.add_system_message(
-                f"Failed to register skills with Hub: {e} (running in local mode)"
-            )
-            return
-
-        if success:
-            skills = self._skill_service.get_all_skills()
-            if skills:
-                self._chat_area.add_system_message(
-                    f"Registered {len(skills)} skill(s) with Hub"
-                )
-                # Start heartbeat
-                await self._skill_service.start_heartbeat()
-
-                # Notify that remote skills are now available
-                self._chat_area.add_system_message(
-                    "Remote skills from connected devices are now available. "
-                    "Use search_skills() to discover them."
-                )
-        else:
-            self._chat_area.add_system_message(
-                "Failed to register skills with Hub (running in local mode)"
-            )
 
     @Slot(str)
     def _on_message_submitted(self, message: str):
@@ -627,7 +575,7 @@ class MainWindow(QMainWindow):
         if self._tensorzero_client:
             self._input_area.set_sending(True)
             asyncio.ensure_future(self._send_message_via_tensorzero(message))
-        elif self._hub_manager.client and self._connected:
+        elif self._core.hub_client and self._connected:
             self._input_area.set_sending(True)
             asyncio.ensure_future(self._send_message(message))
         else:
@@ -669,7 +617,7 @@ class MainWindow(QMainWindow):
                 print(f"[Agent] Iteration {iteration + 1}/{ctx.max_iterations}")
 
                 # Get response from LLM
-                response = await self._hub_manager.client.chat(
+                response = await self._core.hub_client.chat(
                     messages=messages_to_send,
                     temperature=self.settings.llm.temperature,
                 )
@@ -773,8 +721,8 @@ class MainWindow(QMainWindow):
         # Check if we should route to Hub (online mode)
         # Hub executes tools when online; Spoke executes locally when offline
         use_hub_tools = (
-            self._hub_manager.connected
-            and self._hub_manager.client is not None
+            self._core.is_online()
+            and self._core.hub_client is not None
             and not self._offline_tracker.is_offline
         )
 
@@ -821,7 +769,7 @@ class MainWindow(QMainWindow):
 
             # Call Hub with enable_tools=true
             print("[Hub Agent] Sending message to Hub with tools enabled")
-            response = await self._hub_manager.client.chat(
+            response = await self._core.hub_client.chat(
                 messages=hub_messages,
                 temperature=self.settings.llm.temperature,
                 enable_tools=True,
@@ -1262,7 +1210,7 @@ class MainWindow(QMainWindow):
     async def _create_hub_session(self):
         """Create a new session on the Hub (legacy, used when no local storage)."""
         try:
-            session = await self._hub_manager.client.create_session()
+            session = await self._core.hub_client.create_session()
             self._current_session_id = session["id"]
             await self._refresh_sessions()
         except Exception as e:
@@ -1287,7 +1235,7 @@ class MainWindow(QMainWindow):
 
             messages = await self._sessions.load_session_messages(
                 session_id=session_id,
-                hub_client=self._hub_manager.client,
+                hub_client=self._core.hub_client,
                 connected=self._connected,
             )
 
@@ -1327,7 +1275,7 @@ class MainWindow(QMainWindow):
                     await self._sessions.rename_session(
                         session_id=session_id,
                         new_title=new_title,
-                        hub_client=self._hub_manager.client,
+                        hub_client=self._core.hub_client,
                         connected=self._connected,
                     )
                     await self._refresh_sessions()
@@ -1342,7 +1290,7 @@ class MainWindow(QMainWindow):
 
             await self._sessions.delete_session(
                 session_id=session_id,
-                hub_client=self._hub_manager.client,
+                hub_client=self._core.hub_client,
                 connected=self._connected,
             )
 
@@ -1359,7 +1307,7 @@ class MainWindow(QMainWindow):
                 return
 
             sessions_data = await self._sessions.list_sessions_for_sidebar(
-                hub_client=self._hub_manager.client,
+                hub_client=self._core.hub_client,
                 connected=self._connected,
             )
             self._chat_sidebar.set_sessions(sessions_data)
@@ -1742,11 +1690,12 @@ class MainWindow(QMainWindow):
 
     def _reconnect_hub(self):
         """Reconnect to Hub with new settings."""
-        self._hub_manager.reconnect(
-            url=self.settings.hub.url,
-            token=self.settings.hub.token or "",
-            timeout=self.settings.hub.timeout_seconds,
-        )
+        asyncio.ensure_future(self._reconnect_hub_async())
+
+    async def _reconnect_hub_async(self) -> None:
+        """Reconnect to Hub using SpokeCore."""
+        await self._core.disconnect_hub()
+        await self._core.connect_hub()
 
     def _on_about(self):
         """Show about dialog."""
@@ -1811,7 +1760,7 @@ class MainWindow(QMainWindow):
                 asyncio.run(self._voice_controller.stop())
 
         # Cleanup Hub connection
-        asyncio.ensure_future(self._hub_manager.close())
+        asyncio.ensure_future(self._core.stop())
 
         # Cleanup TensorZero client
         if self._tensorzero_client:
