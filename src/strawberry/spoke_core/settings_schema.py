@@ -142,6 +142,16 @@ CORE_SETTINGS_SCHEMA: List[SettingField] = [
         description="Allow running without Hub connection",
         group="offline",
     ),
+
+    # Skills
+    SettingField(
+        key="skills.allow_unsafe_exec",
+        label="Allow Unsafe Skill Execution",
+        type=FieldType.CHECKBOX,
+        default=False,
+        description="Allow skills to run code directly outside the sandbox (security risk)",
+        group="skills",
+    ),
 ]
 
 

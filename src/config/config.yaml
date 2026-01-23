@@ -6,6 +6,7 @@ hub:
   token: "${HUB_TOKEN}"
 skills:
   path: ./skills
+  allow_unsafe_exec: true
 ui:
   theme: dark
   start_minimized: false
