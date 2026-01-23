@@ -4,33 +4,104 @@ Uses SpokeCore for chat and skill execution with async event handling.
 """
 
 import asyncio
+import atexit
 import logging
+import os
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from ...spoke_core import (
-    ConnectionChanged,
-    CoreError,
-    CoreEvent,
-    CoreReady,
-    MessageAdded,
-    ModeChanged,
-    SpokeCore,
-    ToolCallResult,
-    ToolCallStarted,
-)
 from . import renderer
 
-# Configure logging to file instead of console
+# Configure logging to file instead of console.
 LOG_DIR = Path(__file__).parent.parent.parent.parent.parent / ".cli-logs"
 LOG_DIR.mkdir(exist_ok=True)
 LOG_FILE = LOG_DIR / "cli.log"
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler(LOG_FILE)],
-)
+ConnectionChanged = None
+CoreError = None
+CoreEvent = None
+CoreReady = None
+MessageAdded = None
+ModeChanged = None
+SpokeCore = None
+ToolCallResult = None
+ToolCallStarted = None
+
+if TYPE_CHECKING:
+    from ...spoke_core import (  # noqa: F401
+        ConnectionChanged as ConnectionChangedType,
+    )
+
+
+def _configure_cli_logging() -> None:
+    """Configure file logging and redirect stderr for CLI logs."""
+    # Silence TensorZero Rust logs completely - must be set before gateway init
+    os.environ["RUST_LOG"] = "off"
+    stderr_log_handle = LOG_FILE.open("a", encoding="utf-8")
+    os.dup2(stderr_log_handle.fileno(), sys.stderr.fileno())
+    sys.stderr = stderr_log_handle
+    atexit.register(stderr_log_handle.close)
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.FileHandler(LOG_FILE)],
+    )
+
+
+def _load_core_types() -> None:
+    """Load SpokeCore symbols after CLI logging is configured."""
+    global ConnectionChanged
+    global CoreError
+    global CoreEvent
+    global CoreReady
+    global MessageAdded
+    global ModeChanged
+    global SpokeCore
+    global ToolCallResult
+    global ToolCallStarted
+
+    if SpokeCore is not None:
+        return
+
+    from ...spoke_core import (
+        ConnectionChanged as _ConnectionChanged,
+    )
+    from ...spoke_core import (
+        CoreError as _CoreError,
+    )
+    from ...spoke_core import (
+        CoreEvent as _CoreEvent,
+    )
+    from ...spoke_core import (
+        CoreReady as _CoreReady,
+    )
+    from ...spoke_core import (
+        MessageAdded as _MessageAdded,
+    )
+    from ...spoke_core import (
+        ModeChanged as _ModeChanged,
+    )
+    from ...spoke_core import (
+        SpokeCore as _SpokeCore,
+    )
+    from ...spoke_core import (
+        ToolCallResult as _ToolCallResult,
+    )
+    from ...spoke_core import (
+        ToolCallStarted as _ToolCallStarted,
+    )
+
+    ConnectionChanged = _ConnectionChanged
+    CoreError = _CoreError
+    CoreEvent = _CoreEvent
+    CoreReady = _CoreReady
+    MessageAdded = _MessageAdded
+    ModeChanged = _ModeChanged
+    SpokeCore = _SpokeCore
+    ToolCallResult = _ToolCallResult
+    ToolCallStarted = _ToolCallStarted
 logger = logging.getLogger(__name__)
 
 # Suppress console output from libraries
@@ -45,6 +116,7 @@ class CLIApp:
         self._core = SpokeCore()
         self._session_id: Optional[str] = None
         self._running = False
+        self._awaiting_response = False
         self._last_tool_result: Optional[str] = None
         self._pending_tool_calls: dict = {}
 
@@ -105,13 +177,27 @@ class CLIApp:
 
         while self._running:
             try:
+                if self._session_id:
+                    session = self._core.get_session(self._session_id)
+                    if session and session.busy:
+                        await asyncio.sleep(0.05)
+                        continue
+
+                if self._awaiting_response:
+                    await asyncio.sleep(0.05)
+                    continue
+
                 prompt = renderer.print_prompt()
+                renderer.set_prompt_active(True)
+                sys.stdout.write(prompt)
+                sys.stdout.flush()
 
                 if use_aioconsole:
-                    user_input = await ainput(prompt)
+                    user_input = await ainput("")
                 else:
-                    # Fallback to blocking input in thread
-                    user_input = await asyncio.to_thread(input, prompt)
+                    user_input = await asyncio.to_thread(sys.stdin.readline)
+
+                renderer.set_prompt_active(False)
 
                 user_input = user_input.strip()
                 if not user_input:
@@ -124,6 +210,7 @@ class CLIApp:
 
                 # Send message to core
                 if self._session_id:
+                    self._awaiting_response = True
                     await self._core.send_message(self._session_id, user_input)
 
             except EOFError:
@@ -152,10 +239,12 @@ class CLIApp:
 
         elif isinstance(event, CoreError):
             renderer.print_error(event.error)
+            self._awaiting_response = False
 
         elif isinstance(event, MessageAdded):
             if event.role == "assistant":
                 renderer.print_assistant(event.content)
+                self._awaiting_response = False
             elif event.role == "system":
                 renderer.print_system(event.content)
             # User messages are not echoed (user already sees their input)
@@ -244,6 +333,8 @@ class CLIApp:
 
 def main() -> None:
     """CLI entrypoint."""
+    _configure_cli_logging()
+    _load_core_types()
     app = CLIApp()
     try:
         asyncio.run(app.run())

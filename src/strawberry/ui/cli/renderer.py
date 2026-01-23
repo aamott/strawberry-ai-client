@@ -27,6 +27,19 @@ class Colors:
     BG_GREEN = "\033[42m"
 
 
+_PROMPT_ACTIVE = False
+
+
+def set_prompt_active(active: bool) -> None:
+    """Set whether the CLI prompt is currently waiting for user input.
+
+    Args:
+        active: True when prompt is visible and waiting for input.
+    """
+    global _PROMPT_ACTIVE
+    _PROMPT_ACTIVE = active
+
+
 def styled(text: str, *styles: str) -> str:
     """Apply ANSI styles to text.
 
@@ -115,8 +128,11 @@ def print_tool_result(
         result: Result text if success
         error: Error text if failed
     """
-    # Move cursor up and clear line to update
-    sys.stdout.write("\033[1A\033[2K")
+    # Move cursor up and clear line to update when prompt isn't active
+    if not _PROMPT_ACTIVE:
+        sys.stdout.write("\033[1A\033[2K")
+    else:
+        sys.stdout.write("\n")
 
     output = result if success else error
     preview = output[:40] + "..." if output and len(output) > 40 else (output or "")
