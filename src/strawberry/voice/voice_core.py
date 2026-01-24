@@ -249,6 +249,12 @@ class VoiceCore:
         self._speak_thread: Optional[threading.Thread] = None
         self._speak_stop = threading.Event()
 
+        # Backend re-initialization tracking
+        self._reinit_pending: set[str] = set()  # Track which component types need re-init
+        self._active_tts_backend: Optional[str] = None
+        self._active_vad_backend: Optional[str] = None
+        self._active_wake_backend: Optional[str] = None
+
         # Register with SettingsManager if provided
         if self._settings_manager:
             self._register_with_settings_manager()
@@ -387,13 +393,53 @@ class VoiceCore:
                     )
 
     def _on_settings_changed(self, namespace: str, key: str, value: Any) -> None:
-        """Handle settings changes from the SettingsManager."""
+        """Handle settings changes from the SettingsManager.
+
+        Updates config and schedules backend re-initialization if needed.
+        """
         if not namespace.startswith("voice"):
             return
 
         # Update config if voice_core settings changed
         if namespace == "voice_core":
             self._update_config_from_settings(key, value)
+
+            # Schedule re-init if backend order changed while running
+            if self._state != VoiceState.STOPPED:
+                if key == "stt.order":
+                    self._reinit_pending.add("stt")
+                    logger.info("STT backend order changed - re-init pending")
+                elif key == "tts.order":
+                    self._reinit_pending.add("tts")
+                    logger.info("TTS backend order changed - re-init pending")
+                elif key == "vad.order":
+                    self._reinit_pending.add("vad")
+                    logger.info("VAD backend order changed - re-init pending")
+                elif key == "wakeword.order":
+                    self._reinit_pending.add("wakeword")
+                    logger.info("WakeWord backend order changed - re-init pending")
+
+        # If a backend's specific settings changed, mark for re-init
+        elif namespace.startswith("voice.stt.") and self._state != VoiceState.STOPPED:
+            backend_name = namespace.split(".")[2]
+            if backend_name == self._active_stt_backend:
+                self._reinit_pending.add("stt")
+                logger.info(f"STT backend '{backend_name}' settings changed - re-init pending")
+        elif namespace.startswith("voice.tts.") and self._state != VoiceState.STOPPED:
+            backend_name = namespace.split(".")[2]
+            if backend_name == self._active_tts_backend:
+                self._reinit_pending.add("tts")
+                logger.info(f"TTS backend '{backend_name}' settings changed - re-init pending")
+        elif namespace.startswith("voice.vad.") and self._state != VoiceState.STOPPED:
+            backend_name = namespace.split(".")[2]
+            if backend_name == self._active_vad_backend:
+                self._reinit_pending.add("vad")
+                logger.info(f"VAD backend '{backend_name}' settings changed - re-init pending")
+        elif namespace.startswith("voice.wakeword.") and self._state != VoiceState.STOPPED:
+            backend_name = namespace.split(".")[3] if len(namespace.split(".")) > 3 else ""
+            if backend_name == self._active_wake_backend:
+                self._reinit_pending.add("wakeword")
+                logger.info(f"WakeWord backend '{backend_name}' settings changed - re-init pending")
 
     def _update_config_from_settings(self, key: str, value: Any) -> None:
         """Update VoiceConfig from a settings change."""
@@ -416,6 +462,22 @@ class VoiceCore:
         elif key == "wakeword.order":
             cfg.wake_backend = str(value) if value else "porcupine"
 
+    def _get_backend_settings(self, backend_type: str, backend_name: str) -> dict[str, Any]:
+        """Get settings for a specific backend from SettingsManager.
+
+        Args:
+            backend_type: Type of backend ("stt", "tts", "vad", "wakeword").
+            backend_name: Name of the specific backend (e.g., "leopard").
+
+        Returns:
+            Dict of setting key -> value for the backend.
+        """
+        if not self._settings_manager:
+            return {}
+
+        namespace = f"voice.{backend_type}.{backend_name}"
+        return self._settings_manager.get_all(namespace) or {}
+
     @property
     def settings_manager(self) -> Optional["SettingsManager"]:
         """Get the SettingsManager if one was provided."""
@@ -433,6 +495,103 @@ class VoiceCore:
         self._tts_modules = discover_tts_modules()
         self._vad_modules = discover_vad_modules()
         self._wake_modules = discover_wake_modules()
+
+    async def reinitialize_pending_backends(self) -> bool:
+        """Reinitialize backends that have had settings changes.
+
+        Call this when ready to apply pending settings changes. This is
+        typically done when entering IDLE state or via user trigger.
+
+        Returns:
+            True if all pending reinits succeeded, False otherwise.
+        """
+        if not self._reinit_pending:
+            return True
+
+        if self._state == VoiceState.STOPPED:
+            logger.warning("Cannot reinitialize backends - VoiceCore is stopped")
+            return False
+
+        logger.info(f"Reinitializing backends: {self._reinit_pending}")
+        success = True
+        pending = self._reinit_pending.copy()
+        self._reinit_pending.clear()
+
+        # STT reinitialization
+        if "stt" in pending:
+            try:
+                if self._stt:
+                    self._stt.cleanup()
+                    self._stt = None
+
+                stt_backend_names = self._parse_backend_names(self._config.stt_backend)
+                for name in stt_backend_names:
+                    try:
+                        self._init_stt_backend_or_raise(
+                            stt_modules=self._stt_modules, name=name
+                        )
+                        logger.info(f"STT backend reinitialized: {name}")
+                        break
+                    except Exception as e:
+                        logger.warning(f"STT backend '{name}' reinit failed: {e}")
+
+                if not self._stt:
+                    logger.error("All STT backends failed to reinitialize")
+                    success = False
+            except Exception as e:
+                logger.error(f"STT reinitialization error: {e}")
+                success = False
+
+        # TTS reinitialization
+        if "tts" in pending:
+            try:
+                if self._tts:
+                    self._tts.cleanup()
+                    self._tts = None
+
+                tts_backend_names = self._parse_backend_names(self._config.tts_backend)
+                for name in tts_backend_names:
+                    tts_cls = self._tts_modules.get(name)
+                    if not tts_cls:
+                        continue
+                    try:
+                        backend_settings = self._get_backend_settings("tts", name)
+                        self._tts = tts_cls(**backend_settings)
+                        self._audio_player = AudioPlayer(sample_rate=self._tts.sample_rate)
+                        self._active_tts_backend = name
+                        logger.info(f"TTS backend reinitialized: {name}")
+                        break
+                    except Exception as e:
+                        logger.warning(f"TTS backend '{name}' reinit failed: {e}")
+
+                if not self._tts:
+                    logger.error("All TTS backends failed to reinitialize")
+                    success = False
+            except Exception as e:
+                logger.error(f"TTS reinitialization error: {e}")
+                success = False
+
+        # VAD and wakeword require full restart due to audio stream dependencies
+        if "vad" in pending or "wakeword" in pending:
+            logger.info(
+                "VAD/WakeWord changes require full voice restart. "
+                "Call stop() and start() to apply."
+            )
+            # Add back to pending for user awareness
+            if "vad" in pending:
+                self._reinit_pending.add("vad")
+            if "wakeword" in pending:
+                self._reinit_pending.add("wakeword")
+
+        return success
+
+    def has_pending_reinit(self) -> bool:
+        """Check if any backends have pending reinitialization.
+
+        Returns:
+            True if reinitialize_pending_backends() should be called.
+        """
+        return bool(self._reinit_pending)
 
     # -------------------------------------------------------------------------
     # Public API: State
@@ -754,10 +913,15 @@ class VoiceCore:
                 wake_init_errors.append(f"Wake backend '{name}' not found")
                 continue
             try:
+                # Get backend-specific settings from SettingsManager
+                backend_settings = self._get_backend_settings("wakeword", name)
+
                 self._wake_detector = wake_cls(
                     keywords=self._config.wake_words,
                     sensitivity=self._config.sensitivity,
+                    **backend_settings,
                 )
+                self._active_wake_backend = name
                 logger.info(f"Wake backend selected: {name}")
                 break
             except Exception as e:
@@ -799,7 +963,11 @@ class VoiceCore:
                 vad_init_errors.append(f"VAD backend '{name}' not found")
                 continue
             try:
-                self._vad = vad_cls(sample_rate=wake_sample_rate)
+                # Get backend-specific settings from SettingsManager
+                backend_settings = self._get_backend_settings("vad", name)
+
+                self._vad = vad_cls(sample_rate=wake_sample_rate, **backend_settings)
+                self._active_vad_backend = name
                 logger.info(f"VAD backend selected: {name}")
 
                 if hasattr(self._vad, "preload"):
@@ -850,8 +1018,12 @@ class VoiceCore:
                 tts_init_errors.append(f"TTS backend '{name}' not found")
                 continue
             try:
-                self._tts = tts_cls()
+                # Get backend-specific settings from SettingsManager
+                backend_settings = self._get_backend_settings("tts", name)
+
+                self._tts = tts_cls(**backend_settings)
                 self._audio_player = AudioPlayer(sample_rate=self._tts.sample_rate)
+                self._active_tts_backend = name
                 logger.info(f"TTS backend selected: {name}")
                 break
             except Exception as e:
@@ -884,7 +1056,10 @@ class VoiceCore:
         if not stt_cls:
             raise RuntimeError(f"STT backend '{name}' not found")
 
-        self._stt = stt_cls()
+        # Get backend-specific settings from SettingsManager
+        backend_settings = self._get_backend_settings("stt", name)
+
+        self._stt = stt_cls(**backend_settings)
         self._active_stt_backend = name
         logger.info(f"STT backend selected: {name}")
 
