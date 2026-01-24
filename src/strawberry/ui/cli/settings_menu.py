@@ -3,6 +3,7 @@
 Provides an interactive menu for viewing and editing settings in the CLI.
 """
 
+import sys
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
@@ -11,6 +12,13 @@ if TYPE_CHECKING:
     from strawberry.shared.settings.schema import SettingField
 
 from . import renderer
+
+
+def _prompt(text: str) -> str:
+    """Display a prompt and get user input, ensuring proper flushing."""
+    sys.stdout.write(text)
+    sys.stdout.flush()
+    return input().strip()
 
 
 class CLISettingsMenu:
@@ -55,7 +63,7 @@ class CLISettingsMenu:
             print()
 
             try:
-                choice = input("Select section (number): ").strip()
+                choice = _prompt("Select section (number): ")
                 if not choice:
                     continue
 
@@ -84,7 +92,7 @@ class CLISettingsMenu:
             # section.groups is Dict[str, List[SettingField]]
             if not section.groups:
                 renderer.print_system("No settings in this section.")
-                input("Press Enter to go back...")
+                _prompt("Press Enter to go back...")
                 return
 
             # Display fields with numbers
@@ -106,7 +114,7 @@ class CLISettingsMenu:
             print()
 
             try:
-                choice = input("Edit setting (number): ").strip()
+                choice = _prompt("Edit setting (number): ")
                 if not choice:
                     continue
 
@@ -190,7 +198,7 @@ class CLISettingsMenu:
         print(f"  Current: {current or '(not set)'}")
         print()
         print(f"  Enter new {label} (empty to cancel):")
-        new_value = input("  > ").strip()
+        new_value = _prompt("  > ")
         return new_value if new_value else None
 
     def _edit_password(self, current: Any, label: str = "value") -> Optional[str]:
@@ -199,7 +207,7 @@ class CLISettingsMenu:
         print(f"  Current: {masked}")
         print()
         print(f"  Enter new {label} (empty to cancel):")
-        new_value = input("  > ").strip()
+        new_value = _prompt("  > ")
         return new_value if new_value else None
 
     def _edit_checkbox(self, current: Any, label: str = "value") -> Optional[bool]:
@@ -209,7 +217,7 @@ class CLISettingsMenu:
         print(f"  Current: {current_str}")
         print()
         print(f"  Change to {new_str}? (y/n):")
-        choice = input("  > ").strip().lower()
+        choice = _prompt("  > ").lower()
         if choice in ("y", "yes"):
             return not current
         return None
@@ -224,7 +232,7 @@ class CLISettingsMenu:
             print(f"    {i}. {opt.get('label', opt.get('value'))}{marker}")
         print()
         print(f"  Select new {label} (number, empty to cancel):")
-        choice = input("  > ").strip()
+        choice = _prompt("  > ")
         if not choice:
             return None
 
