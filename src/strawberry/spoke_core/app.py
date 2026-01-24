@@ -273,7 +273,8 @@ class SpokeCore:
             Loaded Settings instance.
         """
         if not settings_path:
-            return get_settings()
+            # _internal=True suppresses deprecation warning for internal usage
+            return get_settings(_internal=True)
 
         config_path = Path(settings_path)
         if not config_path.is_absolute():

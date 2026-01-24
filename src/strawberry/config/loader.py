@@ -1,7 +1,18 @@
-"""Configuration file loader."""
+"""Configuration file loader.
+
+.. deprecated::
+    This module is deprecated. Use SettingsManager instead::
+
+        from strawberry.shared.settings import SettingsManager
+        settings = SettingsManager(config_dir=Path("config"))
+
+    The load_config() and get_settings() functions are maintained for
+    backward compatibility during the transition period.
+"""
 
 import logging
 import os
+import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -111,14 +122,27 @@ def load_config(
 def get_settings(
     config_path: Optional[Path] = None,
     env_path: Optional[Path] = None,
+    _internal: bool = False,
 ) -> Settings:
     """Get the current settings instance.
 
     Loads configuration from disk on first access so .env and config.yaml are
     honored in non-UI entrypoints (e.g., CLI/SpokeCore).
+
+    .. deprecated::
+        Use SettingsManager instead for new code. This function is maintained
+        for backward compatibility.
     """
     global _settings
     if _settings is None:
+        # Only warn for external calls, not internal SpokeCore usage
+        if not _internal:
+            warnings.warn(
+                "get_settings() is deprecated. Use SettingsManager instead: "
+                "from strawberry.shared.settings import SettingsManager",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         logger.info("Settings not initialized; loading from disk")
         _settings = load_config(config_path=config_path, env_path=env_path)
     return _settings
