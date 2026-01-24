@@ -150,11 +150,8 @@ class CLISettingsMenu:
             return "Yes" if value else "No"
 
         if field_type == FieldType.SELECT:
-            # Show the label for the current option if available
-            options = field.options or []
-            for opt in options:
-                if opt.get("value") == value:
-                    return opt.get("label", str(value))
+            # Options are plain strings (List[str]) in the schema
+            # Just return the value as-is since it should match an option
             return str(value)
 
         return str(value)
@@ -223,13 +220,17 @@ class CLISettingsMenu:
         return None
 
     def _edit_select(self, current: Any, options: list, label: str = "option") -> Optional[str]:
-        """Edit a select field."""
+        """Edit a select field.
+        
+        Options are plain strings (List[str]) in the schema.
+        """
         print(f"  Current: {current or '(not set)'}")
         print()
         print("  Available options:")
         for i, opt in enumerate(options, 1):
-            marker = " <-- current" if opt.get("value") == current else ""
-            print(f"    {i}. {opt.get('label', opt.get('value'))}{marker}")
+            # Options are strings, not dicts
+            marker = " <-- current" if opt == current else ""
+            print(f"    {i}. {opt}{marker}")
         print()
         print(f"  Select new {label} (number, empty to cancel):")
         choice = _prompt("  > ")
@@ -239,7 +240,7 @@ class CLISettingsMenu:
         try:
             idx = int(choice) - 1
             if 0 <= idx < len(options):
-                return options[idx].get("value")
+                return options[idx]  # Return the string directly
         except ValueError:
             pass
 
