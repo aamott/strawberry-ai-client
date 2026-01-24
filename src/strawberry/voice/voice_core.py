@@ -216,6 +216,12 @@ class VoiceCore:
         self._stt_backend_names: list[str] = []
         self._active_stt_backend: Optional[str] = None
 
+        # Cached module discovery (to avoid re-scanning on every speech)
+        self._stt_modules: dict[str, type[STTEngine]] = {}
+        self._tts_modules: dict[str, type[TTSEngine]] = {}
+        self._vad_modules: dict[str, type[VADBackend]] = {}
+        self._wake_modules: dict[str, type[WakeWordDetector]] = {}
+
         # Audio stream (kept open to avoid frame loss)
         self._audio_backend: Optional[SoundDeviceBackend] = None
         self._audio_stream: Optional[AudioStream] = None
@@ -318,8 +324,18 @@ class VoiceCore:
         if not self._settings_manager:
             return
 
+        # Use cached modules if available, otherwise discover and cache
+        if not self._stt_modules:
+            self._stt_modules = discover_stt_modules()
+        if not self._tts_modules:
+            self._tts_modules = discover_tts_modules()
+        if not self._vad_modules:
+            self._vad_modules = discover_vad_modules()
+        if not self._wake_modules:
+            self._wake_modules = discover_wake_modules()
+
         # Register STT backends
-        for name, cls in discover_stt_modules().items():
+        for name, cls in self._stt_modules.items():
             namespace = f"voice.stt.{name}"
             if not self._settings_manager.is_registered(namespace):
                 schema = cls.get_settings_schema()
@@ -332,7 +348,7 @@ class VoiceCore:
                     )
 
         # Register TTS backends
-        for name, cls in discover_tts_modules().items():
+        for name, cls in self._tts_modules.items():
             namespace = f"voice.tts.{name}"
             if not self._settings_manager.is_registered(namespace):
                 schema = cls.get_settings_schema()
@@ -345,7 +361,7 @@ class VoiceCore:
                     )
 
         # Register VAD backends
-        for name, cls in discover_vad_modules().items():
+        for name, cls in self._vad_modules.items():
             namespace = f"voice.vad.{name}"
             if not self._settings_manager.is_registered(namespace):
                 schema = cls.get_settings_schema()
@@ -358,7 +374,7 @@ class VoiceCore:
                     )
 
         # Register wake word backends
-        for name, cls in discover_wake_modules().items():
+        for name, cls in self._wake_modules.items():
             namespace = f"voice.wakeword.{name}"
             if not self._settings_manager.is_registered(namespace):
                 schema = cls.get_settings_schema()
@@ -404,6 +420,19 @@ class VoiceCore:
     def settings_manager(self) -> Optional["SettingsManager"]:
         """Get the SettingsManager if one was provided."""
         return self._settings_manager
+
+    def refresh_module_discovery(self) -> None:
+        """Re-discover voice backend modules.
+
+        Call this after settings change (e.g., API key added) to pick up
+        backends that may now be available. Does not reinitialize active
+        backends - that requires stop() and start().
+        """
+        logger.info("Refreshing voice module discovery")
+        self._stt_modules = discover_stt_modules()
+        self._tts_modules = discover_tts_modules()
+        self._vad_modules = discover_vad_modules()
+        self._wake_modules = discover_wake_modules()
 
     # -------------------------------------------------------------------------
     # Public API: State
@@ -693,10 +722,22 @@ class VoiceCore:
         Wake word detection is optional - if it fails, we can still use
         STT/TTS in push-to-talk mode via trigger_wakeword().
         """
-        stt_modules = discover_stt_modules()
-        tts_modules = discover_tts_modules()
-        vad_modules = discover_vad_modules()
-        wake_modules = discover_wake_modules()
+        # Use cached modules if available, otherwise discover and cache
+        # (discovery may have already happened in _register_backend_namespaces)
+        if not self._stt_modules:
+            self._stt_modules = discover_stt_modules()
+        if not self._tts_modules:
+            self._tts_modules = discover_tts_modules()
+        if not self._vad_modules:
+            self._vad_modules = discover_vad_modules()
+        if not self._wake_modules:
+            self._wake_modules = discover_wake_modules()
+
+        # Use cached modules
+        stt_modules = self._stt_modules
+        tts_modules = self._tts_modules
+        vad_modules = self._vad_modules
+        wake_modules = self._wake_modules
 
         stt_backend_names = self._parse_backend_names(self._config.stt_backend)
         tts_backend_names = self._parse_backend_names(self._config.tts_backend)
@@ -1017,7 +1058,8 @@ class VoiceCore:
                 self._transition_to(VoiceState.IDLE)
                 return
 
-            stt_modules = discover_stt_modules()
+            # Use cached modules (discovered once at init, not on every speech)
+            stt_modules = self._stt_modules
             last_error: Optional[Exception] = None
             tried: list[str] = []
             backend_names = (
