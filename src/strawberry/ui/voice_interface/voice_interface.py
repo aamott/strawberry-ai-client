@@ -95,8 +95,8 @@ class VoiceInterface:
                 wake_backend=mgr.get("voice_core", "wakeword.order", "porcupine"),
             )
 
-        # Fall back to legacy settings
-        settings = get_settings()
+        # Fall back to legacy settings (suppress deprecation for internal use)
+        settings = get_settings(_internal=True)
         return VoiceConfig(
             wake_words=settings.wake_word.keywords or ["strawberry"],
             sensitivity=getattr(settings.wake_word, "sensitivity", 0.5),

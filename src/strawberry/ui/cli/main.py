@@ -372,7 +372,8 @@ class CLIApp:
             from ...config import get_settings
             from ...voice import VoiceConfig, VoiceCore
 
-            settings = get_settings()
+            # TODO: CLI should create SettingsManager like Qt and VoiceInterface do
+            settings = get_settings(_internal=True)
 
             voice_config = VoiceConfig(
                 wake_words=settings.wake_word.keywords or ["strawberry"],
