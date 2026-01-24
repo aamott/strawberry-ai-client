@@ -156,6 +156,37 @@ class CLISettingsMenu:
 
         return str(value)
 
+    def _get_backend_options(self, key: str) -> list[str]:
+        """Get available backend options for order fields.
+        
+        Args:
+            key: The setting key (e.g., "stt.order", "tts.order")
+            
+        Returns:
+            List of available backend names, or empty list if not applicable.
+        """
+        if not key.endswith(".order"):
+            return []
+        
+        try:
+            # Determine which type of backend based on key prefix
+            if key.startswith("stt."):
+                from strawberry.voice.stt import discover_stt_modules
+                return list(discover_stt_modules().keys())
+            elif key.startswith("tts."):
+                from strawberry.voice.tts import discover_tts_modules
+                return list(discover_tts_modules().keys())
+            elif key.startswith("vad."):
+                from strawberry.voice.vad import discover_vad_modules
+                return list(discover_vad_modules().keys())
+            elif key.startswith("wakeword."):
+                from strawberry.voice.wakeword import discover_wake_modules
+                return list(discover_wake_modules().keys())
+        except ImportError:
+            pass
+        
+        return []
+
     def _edit_field(self, namespace: str, key: str, field: "SettingField") -> None:
         """Edit a single field."""
         from strawberry.shared.settings.schema import FieldType
@@ -180,7 +211,12 @@ class CLISettingsMenu:
                 renderer.print_system("Action fields cannot be edited here.")
                 return
             else:
-                new_value = self._edit_text(current, label)
+                # Check if this is a backend order field
+                backend_options = self._get_backend_options(key)
+                if backend_options:
+                    new_value = self._edit_backend_order(current, backend_options, label)
+                else:
+                    new_value = self._edit_text(current, label)
 
             if new_value is not None:
                 self._settings.set(namespace, key, new_value)
@@ -197,6 +233,70 @@ class CLISettingsMenu:
         print(f"  Enter new {label} (empty to cancel):")
         new_value = _prompt("  > ")
         return new_value if new_value else None
+
+    def _edit_backend_order(
+        self, current: Any, available: list[str], label: str = "order"
+    ) -> Optional[str]:
+        """Edit a backend order field with available options shown.
+        
+        Args:
+            current: Current comma-separated value
+            available: List of available backend names
+            label: Field label for prompts
+            
+        Returns:
+            New comma-separated value, or None if cancelled
+        """
+        # Parse current order
+        current_list = []
+        if current:
+            current_list = [b.strip() for b in str(current).split(",") if b.strip()]
+        
+        print(f"  Current: {current or '(not set)'}")
+        print()
+        print("  Available backends:")
+        for i, backend in enumerate(available, 1):
+            in_current = backend in current_list
+            marker = " <-- in current order" if in_current else ""
+            print(f"    {i}. {backend}{marker}")
+        
+        print()
+        print("  Enter new order as comma-separated list (e.g., '1,3' or 'pocket,orca')")
+        print("  Or type backend names directly. Empty to cancel:")
+        choice = _prompt("  > ")
+        
+        if not choice:
+            return None
+        
+        # Parse the input - could be numbers or names
+        parts = [p.strip() for p in choice.split(",") if p.strip()]
+        result = []
+        
+        for part in parts:
+            # Try as number first
+            try:
+                idx = int(part) - 1
+                if 0 <= idx < len(available):
+                    result.append(available[idx])
+                    continue
+            except ValueError:
+                pass
+            
+            # Try as backend name (case-insensitive match)
+            part_lower = part.lower()
+            for backend in available:
+                if backend.lower() == part_lower:
+                    result.append(backend)
+                    break
+            else:
+                # Not found - use as-is (might be a new/unknown backend)
+                result.append(part)
+        
+        if result:
+            return ",".join(result)
+        
+        renderer.print_error("No valid backends selected")
+        return None
 
     def _edit_password(self, current: Any, label: str = "value") -> Optional[str]:
         """Edit a password field."""
