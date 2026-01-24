@@ -37,7 +37,7 @@ class LeopardSTT(STTEngine):
     @classmethod
     def get_settings_schema(cls) -> List:
         """Return settings schema for Leopard STT configuration."""
-        from strawberry.spoke_core.settings_schema import FieldType, SettingField
+        from strawberry.shared.settings import FieldType, SettingField
 
         return [
             SettingField(

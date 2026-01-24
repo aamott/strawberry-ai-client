@@ -60,7 +60,7 @@ class SoproTTS(TTSEngine):
     @classmethod
     def get_settings_schema(cls) -> List:
         """Return settings schema for Sopro TTS configuration."""
-        from strawberry.spoke_core.settings_schema import FieldType, SettingField
+        from strawberry.shared.settings import FieldType, SettingField
 
         return [
             SettingField(

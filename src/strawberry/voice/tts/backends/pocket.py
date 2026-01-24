@@ -46,7 +46,7 @@ class PocketTTS(TTSEngine):
     @classmethod
     def get_settings_schema(cls) -> List:
         """Return settings schema for Pocket-TTS configuration."""
-        from strawberry.spoke_core.settings_schema import FieldType, SettingField
+        from strawberry.shared.settings import FieldType, SettingField
 
         return [
             SettingField(
