@@ -76,4 +76,7 @@ select = ["E", "F", "I", "W"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests", "src/strawberry/ui/cli/tests"]
+markers = [
+    "timeout: marks tests with a timeout (deferred to pytest-timeout if installed)",
+]
 

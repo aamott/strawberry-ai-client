@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from strawberry.shared.settings import SettingsManager, SettingsViewModel
-    from strawberry.shared.settings.view_model import SettingsSection
     from strawberry.shared.settings.schema import SettingField
+    from strawberry.shared.settings.view_model import SettingsSection
 
 from . import renderer
 
@@ -158,16 +158,16 @@ class CLISettingsMenu:
 
     def _get_backend_options(self, key: str) -> list[str]:
         """Get available backend options for order fields.
-        
+
         Args:
             key: The setting key (e.g., "stt.order", "tts.order")
-            
+
         Returns:
             List of available backend names, or empty list if not applicable.
         """
         if not key.endswith(".order"):
             return []
-        
+
         try:
             # Determine which type of backend based on key prefix
             if key.startswith("stt."):
@@ -184,7 +184,7 @@ class CLISettingsMenu:
                 return list(discover_wake_modules().keys())
         except ImportError:
             pass
-        
+
         return []
 
     def _edit_field(self, namespace: str, key: str, field: "SettingField") -> None:
@@ -238,12 +238,12 @@ class CLISettingsMenu:
         self, current: Any, available: list[str], label: str = "order"
     ) -> Optional[str]:
         """Edit a backend order field with available options shown.
-        
+
         Args:
             current: Current comma-separated value
             available: List of available backend names
             label: Field label for prompts
-            
+
         Returns:
             New comma-separated value, or None if cancelled
         """
@@ -251,7 +251,7 @@ class CLISettingsMenu:
         current_list = []
         if current:
             current_list = [b.strip() for b in str(current).split(",") if b.strip()]
-        
+
         print(f"  Current: {current or '(not set)'}")
         print()
         print("  Available backends:")
@@ -259,19 +259,19 @@ class CLISettingsMenu:
             in_current = backend in current_list
             marker = " <-- in current order" if in_current else ""
             print(f"    {i}. {backend}{marker}")
-        
+
         print()
         print("  Enter new order as comma-separated list (e.g., '1,3' or 'pocket,orca')")
         print("  Or type backend names directly. Empty to cancel:")
         choice = _prompt("  > ")
-        
+
         if not choice:
             return None
-        
+
         # Parse the input - could be numbers or names
         parts = [p.strip() for p in choice.split(",") if p.strip()]
         result = []
-        
+
         for part in parts:
             # Try as number first
             try:
@@ -281,7 +281,7 @@ class CLISettingsMenu:
                     continue
             except ValueError:
                 pass
-            
+
             # Try as backend name (case-insensitive match)
             part_lower = part.lower()
             for backend in available:
@@ -291,10 +291,10 @@ class CLISettingsMenu:
             else:
                 # Not found - use as-is (might be a new/unknown backend)
                 result.append(part)
-        
+
         if result:
             return ",".join(result)
-        
+
         renderer.print_error("No valid backends selected")
         return None
 
@@ -321,7 +321,7 @@ class CLISettingsMenu:
 
     def _edit_select(self, current: Any, options: list, label: str = "option") -> Optional[str]:
         """Edit a select field.
-        
+
         Options are plain strings (List[str]) in the schema.
         """
         print(f"  Current: {current or '(not set)'}")

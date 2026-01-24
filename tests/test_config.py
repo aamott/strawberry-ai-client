@@ -7,6 +7,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from strawberry.config.loader import get_settings, load_config, reset_settings
@@ -108,6 +110,7 @@ hub:
         reset_settings()
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_get_settings_loads_env_and_yaml(tmp_path):
     """get_settings should load .env and YAML when uninitialized."""
     reset_settings()
@@ -133,6 +136,7 @@ hub:
         reset_settings()
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_get_settings_returns_defaults():
     """get_settings() should return defaults if not loaded."""
     reset_settings()
