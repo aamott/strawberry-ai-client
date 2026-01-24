@@ -165,17 +165,17 @@ class CLISettingsMenu:
 
         try:
             if field_type == FieldType.CHECKBOX:
-                new_value = self._edit_checkbox(current)
+                new_value = self._edit_checkbox(current, label)
             elif field_type == FieldType.SELECT:
-                new_value = self._edit_select(current, field.options or [])
+                new_value = self._edit_select(current, field.options or [], label)
             elif field_type == FieldType.PASSWORD:
-                new_value = self._edit_password(current)
+                new_value = self._edit_password(current, label)
             elif field_type == FieldType.ACTION:
                 # Actions are not editable
                 renderer.print_system("Action fields cannot be edited here.")
                 return
             else:
-                new_value = self._edit_text(current)
+                new_value = self._edit_text(current, label)
 
             if new_value is not None:
                 self._settings.set(namespace, key, new_value)
@@ -185,36 +185,46 @@ class CLISettingsMenu:
             print()
             renderer.print_system("Cancelled")
 
-    def _edit_text(self, current: Any) -> Optional[str]:
+    def _edit_text(self, current: Any, label: str = "value") -> Optional[str]:
         """Edit a text field."""
         print(f"  Current: {current or '(not set)'}")
-        new_value = input("  New value (empty to cancel): ").strip()
+        print()
+        print(f"  Enter new {label} (empty to cancel):")
+        new_value = input("  > ").strip()
         return new_value if new_value else None
 
-    def _edit_password(self, current: Any) -> Optional[str]:
+    def _edit_password(self, current: Any, label: str = "value") -> Optional[str]:
         """Edit a password field."""
         masked = "****" if current else "(not set)"
         print(f"  Current: {masked}")
-        new_value = input("  New value (empty to cancel): ").strip()
+        print()
+        print(f"  Enter new {label} (empty to cancel):")
+        new_value = input("  > ").strip()
         return new_value if new_value else None
 
-    def _edit_checkbox(self, current: Any) -> Optional[bool]:
+    def _edit_checkbox(self, current: Any, label: str = "value") -> Optional[bool]:
         """Edit a checkbox field."""
-        print(f"  Current: {'Yes' if current else 'No'}")
-        choice = input("  Toggle? (y/n): ").strip().lower()
+        current_str = "Yes" if current else "No"
+        new_str = "No" if current else "Yes"
+        print(f"  Current: {current_str}")
+        print()
+        print(f"  Change to {new_str}? (y/n):")
+        choice = input("  > ").strip().lower()
         if choice in ("y", "yes"):
             return not current
         return None
 
-    def _edit_select(self, current: Any, options: list) -> Optional[str]:
+    def _edit_select(self, current: Any, options: list, label: str = "option") -> Optional[str]:
         """Edit a select field."""
         print(f"  Current: {current or '(not set)'}")
-        print("  Options:")
+        print()
+        print("  Available options:")
         for i, opt in enumerate(options, 1):
-            marker = " *" if opt.get("value") == current else ""
+            marker = " <-- current" if opt.get("value") == current else ""
             print(f"    {i}. {opt.get('label', opt.get('value'))}{marker}")
-
-        choice = input("  Select option (number, empty to cancel): ").strip()
+        print()
+        print(f"  Select new {label} (number, empty to cancel):")
+        choice = input("  > ").strip()
         if not choice:
             return None
 
