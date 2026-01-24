@@ -10,7 +10,7 @@ try:
     from .chat_area import ChatArea
     from .chat_bubble import ChatBubble
     from .chat_history import ChatHistorySidebar
-    from .input_area import InputArea, MicState
+    from .input_area import InputArea, MicState, VoiceButtonState, VoiceModeButton
     from .offline_banner import OfflineModeBanner
     from .rename_dialog import RenameDialog
     from .schema_settings import SchemaSettingsWidget
@@ -29,7 +29,9 @@ try:
         "RenameDialog",
         "SchemaSettingsWidget",
         "StatusBar",
+        "VoiceButtonState",
         "VoiceIndicator",
+        "VoiceModeButton",
     ]
 except ImportError:
     # PySide6 not available - widgets cannot be imported

@@ -17,6 +17,7 @@ except ImportError:
 from ...config import Settings, load_config
 from ...shared.settings import SettingsManager
 from ...utils.paths import get_project_root
+from ...voice import VoiceConfig, VoiceCore
 from .main_window import MainWindow
 
 
@@ -73,6 +74,7 @@ class StrawberryApp:
         self._tray: Optional[QSystemTrayIcon] = None
         self._settings: Optional[Settings] = None
         self._settings_manager: Optional[SettingsManager] = None
+        self._voice_core: Optional[VoiceCore] = None
 
     def run(self) -> int:
         """Run the application.
@@ -99,10 +101,19 @@ class StrawberryApp:
             env_filename="../.env",  # Use root .env for secrets
         )
 
+        # Create VoiceCore with SettingsManager
+        # This registers voice_core namespace and all backend namespaces
+        # so they appear in the settings dialog
+        self._voice_core = VoiceCore(
+            config=VoiceConfig(),
+            settings_manager=self._settings_manager,
+        )
+
         # Create main window with both old settings and new manager
         self._window = MainWindow(
             settings=self._settings,
             settings_manager=self._settings_manager,
+            voice_core=self._voice_core,
         )
         self._window.closing.connect(self._on_window_closing)
         self._window.minimized_to_tray.connect(self._on_minimized_to_tray)

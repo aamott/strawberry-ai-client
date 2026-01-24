@@ -135,7 +135,7 @@ class VoiceConfig:
         wake_backend: Wake word detection backend module name.
     """
 
-    wake_words: List[str] = field(default_factory=lambda: ["strawberry"])
+    wake_words: List[str] = field(default_factory=lambda: ["computer"])
     sensitivity: float = 0.5
     sample_rate: int = 16000
     audio_feedback_enabled: bool = True
@@ -303,7 +303,7 @@ class VoiceCore:
         )
         self._settings_manager.set(
             "voice_core", "wakeword.phrase",
-            ",".join(cfg.wake_words) if cfg.wake_words else "strawberry",
+            ",".join(cfg.wake_words) if cfg.wake_words else "computer",
             skip_validation=True
         )
         self._settings_manager.set(
@@ -694,7 +694,11 @@ class VoiceCore:
     # -------------------------------------------------------------------------
 
     async def _init_components(self) -> None:
-        """Initialize voice pipeline components."""
+        """Initialize voice pipeline components.
+
+        Wake word detection is optional - if it fails, we can still use
+        STT/TTS in push-to-talk mode via trigger_wakeword().
+        """
         stt_modules = discover_stt_modules()
         tts_modules = discover_tts_modules()
         vad_modules = discover_vad_modules()
@@ -707,7 +711,7 @@ class VoiceCore:
 
         self._stt_backend_names = stt_backend_names
 
-        # Initialize wake word detector first (determines audio frame size/rate)
+        # Initialize wake word detector (optional - may fail gracefully)
         wake_init_errors: list[str] = []
         for name in wake_backend_names:
             wake_cls = wake_modules.get(name)
@@ -723,26 +727,34 @@ class VoiceCore:
                 break
             except Exception as e:
                 msg = f"Wake backend '{name}' init failed: {e}"
-                logger.error(msg)
+                logger.warning(msg)
                 wake_init_errors.append(msg)
 
+        # Warn but don't fail if wake word detection unavailable
         if not self._wake_detector:
-            raise RuntimeError(
-                "Wake word initialization failed. "
-                f"Tried: {wake_backend_names}. Errors: {wake_init_errors}"
+            logger.warning(
+                "Wake word detection unavailable. "
+                f"Tried: {wake_backend_names}. Errors: {wake_init_errors}. "
+                "STT will still work via mic button (trigger_wakeword)."
             )
 
         # Initialize audio backend
+        # Use wake detector's sample rate if available, otherwise use config
         if self._wake_detector:
             wake_frame_len = self._wake_detector.frame_length
             wake_sample_rate = self._wake_detector.sample_rate
             frame_ms = max(1, int(wake_frame_len * 1000 / wake_sample_rate))
-            self._audio_backend = SoundDeviceBackend(
-                sample_rate=wake_sample_rate,
-                frame_length_ms=frame_ms,
-            )
-            self._audio_stream = AudioStream(self._audio_backend)
-            logger.info(f"Audio stream: {wake_sample_rate}Hz, {frame_ms}ms frames")
+        else:
+            # Fallback audio settings when wake word is disabled/failed
+            wake_sample_rate = self._config.sample_rate
+            frame_ms = 30  # 30ms frames is common for STT
+
+        self._audio_backend = SoundDeviceBackend(
+            sample_rate=wake_sample_rate,
+            frame_length_ms=frame_ms,
+        )
+        self._audio_stream = AudioStream(self._audio_backend)
+        logger.info(f"Audio stream: {wake_sample_rate}Hz, {frame_ms}ms frames")
 
         # Initialize VAD (must match audio stream rate)
         vad_init_errors: list[str] = []
@@ -752,8 +764,7 @@ class VoiceCore:
                 vad_init_errors.append(f"VAD backend '{name}' not found")
                 continue
             try:
-                vad_sample_rate = self._wake_detector.sample_rate
-                self._vad = vad_cls(sample_rate=vad_sample_rate)
+                self._vad = vad_cls(sample_rate=wake_sample_rate)
                 logger.info(f"VAD backend selected: {name}")
 
                 if hasattr(self._vad, "preload"):
@@ -762,10 +773,6 @@ class VoiceCore:
 
                 from .vad.processor import VADConfig
 
-                frame_ms = int(
-                    self._wake_detector.frame_length * 1000 / self._wake_detector.sample_rate
-                )
-                frame_ms = max(1, frame_ms)
                 self._vad_processor = VADProcessor(
                     self._vad,
                     VADConfig(),

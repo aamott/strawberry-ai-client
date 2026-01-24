@@ -230,7 +230,7 @@ class TestVoiceConfig:
         """VoiceConfig should have sensible defaults."""
         config = VoiceConfig()
 
-        assert config.wake_words == ["strawberry"]
+        assert config.wake_words == ["computer"]
         assert config.sensitivity == 0.5
         assert config.sample_rate == 16000
 
