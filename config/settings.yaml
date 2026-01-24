@@ -12,7 +12,7 @@ voice_core:
   stt:
     order: leopard
   tts:
-    order: pocket
+    order: google,pocket,orca
   vad:
     order: silero
   wakeword:
