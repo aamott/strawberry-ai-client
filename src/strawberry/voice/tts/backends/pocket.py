@@ -2,6 +2,8 @@
 
 Requires: pip install pocket-tts
 A lean, CPU-efficient TTS system with voice cloning via audio prompts.
+
+https://github.com/kyutai-labs/pocket-tts
 """
 
 from typing import Iterator, List, Optional
@@ -51,11 +53,11 @@ class PocketTTS(TTSEngine):
                 key="voice_prompt_path",
                 label="Voice Prompt Audio",
                 type=FieldType.TEXT,
-                default="hf://kyutai/tts-voices/alba-mackenna/casual.wav",
+                default="alba",
                 description=(
-                    "Path to audio file for voice cloning. "
-                    "Use 'hf://kyutai/tts-voices/...' for HuggingFace voices "
-                    "or local file path."
+                    "Voice selection. Provide a built-in voice name (e.g. 'alba') "
+                    "or a path/URL to an audio prompt for voice cloning. "
+                    "For HuggingFace prompts, use 'hf://...'."
                 ),
             ),
         ]
@@ -69,16 +71,16 @@ class PocketTTS(TTSEngine):
         Args:
             voice_prompt_path: Path to voice prompt audio file.
                               Supports HuggingFace URLs (hf://...) or local paths.
-                              Default: alba-mackenna casual voice from HF.
+                              Default: a built-in catalog voice ("alba").
 
         Raises:
             ImportError: If pocket-tts is not installed
         """
         from pocket_tts import TTSModel
 
-        # Use default voice if not specified
+        # Use built-in voice by default to avoid gated voice-cloning weights.
         if voice_prompt_path is None:
-            voice_prompt_path = "hf://kyutai/tts-voices/alba-mackenna/casual.wav"
+            voice_prompt_path = "alba"
 
         # Load model (cached at class level)
         if PocketTTS._cached_model is None:
@@ -90,19 +92,37 @@ class PocketTTS(TTSEngine):
 
         self._model = PocketTTS._cached_model
 
-        # Load voice state (cache if same prompt)
+        # Load voice state (cache if same selection)
         if (
             PocketTTS._cached_voice_state is None
             or PocketTTS._cached_voice_prompt_path != voice_prompt_path
         ):
             import logging
+
             logger = logging.getLogger(__name__)
-            logger.info(f"Loading voice prompt: {voice_prompt_path}")
-            PocketTTS._cached_voice_state = self._model.get_state_for_audio_prompt(
-                voice_prompt_path
+
+            # If it looks like a file/URL, treat it as an audio prompt for voice cloning.
+            # Otherwise treat it as a built-in catalog voice name.
+            is_audio_prompt = (
+                "://" in voice_prompt_path
+                or voice_prompt_path.endswith(".wav")
+                or voice_prompt_path.endswith(".mp3")
             )
-            PocketTTS._cached_voice_prompt_path = voice_prompt_path
-            logger.info("Voice prompt loaded")
+
+            if not is_audio_prompt and hasattr(self._model, "get_state_for_voice"):
+                logger.info(f"Loading Pocket-TTS built-in voice: {voice_prompt_path}")
+                PocketTTS._cached_voice_state = self._model.get_state_for_voice(
+                    voice_prompt_path
+                )
+                PocketTTS._cached_voice_prompt_path = voice_prompt_path
+                logger.info("Built-in voice loaded")
+            else:
+                logger.info(f"Loading voice prompt: {voice_prompt_path}")
+                PocketTTS._cached_voice_state = self._model.get_state_for_audio_prompt(
+                    voice_prompt_path
+                )
+                PocketTTS._cached_voice_prompt_path = voice_prompt_path
+                logger.info("Voice prompt loaded")
 
         self._voice_state = PocketTTS._cached_voice_state
         self._sample_rate_val = self._model.sample_rate

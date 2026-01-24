@@ -1,9 +1,10 @@
 """HTTP client for communicating with the Strawberry AI Hub."""
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -220,6 +221,7 @@ class HubClient:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         enable_tools: bool = False,
+        stream: bool = False,
     ) -> ChatResponse:
         """Send a chat completion request to the Hub.
 
@@ -238,6 +240,7 @@ class HubClient:
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": temperature,
             "enable_tools": enable_tools,
+            "stream": stream,
         }
 
         if model:
@@ -257,6 +260,66 @@ class HubClient:
             finish_reason=choice.get("finish_reason", "stop"),
             raw=data,
         )
+
+    async def chat_stream(
+        self,
+        messages: List[ChatMessage],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        enable_tools: bool = False,
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """Stream Hub chat completion events.
+
+        The Hub returns Server-Sent Events (SSE) frames where each frame is a JSON
+        object under the `data:` prefix.
+
+        Args:
+            messages: List of chat messages.
+            model: Optional model override.
+            temperature: Sampling temperature.
+            max_tokens: Optional token cap.
+            enable_tools: If True, Hub executes tools and streams tool events.
+
+        Yields:
+            Parsed event dicts.
+        """
+        payload: Dict[str, Any] = {
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "temperature": temperature,
+            "enable_tools": enable_tools,
+            "stream": True,
+        }
+        if model:
+            payload["model"] = model
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
+
+        async with self.client.stream(
+            "POST",
+            "/api/v1/chat/completions",
+            json=payload,
+        ) as response:
+            self._check_response(response)
+
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                if not line.startswith("data:"):
+                    continue
+
+                raw = line[len("data:") :].strip()
+                if not raw:
+                    continue
+
+                try:
+                    event = json.loads(raw)
+                except json.JSONDecodeError:
+                    logger.warning("Failed to decode SSE event: %r", raw)
+                    continue
+
+                if isinstance(event, dict):
+                    yield event
 
     async def chat_simple(self, user_message: str) -> str:
         """Simple chat - send a message and get a reply.

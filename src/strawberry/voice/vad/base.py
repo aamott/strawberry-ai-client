@@ -70,6 +70,14 @@ class VADBackend(ABC):
         schema = cls.get_settings_schema()
         return {field.key: field.default for field in schema if hasattr(field, 'key')}
 
+    def preload(self) -> None:
+        """Preload any models or resources needed for inference.
+
+        Call this during initialization to avoid blocking the audio thread
+        on the first is_speech() call. Override in subclasses that lazy-load.
+        """
+        pass
+
     def cleanup(self) -> None:
         """Release any resources held by the backend.
 

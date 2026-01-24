@@ -21,3 +21,8 @@ planning/design doc.
 - The CLI is wired for a future `SpokeCore` entrypoint and currently falls back
   to a minimal echo core when the core is not available.
 - Tool call expansion uses `Shift+Tab` with `/last` as a fallback.
+
+
+## TODO
+- [ ] Add support for streaming responses
+- [ ] Detect hub coming online/offline

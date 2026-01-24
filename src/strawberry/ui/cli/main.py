@@ -110,7 +110,7 @@ for log_name in ["httpx", "httpcore", "asyncio", "urllib3"]:
 
 
 class CLIApp:
-    """CLI application using SpokeCore."""
+    """CLI application using SpokeCore with optional voice support."""
 
     def __init__(self) -> None:
         self._core = SpokeCore()
@@ -120,6 +120,10 @@ class CLIApp:
         self._response_event.set()
         self._last_tool_result: Optional[str] = None
         self._pending_tool_calls: dict = {}
+
+        # Voice support
+        self._voice_enabled = False
+        self._voice_core = None
 
     async def run(self) -> None:
         """Main run loop."""
@@ -155,6 +159,7 @@ class CLIApp:
             renderer.print_error(str(e))
         finally:
             self._running = False
+            await self._stop_voice()
             await self._core.stop()
 
     async def _try_connect_hub(self) -> None:
@@ -187,7 +192,8 @@ class CLIApp:
                 if not self._response_event.is_set():
                     await self._response_event.wait()
 
-                prompt = renderer.print_prompt()
+                # Green prompt when voice is active
+                prompt = renderer.print_prompt(voice_active=self._voice_enabled)
                 sys.stdout.write(prompt)
                 sys.stdout.flush()
 
@@ -247,6 +253,11 @@ class CLIApp:
             if event.role == "assistant":
                 renderer.print_assistant(event.content)
                 self._response_event.set()
+
+                # Speak response if voice is enabled
+                if self._voice_enabled and self._voice_core:
+                    self._voice_core.speak(event.content)
+
             elif event.role == "system":
                 renderer.print_system(event.content)
             # User messages are not echoed (user already sees their input)
@@ -320,6 +331,9 @@ class CLIApp:
             else:
                 renderer.print_system("No tool output available")
 
+        elif cmd == "/voice":
+            await self._toggle_voice()
+
         elif cmd == "/connect":
             renderer.print_system("Connecting to Hub...")
             connected = await self._core.connect_hub()
@@ -331,12 +345,145 @@ class CLIApp:
         elif cmd == "/status":
             online = self._core.is_online()
             model = self._core.get_model_info()
+            voice = "ON" if self._voice_enabled else "OFF"
             status = "Online (Hub)" if online else "Local"
-            renderer.print_status(f"Mode: {status} | Model: {model}")
+            renderer.print_status(f"Mode: {status} | Model: {model} | Voice: {voice}")
 
         else:
             renderer.print_error(f"Unknown command: {cmd}")
             renderer.print_system("Type /help for available commands")
+
+    # -------------------------------------------------------------------------
+    # Voice Support
+    # -------------------------------------------------------------------------
+
+    async def _toggle_voice(self) -> None:
+        """Toggle voice mode on/off."""
+        if self._voice_enabled:
+            await self._stop_voice()
+            renderer.print_system("Voice mode disabled")
+        else:
+            await self._start_voice()
+
+    async def _start_voice(self) -> None:
+        """Start voice mode."""
+        try:
+            # Lazy import to avoid loading voice deps if not needed
+            from ...config import get_settings
+            from ...voice import VoiceConfig, VoiceCore
+
+            settings = get_settings()
+
+            voice_config = VoiceConfig(
+                wake_words=settings.wake_word.keywords or ["strawberry"],
+                sensitivity=getattr(settings.wake_word, "sensitivity", 0.5),
+                sample_rate=16000,
+                stt_backend=settings.stt.backend,
+                tts_backend=settings.tts.backend,
+                vad_backend=settings.vad.backend,
+                wake_backend=settings.wake_word.backend,
+            )
+
+            self._voice_core = VoiceCore(
+                config=voice_config,
+                response_handler=self._voice_response_handler,
+            )
+
+            # Subscribe to voice events
+            self._voice_core.add_listener(self._on_voice_event)
+
+            # Start voice core
+            if await self._voice_core.start():
+                self._voice_enabled = True
+                wake_words = ", ".join(voice_config.wake_words)
+                renderer.print_system(f"Voice mode enabled. Say '{wake_words}' to activate.")
+            else:
+                renderer.print_error("Failed to start voice mode")
+                self._voice_core = None
+
+        except ImportError as e:
+            renderer.print_error(f"Voice dependencies not available: {e}")
+        except Exception as e:
+            logger.exception("Voice start error")
+            renderer.print_error(f"Voice error: {e}")
+
+    async def _stop_voice(self) -> None:
+        """Stop voice mode."""
+        if self._voice_core:
+            await self._voice_core.stop()
+            self._voice_core = None
+        self._voice_enabled = False
+
+    def _on_voice_event(self, event) -> None:
+        """Handle voice events - print as system messages.
+
+        Args:
+            event: Voice event from VoiceCore
+        """
+        from ...voice import (
+            VoiceError,
+            VoiceListening,
+            VoiceSpeaking,
+            VoiceState,
+            VoiceStateChanged,
+            VoiceTranscription,
+            VoiceWakeWordDetected,
+        )
+
+        if isinstance(event, VoiceWakeWordDetected):
+            renderer.print_system(f"🎤 Wake word detected: '{event.keyword}'")
+
+        elif isinstance(event, VoiceListening):
+            renderer.print_system("🎤 Listening...")
+
+        elif isinstance(event, VoiceTranscription):
+            if event.is_final and event.text:
+                # Print transcription as user-like message
+                print(f"\n{renderer.styled('🗣️ You:', renderer.Colors.GREEN)} {event.text}")
+                # Also send to SpokeCore if we have a session
+                if self._session_id:
+                    # Schedule async send
+                    return self._send_voice_transcription(event.text)
+
+        elif isinstance(event, VoiceSpeaking):
+            renderer.print_system(f"🔊 Speaking: {event.text[:50]}...")
+
+        elif isinstance(event, VoiceError):
+            renderer.print_error(f"Voice error: {event.error}")
+
+        elif isinstance(event, VoiceStateChanged):
+            if event.new_state == VoiceState.ERROR:
+                renderer.print_error("Voice entered a failed state; disabling voice mode")
+                return self._stop_voice()
+
+        return None
+
+    async def _send_voice_transcription(self, text: str) -> None:
+        """Send voice transcription to SpokeCore.
+
+        Args:
+            text: The transcribed text
+        """
+        if self._session_id:
+            self._response_event.clear()
+            await self._core.send_message(self._session_id, text)
+            await self._response_event.wait()
+
+    def _voice_response_handler(self, text: str) -> str:
+        """Handle voice transcription (sync callback from voice thread).
+
+        This is called by VoiceCore when STT completes. We don't use this
+        for the CLI - instead we handle VoiceTranscription events and route
+        them through SpokeCore. Return empty string to skip VoiceCore's TTS.
+
+        Args:
+            text: Transcribed text
+
+        Returns:
+            Empty string (we handle TTS via SpokeCore events)
+        """
+        # Return empty - we handle this via events and SpokeCore
+        return ""
 
 
 def main() -> None:

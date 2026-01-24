@@ -122,6 +122,7 @@ class TensorZeroClient:
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
+        function_name: str = "chat",
     ) -> ChatResponse:
         """Send chat request to TensorZero embedded gateway.
 
@@ -153,7 +154,7 @@ class TensorZeroClient:
                 tz_input["system"] = system_prompt
 
             inference_params = {
-                "function_name": "chat",
+                "function_name": function_name,
                 "input": tz_input,
             }
 
@@ -181,7 +182,9 @@ class TensorZeroClient:
                     )
 
                     if hasattr(block, "text"):
-                        content += block.text
+                        block_text = getattr(block, "text", "")
+                        if block_text:
+                            content += str(block_text)
                     elif hasattr(block, "type") and block.type == "tool_call":
                         # TensorZero may have name/arguments OR raw_name/raw_arguments
                         # Use parsed versions if available, fall back to raw

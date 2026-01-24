@@ -30,7 +30,7 @@ routing = ["google"]
 
 [models.google_gemini.providers.google]
 type = "google_ai_studio_gemini"
-model_name = "gemini-2.0-flash"
+model_name = "gemini-2.5-flash"
 api_key_location = "env::GOOGLE_AI_STUDIO_API_KEY"
 
 [models.ollama_local]
@@ -98,3 +98,45 @@ model = "ollama_local"
 [functions.chat.variants.local_ollama.retries]
 num_retries = 1
 max_delay_s = 1
+
+# -----------------------------------------------------------------------------
+# Offline function: never try Hub
+# -----------------------------------------------------------------------------
+
+[functions.chat_local]
+type = "chat"
+tools = ["search_skills", "describe_function", "python_exec"]
+
+[functions.chat_local.experimentation]
+type = "uniform"
+candidate_variants = ["local_ollama"]
+fallback_variants = ["gemini_variant"]
+
+[functions.chat_local.variants.gemini_variant]
+type = "chat_completion"
+model = "google_gemini"
+[functions.chat_local.variants.gemini_variant.retries]
+num_retries = 1
+max_delay_s = 2
+
+[functions.chat_local.variants.local_ollama]
+type = "chat_completion"
+model = "ollama_local"
+[functions.chat_local.variants.local_ollama.retries]
+num_retries = 1
+max_delay_s = 1
+
+[functions.chat_local_gemini]
+type = "chat"
+tools = ["search_skills", "describe_function", "python_exec"]
+
+[functions.chat_local_gemini.experimentation]
+type = "uniform"
+candidate_variants = ["gemini_variant"]
+
+[functions.chat_local_gemini.variants.gemini_variant]
+type = "chat_completion"
+model = "google_gemini"
+[functions.chat_local_gemini.variants.gemini_variant.retries]
+num_retries = 1
+max_delay_s = 2

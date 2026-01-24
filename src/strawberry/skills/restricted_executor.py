@@ -75,6 +75,7 @@ def execute_restricted(
             "sum": sum,
             "abs": abs,
             "round": round,
+            "repr": repr,
             "enumerate": enumerate,
             "zip": zip,
             "sorted": sorted,

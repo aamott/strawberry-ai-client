@@ -1,11 +1,13 @@
-"""Tests for voice state machine and controller."""
+"""Tests for VoiceCore state machine and API."""
 
 import pytest
 
 from strawberry.voice import (
     VoiceConfig,
     VoiceController,
+    VoiceCore,
     VoiceState,
+    VoiceStateChanged,
     VoiceStateError,
     VoiceStatusChanged,
     can_transition,
@@ -31,10 +33,11 @@ class TestVoiceState:
     """Tests for VoiceState enum and transitions."""
 
     def test_initial_state_is_stopped(self):
-        """VoiceController should start in STOPPED state."""
+        """VoiceCore should start in STOPPED state."""
         config = make_test_voice_config()
-        controller = VoiceController(config)
-        assert controller.state == VoiceState.STOPPED
+        core = VoiceCore(config)
+        assert core.state == VoiceState.STOPPED
+        assert core.get_state() == VoiceState.STOPPED  # Test get_state() method
 
     def test_valid_transitions(self):
         """Test that valid transitions are allowed."""
@@ -93,83 +96,98 @@ class TestVoiceStateError:
 
 
 @pytest.mark.asyncio
-class TestVoiceControllerAsync:
-    """Async tests for VoiceController."""
+class TestVoiceCoreAsync:
+    """Async tests for VoiceCore."""
 
     async def test_start_transitions_to_idle(self):
         """start() should transition state to IDLE."""
         config = make_test_voice_config()
-        controller = VoiceController(config)
+        core = VoiceCore(config)
 
         # Track events
         events = []
-        controller.add_listener(lambda e: events.append(e))
+        core.add_listener(lambda e: events.append(e))
 
-        result = await controller.start()
+        result = await core.start()
 
         assert result is True
-        assert controller.state == VoiceState.IDLE
+        assert core.state == VoiceState.IDLE
+        assert core.is_running() is True
 
         # Should have emitted status change event
-        status_events = [e for e in events if isinstance(e, VoiceStatusChanged)]
+        status_events = [e for e in events if isinstance(e, VoiceStateChanged)]
         assert len(status_events) == 1
-        assert status_events[0].state == VoiceState.IDLE
-        assert status_events[0].previous_state == VoiceState.STOPPED
+        assert status_events[0].new_state == VoiceState.IDLE
+        assert status_events[0].old_state == VoiceState.STOPPED
 
     async def test_stop_transitions_to_stopped(self):
         """stop() should transition state to STOPPED."""
         config = make_test_voice_config()
-        controller = VoiceController(config)
+        core = VoiceCore(config)
 
-        await controller.start()
-        assert controller.state == VoiceState.IDLE
+        await core.start()
+        assert core.state == VoiceState.IDLE
 
-        await controller.stop()
-        assert controller.state == VoiceState.STOPPED
+        await core.stop()
+        assert core.state == VoiceState.STOPPED
+        assert core.is_running() is False
 
     async def test_session_id_generated_on_start(self):
         """session_id should be generated when started."""
         config = make_test_voice_config()
-        controller = VoiceController(config)
+        core = VoiceCore(config)
 
-        assert controller.session_id == ""
+        assert core.session_id == ""
 
-        await controller.start()
-        assert controller.session_id.startswith("voice-")
+        await core.start()
+        assert core.session_id.startswith("voice-")
 
-        await controller.stop()
+        await core.stop()
+
+    async def test_trigger_wakeword_transitions_to_listening(self):
+        """trigger_wakeword() should transition to LISTENING."""
+        config = make_test_voice_config()
+        core = VoiceCore(config)
+
+        await core.start()
+        core.trigger_wakeword()
+
+        assert core.state == VoiceState.LISTENING
+
+        await core.stop()
 
     async def test_ptt_transitions_to_listening(self):
         """push_to_talk_start should transition to LISTENING."""
         config = make_test_voice_config()
-        controller = VoiceController(config)
+        core = VoiceCore(config)
 
-        await controller.start()
-        await controller.push_to_talk_start()
+        await core.start()
+        core.push_to_talk_start()
 
-        assert controller.state == VoiceState.LISTENING
+        assert core.state == VoiceState.LISTENING
+        assert core.is_push_to_talk_active() is True
 
-        await controller.stop()
+        await core.stop()
 
     async def test_cannot_start_ptt_when_not_idle(self):
         """PTT should not work when not in IDLE state."""
         config = make_test_voice_config()
-        controller = VoiceController(config)
+        core = VoiceCore(config)
 
         # Not started yet - should not change state
-        await controller.push_to_talk_start()
-        assert controller.state == VoiceState.STOPPED
+        core.push_to_talk_start()
+        assert core.state == VoiceState.STOPPED
 
     async def test_listener_receives_events(self):
         """Event listeners should receive all events."""
         config = make_test_voice_config()
-        controller = VoiceController(config)
+        core = VoiceCore(config)
 
         events = []
-        controller.add_listener(lambda e: events.append(e))
+        core.add_listener(lambda e: events.append(e))
 
-        await controller.start()
-        await controller.stop()
+        await core.start()
+        await core.stop()
 
         # Should have received status change events
         assert len(events) >= 2
@@ -177,19 +195,31 @@ class TestVoiceControllerAsync:
     async def test_remove_listener(self):
         """Removed listeners should not receive events."""
         config = make_test_voice_config()
-        controller = VoiceController(config)
+        core = VoiceCore(config)
 
         events = []
         def listener(e):
             return events.append(e)
 
-        controller.add_listener(listener)
-        controller.remove_listener(listener)
+        core.add_listener(listener)
+        core.remove_listener(listener)
 
-        await controller.start()
-        await controller.stop()
+        await core.start()
+        await core.stop()
 
         assert len(events) == 0
+
+
+class TestBackwardsCompatibility:
+    """Tests to ensure VoiceController alias works."""
+
+    def test_voicecontroller_is_alias(self):
+        """VoiceController should be an alias for VoiceCore."""
+        assert VoiceController is VoiceCore
+
+    def test_voicestatuschanged_is_alias(self):
+        """VoiceStatusChanged should be an alias for VoiceStateChanged."""
+        assert VoiceStatusChanged is VoiceStateChanged
 
 
 class TestVoiceConfig:

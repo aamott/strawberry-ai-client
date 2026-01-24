@@ -56,6 +56,7 @@ all = [
 strawberry = "strawberry.main:main"
 strawberry-cli = "strawberry.ui.cli.main:main"
 strawberry-gui = "strawberry.ui.app:main"
+strawberry-voice = "strawberry.ui.voice_interface:main"
 strawberry-test = "strawberry.testing.runner:main"
 
 [build-system]

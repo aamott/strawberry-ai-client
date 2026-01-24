@@ -117,10 +117,27 @@ class AudioStream:
         while self._running:
             try:
                 frame = self.backend.read_frame()
-            except Exception:
+            except Exception as e:
                 if not self._running:
                     break
-                raise
+
+                # Some backends (e.g. SoundDeviceBackend) can raise transient
+                # timeouts if the audio callback momentarily doesn't deliver
+                # frames. Treat those as recoverable so the stream doesn't die
+                # and leave consumers stuck in LISTENING.
+                if isinstance(e, RuntimeError) and "timeout" in str(e).lower():
+                    continue
+
+                if not self._suppress_errors:
+                    print(f"Audio stream error: {e}")
+
+                # Fatal error: stop the backend and exit the loop.
+                self._running = False
+                try:
+                    self.backend.stop()
+                except Exception:
+                    pass
+                break
 
             # Add to rolling buffer
             with self._lock:

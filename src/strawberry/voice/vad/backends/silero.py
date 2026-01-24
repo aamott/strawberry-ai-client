@@ -29,12 +29,14 @@ class SileroVAD(VADBackend):
         self,
         sample_rate: int = 16000,
         threshold: float = 0.5,
+        use_jit: bool = True,
     ):
         """Initialize Silero VAD.
 
         Args:
             sample_rate: Audio sample rate (must be 8000 or 16000)
             threshold: Speech probability threshold (0.0 to 1.0)
+            use_jit: Enable JIT compilation for faster inference (default True)
 
         Raises:
             ImportError: If torch is not installed
@@ -46,6 +48,7 @@ class SileroVAD(VADBackend):
         self._sample_rate = sample_rate
         self._threshold = threshold
         self._last_probability = 0.0
+        self._use_jit = use_jit
 
         # Load model lazily to avoid import-time torch dependency
         self._model = None
@@ -66,6 +69,18 @@ class SileroVAD(VADBackend):
             trust_repo=True,
         )
         self._model.eval()
+
+        # Optimize model for inference
+        if self._use_jit:
+            # JIT compile for faster execution
+            try:
+                self._model = torch.jit.script(self._model)
+            except Exception:
+                # If JIT fails, continue with regular model
+                pass
+
+        # Set inference mode
+        torch.set_grad_enabled(False)
 
     def is_speech(self, audio_frame: np.ndarray) -> bool:
         """Detect speech in audio frame.
@@ -101,6 +116,10 @@ class SileroVAD(VADBackend):
 
         self._last_probability = prob
         return prob
+
+    def preload(self) -> None:
+        """Preload the Silero model to avoid blocking the audio thread."""
+        self._ensure_model()
 
     def cleanup(self) -> None:
         """Release model resources."""

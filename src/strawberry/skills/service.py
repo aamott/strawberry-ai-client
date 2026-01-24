@@ -710,6 +710,7 @@ class SkillService:
 
             elif tool_name == "python_exec":
                 code = arguments.get("code", "")
+                code = self._prepare_python_exec_code(code)
                 result = self.execute_code(code)
                 if result.success:
                     return {"result": result.result or "(no output)"}
@@ -722,6 +723,71 @@ class SkillService:
         except Exception as e:
             import traceback
             return {"error": f"{type(e).__name__}: {e}\n{traceback.format_exc()}"}
+
+    def _prepare_python_exec_code(self, code: str) -> str:
+        """Rewrite python_exec code to behave more like a notebook cell.
+
+        If the last top-level statement is a bare expression (for example:
+        `devices.new.InternetSearchSkill.search_web_detailed("bacon")`), rewrite
+        the code to evaluate the expression and print its repr(). This ensures
+        `python_exec` returns useful output even when the user/model forgets to
+        wrap the expression in `print(...)`.
+
+        Args:
+            code: Original Python code.
+
+        Returns:
+            Rewritten Python code (or original code if not applicable).
+        """
+        if not code or not code.strip():
+            return code
+
+        try:
+            module = ast.parse(code)
+        except SyntaxError:
+            return code
+
+        if not module.body:
+            return code
+
+        last_stmt = module.body[-1]
+        if not isinstance(last_stmt, ast.Expr):
+            return code
+
+        expr_value = last_stmt.value
+        if isinstance(expr_value, ast.Call) and isinstance(expr_value.func, ast.Name):
+            if expr_value.func.id == "print":
+                return code
+
+        # RestrictedPython rejects assignment to names starting with an underscore.
+        # Use an unprefixed temp name for compatibility.
+        last_name = "strawberry_last"
+
+        assign = ast.Assign(
+            targets=[ast.Name(id=last_name, ctx=ast.Store())],
+            value=expr_value,
+        )
+        print_call = ast.Expr(
+            value=ast.Call(
+                func=ast.Name(id="print", ctx=ast.Load()),
+                args=[
+                    ast.Call(
+                        func=ast.Name(id="repr", ctx=ast.Load()),
+                        args=[ast.Name(id=last_name, ctx=ast.Load())],
+                        keywords=[],
+                    )
+                ],
+                keywords=[],
+            )
+        )
+
+        module.body = [*module.body[:-1], assign, print_call]
+        ast.fix_missing_locations(module)
+
+        try:
+            return ast.unparse(module)
+        except Exception:
+            return code
 
     def set_hub_client(self, hub_client: Optional[HubClient]) -> None:
         """Update the Hub client and reconfigure runtime mode.
@@ -842,6 +908,7 @@ class SkillService:
 
             elif tool_name == "python_exec":
                 code = arguments.get("code", "")
+                code = self._prepare_python_exec_code(code)
                 result = await self.execute_code_async(code)
                 if result.success:
                     return {"result": result.result or "(no output)"}

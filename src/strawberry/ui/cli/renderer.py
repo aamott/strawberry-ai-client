@@ -44,23 +44,23 @@ def styled(text: str, *styles: str) -> str:
 
 def print_system(message: str) -> None:
     """Print a system message in gray."""
-    print(styled(f"[system] {message}", Colors.GRAY))
+    print(styled(f"[system] {message}", Colors.GRAY), flush=True)
 
 
 def print_error(message: str) -> None:
     """Print an error message in red."""
-    print(styled(f"[error] {message}", Colors.RED))
+    print(styled(f"[error] {message}", Colors.RED), flush=True)
 
 
 def print_user(message: str) -> None:
     """Print user message (for echo/confirmation)."""
     # User messages are typically not echoed, but available if needed
-    print(styled(f"> {message}", Colors.BLUE))
+    print(styled(f"> {message}", Colors.BLUE), flush=True)
 
 
 def print_assistant(message: str) -> None:
     """Print assistant response."""
-    print(f"\n{message}\n")
+    print(f"\n{message}\n", flush=True)
 
 
 def print_tool_call(
@@ -80,7 +80,7 @@ def print_tool_call(
         success: Whether the tool call succeeded
     """
     if tool_name == "python_exec" and "\n" in args_preview:
-        call_part = styled(f"* {tool_name}", Colors.CYAN)
+        call_part = styled(f"* CALL {tool_name}", Colors.CYAN)
         args_part = styled("(code=)", Colors.DIM)
         if result_preview is not None:
             arrow = styled(" → ", Colors.GRAY)
@@ -88,12 +88,12 @@ def print_tool_call(
                 result_part = styled(result_preview[:40] + "...", Colors.GREEN)
             else:
                 result_part = styled(result_preview[:40] + "...", Colors.RED)
-            print(f"{call_part}{args_part}{arrow}{result_part}")
+            print(f"{call_part}{args_part}{arrow}{result_part}", flush=True)
             return
 
-        print(f"{call_part}{args_part} ...")
+        print(f"{call_part}{args_part} ...", flush=True)
         for line in args_preview.splitlines():
-            print(styled(f"  {line}", Colors.DIM))
+            print(styled(f"  {line}", Colors.DIM), flush=True)
         return
 
     # Truncate previews
@@ -103,7 +103,7 @@ def print_tool_call(
         result_preview = result_preview[:37] + "..."
 
     # Build the line
-    call_part = styled(f"* {tool_name}", Colors.CYAN)
+    call_part = styled(f"* CALL {tool_name}", Colors.CYAN)
     args_part = styled(f"({args_preview})", Colors.DIM)
 
     if result_preview is not None:
@@ -112,10 +112,10 @@ def print_tool_call(
             result_part = styled(result_preview, Colors.GREEN)
         else:
             result_part = styled(result_preview, Colors.RED)
-        print(f"{call_part}{args_part}{arrow}{result_part}")
+        print(f"{call_part}{args_part}{arrow}{result_part}", flush=True)
     else:
         # Tool started, no result yet
-        print(f"{call_part}{args_part} ...")
+        print(f"{call_part}{args_part} ...", flush=True)
 
 
 def print_tool_result(
@@ -134,6 +134,7 @@ def print_tool_result(
     """
     # Print tool results on a new line to avoid overwriting prompt/input lines
     sys.stdout.write("\n")
+    sys.stdout.flush()
 
     output = result if success else error
     preview = output[:40] + "..." if output and len(output) > 40 else (output or "")
@@ -145,8 +146,8 @@ def print_tool_result(
         status = styled("✗", Colors.RED)
         result_text = styled(preview, Colors.RED) if preview else ""
 
-    tool_part = styled(f"* {tool_name}", Colors.CYAN)
-    print(f"{tool_part} {status} {result_text}")
+    tool_part = styled(f"* RESULT {tool_name}", Colors.CYAN)
+    print(f"{tool_part} {status} {result_text}", flush=True)
 
 
 def print_prompt(voice_active: bool = False) -> str:
@@ -164,7 +165,7 @@ def print_prompt(voice_active: bool = False) -> str:
 
 def print_status(text: str) -> None:
     """Print a status line (model info, connection status, etc.)."""
-    print(styled(f"[{text}]", Colors.DIM))
+    print(styled(f"[{text}]", Colors.DIM), flush=True)
 
 
 def print_help() -> None:
@@ -175,10 +176,11 @@ Available commands:
   /quit, /q - Quit the CLI
   /clear    - Clear conversation history
   /last     - Show full output of last tool call
+  /voice    - Toggle voice mode (green prompt when active)
   /connect  - Connect to Hub
   /status   - Show connection status
 """
-    print(styled(help_text, Colors.CYAN))
+    print(styled(help_text, Colors.CYAN), flush=True)
 
 
 def print_welcome(model: str, online: bool) -> None:
@@ -190,17 +192,32 @@ def print_welcome(model: str, online: bool) -> None:
     """
     mode = styled("Online", Colors.GREEN) if online else styled("Local", Colors.YELLOW)
     border = Colors.CYAN
-    print(styled("\n╭─────────────────────────────────────╮", border))
-    print(styled("│", border) + "   Strawberry CLI                    " + styled("│", border))
-    print(styled("│", border) + f"   Mode: {mode}                        " + styled("│", border))
-    print(styled("│", border) + f"   Model: {model[:20]:<20}     " + styled("│", border))
-    print(styled("╰─────────────────────────────────────╯", border))
-    print(styled("Type /help for commands\n", Colors.DIM))
+    print(styled("\n╭─────────────────────────────────────╮", border), flush=True)
+    print(
+        styled("│", border)
+        + "   Strawberry CLI                    "
+        + styled("│", border),
+        flush=True,
+    )
+    print(
+        styled("│", border)
+        + f"   Mode: {mode}                        "
+        + styled("│", border),
+        flush=True,
+    )
+    print(
+        styled("│", border)
+        + f"   Model: {model[:20]:<20}     "
+        + styled("│", border),
+        flush=True,
+    )
+    print(styled("╰─────────────────────────────────────╯", border), flush=True)
+    print(styled("Type /help for commands\n", Colors.DIM), flush=True)
 
 
 def clear_screen() -> None:
     """Clear the terminal screen."""
-    print("\033[2J\033[H", end="")
+    print("\033[2J\033[H", end="", flush=True)
 
 
 # =============================================================================

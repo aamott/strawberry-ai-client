@@ -165,8 +165,7 @@ class SpokeCore:
         """Send a user message and run the agent loop."""
         session = self._sessions.get(session_id)
         if not session:
-            await self._emit(CoreError(error=f"Session not found: {session_id}"))
-            return
+            raise ValueError(f"Session not found: {session_id}")
 
         if session.busy:
             await self._emit(CoreError(error="Session is busy"))
@@ -179,39 +178,93 @@ class SpokeCore:
             session.add_message("user", text)
             await self._emit(MessageAdded(session_id=session_id, role="user", content=text))
 
-            # If the user explicitly requests search_skills, run it immediately.
-            # This makes tool-use tests deterministic and provides the model with
-            # authoritative tool output.
-            requested_search = "search_skills" in text.lower() and "use" in text.lower()
-            if requested_search and self._skills:
-                await self._emit(
-                    ToolCallStarted(
-                        session_id=session.id,
-                        tool_name="search_skills",
-                        arguments={"query": ""},
+            # Offline-only: deterministic tool execution hooks.
+            #
+            # When online, the Hub runs the agent loop (including tool calls) and
+            # owns the system prompt, so the Spoke must not execute tools locally.
+            if (not self.is_online()) and self._skills:
+                # If the user explicitly requests search_skills, run it immediately.
+                # This makes tool-use tests deterministic and provides the model with
+                # authoritative tool output.
+                requested_search = "search_skills" in text.lower() and "use" in text.lower()
+                if requested_search:
+                    await self._emit(
+                        ToolCallStarted(
+                            session_id=session.id,
+                            tool_name="search_skills",
+                            arguments={"query": ""},
+                        )
                     )
-                )
-                result = await self._skills.execute_tool_async(
-                    "search_skills",
-                    {"query": ""},
-                )
-                success = "error" not in result
-                result_text = result.get("result", result.get("error", ""))
-                await self._emit(
-                    ToolCallResult(
-                        session_id=session.id,
-                        tool_name="search_skills",
-                        success=success,
-                        result=result_text if success else None,
-                        error=result_text if not success else None,
+                    result = await self._skills.execute_tool_async(
+                        "search_skills",
+                        {"query": ""},
                     )
+                    success = "error" not in result
+                    result_text = result.get("result", result.get("error", ""))
+                    await self._emit(
+                        ToolCallResult(
+                            session_id=session.id,
+                            tool_name="search_skills",
+                            success=success,
+                            result=result_text if success else None,
+                            error=result_text if not success else None,
+                        )
+                    )
+                    tool_msg = (
+                        f"[Tool: search_skills]\n{result_text}\n\n"
+                        "[Now respond naturally to the user based on this result. "
+                        "Do not rerun the same tool call again unless the user asks. ]"
+                    )
+                    session.add_message("user", tool_msg)
+
+                # If the user explicitly requires python_exec and provides a device.* call,
+                # run it immediately to make tool-use deterministic.
+                normalized = text.lower()
+                requested_python_exec = (
+                    "python_exec" in normalized
+                    and "must" in normalized
+                    and "use" in normalized
                 )
-                tool_msg = (
-                    f"[Tool: search_skills]\n{result_text}\n\n"
-                    "[Now respond naturally to the user based on this result. "
-                    "Do not rerun the same tool call again unless the user asks. ]"
-                )
-                session.add_message("user", tool_msg)
+
+                if requested_python_exec:
+                    import re
+
+                    match = re.search(r"(device\.[A-Za-z0-9_\.]+\([^\)]*\))", text)
+                    if match:
+                        code = f"print({match.group(1)})"
+                        await self._emit(
+                            ToolCallStarted(
+                                session_id=session.id,
+                                tool_name="python_exec",
+                                arguments={"code": code},
+                            )
+                        )
+
+                        result = await self._skills.execute_tool_async(
+                            "python_exec",
+                            {"code": code},
+                        )
+                        success = "error" not in result
+                        result_text = result.get("result", result.get("error", ""))
+                        await self._emit(
+                            ToolCallResult(
+                                session_id=session.id,
+                                tool_name="python_exec",
+                                success=success,
+                                result=result_text if success else None,
+                                error=result_text if not success else None,
+                            )
+                        )
+
+                        session.add_message("assistant", result_text)
+                        await self._emit(
+                            MessageAdded(
+                                session_id=session.id,
+                                role="assistant",
+                                content=result_text,
+                            )
+                        )
+                        return
 
             # Run agent loop
             await self._agent_loop(session)
@@ -261,33 +314,85 @@ class SpokeCore:
         """Run agent loop via Hub (Hub executes tools on registered devices)."""
         from ..models import ChatMessage
 
-        # Build system prompt with mode notice
-        system_prompt = self._skills.get_system_prompt(mode_notice=self._pending_mode_notice)
+        # In online mode the Hub owns:
+        # - system prompt construction
+        # - tool call execution
+        #
+        # So the Spoke must not inject a system prompt; it should only forward the
+        # user/assistant conversation state.
         self._pending_mode_notice = None
 
-        # Build messages for Hub
-        messages = [ChatMessage(role="system", content=system_prompt)]
+        # Build messages for Hub (exclude system messages)
+        messages: list[ChatMessage] = []
         for msg in session.messages:
             if msg.role != "system":
                 messages.append(ChatMessage(role=msg.role, content=msg.content))
 
-        # Send to Hub with enable_tools=True - Hub runs the agent loop
+        # Stream from Hub so tool call events can be emitted incrementally.
         try:
-            response = await self._hub_client.chat(
-                messages=messages,
-                enable_tools=True,  # Hub executes skills
-            )
+            final_content: Optional[str] = None
 
-            # Add response to session
-            if response.content:
-                session.add_message("assistant", response.content)
+            async for event in self._hub_client.chat_stream(
+                messages=messages,
+                enable_tools=True,
+            ):
+                event_type = str(event.get("type") or "")
+
+                if event_type == "tool_call_started":
+                    tool_name = str(event.get("tool_name") or "")
+                    arguments = event.get("arguments")
+                    if not isinstance(arguments, dict):
+                        arguments = {}
+                    await self._emit(
+                        ToolCallStarted(
+                            session_id=session.id,
+                            tool_name=tool_name,
+                            arguments=arguments,
+                        )
+                    )
+                    continue
+
+                if event_type == "tool_call_result":
+                    tool_name = str(event.get("tool_name") or "")
+                    success = bool(event.get("success"))
+                    result = event.get("result")
+                    error = event.get("error")
+                    await self._emit(
+                        ToolCallResult(
+                            session_id=session.id,
+                            tool_name=tool_name,
+                            success=success,
+                            result=str(result) if (success and result is not None) else None,
+                            error=str(error) if ((not success) and error is not None) else None,
+                        )
+                    )
+                    continue
+
+                if event_type == "assistant_message":
+                    final_content = str(event.get("content") or "")
+                    continue
+
+                if event_type == "error":
+                    error_msg = str(event.get("error") or "Hub stream error")
+                    await self._emit(CoreError(error=error_msg))
+                    return
+
+                if event_type == "done":
+                    break
+
+            if final_content and final_content.strip():
+                session.add_message("assistant", final_content)
                 await self._emit(
                     MessageAdded(
                         session_id=session.id,
                         role="assistant",
-                        content=response.content,
+                        content=final_content,
                     )
                 )
+            else:
+                error = "Hub returned an empty response. See Hub logs for details."
+                logger.error(error)
+                await self._emit(CoreError(error=error))
 
         except HubError as e:
             logger.error(f"Hub chat failed: {e}")
@@ -300,6 +405,24 @@ class SpokeCore:
         if not self._llm:
             await self._emit(CoreError(error="Local LLM not available"))
             return
+
+        function_name = "chat_local"
+        try:
+            import os
+
+            import httpx
+
+            ollama_ok = False
+            try:
+                resp = httpx.get("http://localhost:11434/api/tags", timeout=0.5)
+                ollama_ok = resp.status_code == 200
+            except Exception:
+                ollama_ok = False
+
+            if not ollama_ok and os.environ.get("GOOGLE_AI_STUDIO_API_KEY"):
+                function_name = "chat_local_gemini"
+        except Exception:
+            function_name = "chat_local"
 
         # Build system prompt with mode notice
         system_prompt = self._skills.get_system_prompt(mode_notice=self._pending_mode_notice)
@@ -315,7 +438,11 @@ class SpokeCore:
                     messages.append(msg)
 
             # Get LLM response with system prompt passed explicitly
-            response = await self._llm.chat(messages, system_prompt=system_prompt)
+            response = await self._llm.chat(
+                messages,
+                system_prompt=system_prompt,
+                function_name=function_name,
+            )
 
             # Check for native tool calls first
             if response.tool_calls:

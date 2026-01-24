@@ -1,33 +1,41 @@
 """Voice module for Strawberry AI.
 
-Provides pure-Python voice controller that can be used by any UI.
+Provides VoiceCore - a pure-Python voice processing engine that can be used
+by any UI (CLI, VoiceInterface, etc.).
+
+VoiceController is kept as an alias for backwards compatibility.
 """
 
-from .controller import (
+from .state import VoiceState, VoiceStateError, can_transition
+from .voice_core import (
     VoiceConfig,
-    VoiceController,
+    VoiceController,  # Backwards-compatible alias for VoiceCore
+    VoiceCore,
     VoiceError,
     VoiceEvent,
     VoiceListening,
     VoiceResponse,
     VoiceSpeaking,
-    VoiceStatusChanged,
+    VoiceStateChanged,
+    VoiceStatusChanged,  # Backwards-compatible alias for VoiceStateChanged
     VoiceTranscription,
     VoiceWakeWordDetected,
 )
-from .state import VoiceState, VoiceStateError, can_transition
 
 __all__ = [
-    # Controller
-    "VoiceController",
+    # Core (primary)
+    "VoiceCore",
     "VoiceConfig",
+    # Backwards-compatible alias
+    "VoiceController",
     # State
     "VoiceState",
     "VoiceStateError",
     "can_transition",
     # Events
     "VoiceEvent",
-    "VoiceStatusChanged",
+    "VoiceStateChanged",
+    "VoiceStatusChanged",  # Alias for backwards compatibility
     "VoiceWakeWordDetected",
     "VoiceListening",
     "VoiceTranscription",

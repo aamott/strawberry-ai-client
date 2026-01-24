@@ -23,18 +23,6 @@ from ...hub.client import HubError
 from ...llm import OfflineModeTracker, TensorZeroClient
 from ...models import ChatMessage
 from ...spoke_core import ConnectionChanged, CoreError, ModeChanged, SpokeCore
-from ...voice import (
-    VoiceConfig,
-    VoiceController,
-    VoiceError,
-    VoiceEvent,
-    VoiceResponse,
-    VoiceState,
-    VoiceStatusChanged,
-    VoiceTranscription,
-    VoiceWakeWordDetected,
-)
-from ...voice.audio.feedback import FeedbackSound, get_feedback
 from .agent_helpers import (
     AgentLoopContext,
     ToolCallInfo,
@@ -49,11 +37,9 @@ from .widgets import (
     ChatArea,
     ChatHistorySidebar,
     InputArea,
-    MicState,
     OfflineModeBanner,
     RenameDialog,
     StatusBar,
-    VoiceIndicator,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,7 +70,6 @@ class MainWindow(QMainWindow):
         self._core_subscription = None
         self._conversation_history: List[ChatMessage] = []
         self._connected = False
-        self._voice_controller: Optional[VoiceController] = None
         self._skill_service: Optional[SkillService] = None
         self._current_session_id: Optional[str] = None
 
@@ -233,30 +218,6 @@ class MainWindow(QMainWindow):
         minimize_tray.triggered.connect(self._minimize_to_tray)
         view_menu.addAction(minimize_tray)
 
-        # Voice menu
-        voice_menu = menubar.addMenu("&Voice")
-
-        self._voice_toggle_action = QAction("Enable &Voice Mode", self)
-        self._voice_toggle_action.setShortcut("Ctrl+M")
-        self._voice_toggle_action.setCheckable(True)
-        self._voice_toggle_action.triggered.connect(self._toggle_voice_mode)
-        voice_menu.addAction(self._voice_toggle_action)
-
-        voice_menu.addSeparator()
-
-        # Audio feedback toggle
-        self._audio_feedback_action = QAction("&Audio Feedback", self)
-        self._audio_feedback_action.setCheckable(True)
-        self._audio_feedback_action.setChecked(self.settings.voice.audio_feedback_enabled)
-        self._audio_feedback_action.triggered.connect(self._toggle_audio_feedback)
-        voice_menu.addAction(self._audio_feedback_action)
-
-        voice_menu.addSeparator()
-
-        voice_settings = QAction("Voice &Settings...", self)
-        voice_settings.triggered.connect(self._on_voice_settings)
-        voice_menu.addAction(voice_settings)
-
         # Help menu
         help_menu = menubar.addMenu("&Help")
 
@@ -297,12 +258,6 @@ class MainWindow(QMainWindow):
         self._offline_banner.sync_requested.connect(self._on_sync_requested)
         layout.addWidget(self._offline_banner)
 
-        # Voice indicator (hidden by default)
-        self._voice_indicator = VoiceIndicator(theme=self._theme)
-        self._voice_indicator.setVisible(False)
-        self._voice_indicator.voice_toggled.connect(self._on_voice_toggled)
-        layout.addWidget(self._voice_indicator)
-
         # Chat area
         self._chat_area = ChatArea(theme=self._theme)
         layout.addWidget(self._chat_area, 1)
@@ -313,7 +268,6 @@ class MainWindow(QMainWindow):
             placeholder="Type your message... (Enter to send, Shift+Enter for newline)",
         )
         self._input_area.message_submitted.connect(self._on_message_submitted)
-        self._input_area.mic_clicked.connect(self._on_mic_button_clicked)
         layout.addWidget(self._input_area)
 
         # Status bar
@@ -1314,267 +1268,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Failed to refresh sessions: {e}")
 
-    def _toggle_voice_mode(self, enabled: bool):
-        """Toggle voice mode on/off."""
-        if enabled:
-            self._enable_voice()
-        else:
-            self._disable_voice()
-
-    def _on_voice_toggled(self, enabled: bool):
-        """Handle voice toggle from indicator widget."""
-        self._voice_toggle_action.setChecked(enabled)
-        self._toggle_voice_mode(enabled)
-
-    def _enable_voice(self):
-        """Enable voice interaction."""
-        # Show voice indicator
-        self._voice_indicator.setVisible(True)
-        self._voice_indicator.set_voice_enabled(True)
-
-        # Create voice controller if needed
-        if self._voice_controller is None:
-            # Create config from settings
-            voice_config = VoiceConfig(
-                wake_words=self.settings.wake_word.keywords or ["strawberry"],
-                sensitivity=getattr(self.settings.wake_word, 'sensitivity', 0.5),
-                sample_rate=16000,
-                stt_backend=self.settings.stt.backend,
-                tts_backend=self.settings.tts.backend,
-                vad_backend=self.settings.vad.backend,
-                wake_backend=self.settings.wake_word.backend,
-            )
-
-            self._voice_controller = VoiceController(
-                config=voice_config,
-                response_handler=self._voice_agent_handler,
-            )
-
-            # Subscribe to voice events (called from voice thread)
-            self._voice_controller.add_listener(self._on_voice_event)
-
-            # Audio feedback
-            self._audio_feedback = get_feedback(
-                enabled=self.settings.voice.audio_feedback_enabled
-            )
-
-        # Start voice (async)
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(self._start_voice_async())
-        else:
-            asyncio.run(self._start_voice_async())
-
-    async def _start_voice_async(self):
-        """Start voice controller asynchronously."""
-        if self._voice_controller and await self._voice_controller.start():
-            self._audio_feedback.play(FeedbackSound.READY)
-            self._chat_area.add_system_message(
-                f"Voice mode enabled. Say '{self.settings.wake_word.keywords[0]}' to activate."
-            )
-        else:
-            self._voice_indicator.setVisible(False)
-            self._voice_toggle_action.setChecked(False)
-
-    def _disable_voice(self):
-        """Disable voice interaction."""
-        if self._voice_controller:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(self._voice_controller.stop())
-            else:
-                asyncio.run(self._voice_controller.stop())
-
-        self._voice_indicator.setVisible(False)
-        self._voice_indicator.set_voice_enabled(False)
-        self._chat_area.add_system_message("Voice mode disabled")
-
-    def _on_voice_event(self, event: VoiceEvent):
-        """Handle voice events (called from voice thread).
-
-        Uses QTimer.singleShot for thread-safe UI updates.
-        """
-        # Schedule handling on Qt main thread
-        QTimer.singleShot(0, lambda: self._handle_voice_event(event))
-
-    def _handle_voice_event(self, event: VoiceEvent):
-        """Process voice event on main Qt thread.
-
-        Handles state changes, transcriptions, and responses from VoiceController.
-        Maps VoiceEvent types to existing handler methods.
-        """
-        if isinstance(event, VoiceStatusChanged):
-            # Map VoiceState enum to lowercase string for UI
-            state_map = {
-                VoiceState.STOPPED: "stopped",
-                VoiceState.IDLE: "idle",
-                VoiceState.LISTENING: "listening",
-                VoiceState.PROCESSING: "processing",
-                VoiceState.SPEAKING: "speaking",
-                VoiceState.ERROR: "error",
-            }
-            state_str = state_map.get(event.state, "idle")
-            self._on_voice_state_changed(state_str)
-
-        elif isinstance(event, VoiceWakeWordDetected):
-            self._on_wake_word_detected(event.keyword)
-
-        elif isinstance(event, VoiceTranscription):
-            if event.is_final:
-                self._on_transcription_ready(event.text)
-
-        elif isinstance(event, VoiceResponse):
-            self._on_voice_response(event.text)
-
-        elif isinstance(event, VoiceError):
-            self._on_voice_error(event.error)
-
-    def _voice_agent_handler(self, text: str) -> str:
-        """Handle voice transcription via local agent loop.
-
-        Uses TensorZeroClient + SkillService for both online (Hub) and offline
-        (local Ollama) modes. Called from voice thread.
-
-        Args:
-            text: Transcribed speech text
-
-        Returns:
-            Response text for TTS
-        """
-        if not self._tensorzero_client or not self._skill_service:
-            return "I'm not ready yet. Please try again."
-
-        try:
-            # Run async agent in sync context (voice runs in thread)
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(
-                    lambda: asyncio.run(self._voice_agent_async(text))
-                )
-                return future.result(timeout=60.0)
-        except Exception as e:
-            logger.error(f"Voice agent error: {e}")
-            return f"Sorry, I encountered an error: {e}"
-
-    async def _voice_agent_async(self, text: str) -> str:
-        """Async voice agent loop - uses same agent loop as text chat.
-
-        Args:
-            text: User's transcribed speech
-
-        Returns:
-            Response text for TTS
-        """
-        MAX_ITERATIONS = 5
-
-        if not self._tensorzero_client or not self._skill_service:
-            return "I'm not ready yet."
-
-        # Get system prompt from skill service
-        system_prompt = self._skill_service.get_system_prompt(
-            mode_notice=self._pending_mode_notice
-        )
-        self._pending_mode_notice = None
-
-        # Build messages with conversation history
-        tz_messages = [
-            ChatMessage(role=m.role, content=m.content)
-            for m in self._conversation_history
-            if m.role != "system"  # Skip system messages in history
-        ]
-        tz_messages.append(ChatMessage(role="user", content=text))
-
-        # Run agent loop (same as text chat)
-        final_response = None
-
-        for iteration in range(MAX_ITERATIONS):
-            logger.debug(f"[Voice Agent] Iteration {iteration + 1}/{MAX_ITERATIONS}")
-
-            # Call TensorZero
-            response = await self._tensorzero_client.chat(
-                messages=tz_messages,
-                system_prompt=system_prompt,
-            )
-
-            # Check for tool calls
-            if response.tool_calls:
-                # Execute tools
-                tool_outputs = []
-                for tool_call in response.tool_calls:
-                    result = await self._skill_service.execute_tool_async(
-                        tool_call.name,
-                        tool_call.arguments,
-                    )
-                    output = result.get("result", result.get("error", ""))
-                    tool_outputs.append(f"[{tool_call.name}]: {output}")
-
-                # Add assistant response and tool results to messages
-                if response.content:
-                    tz_messages.append(ChatMessage(role="assistant", content=response.content))
-                tz_messages.append(
-                    ChatMessage(role="user", content="\n".join(tool_outputs))
-                )
-                final_response = response
-                continue
-
-            # No tool calls - we have a final text response
-            final_response = response
-            break
-
-        # Return the final text response
-        if final_response and final_response.content:
-            return final_response.content
-
-        return "I processed your request but have no response."
-
-    @Slot(str)
-    def _on_voice_state_changed(self, state: str):
-        """Handle voice state changes."""
-        self._voice_indicator.set_state(state)
-
-        # Also update mic button state
-        if state == "recording":
-            self._input_area.set_mic_state(MicState.RECORDING)
-        elif state == "processing":
-            self._input_area.set_mic_state(MicState.PROCESSING)
-        elif state in ("idle", "listening"):
-            self._input_area.set_mic_state(MicState.IDLE)
-
-    @Slot(str)
-    def _on_wake_word_detected(self, keyword: str):
-        """Handle wake word detection."""
-        self._chat_area.add_system_message(f"Wake word '{keyword}' detected!")
-
-    @Slot(str)
-    def _on_transcription_ready(self, text: str):
-        """Handle transcription completion - update UI and history."""
-        self._chat_area.add_message(text, is_user=True)
-        # Add user message to conversation history for future context
-        self._conversation_history.append(ChatMessage(role="user", content=text))
-
-    @Slot(str)
-    def _on_voice_response(self, text: str):
-        """Handle voice response - update UI and history."""
-        self._chat_area.add_message(text, is_user=False)
-        # Add assistant message to conversation history
-        self._conversation_history.append(ChatMessage(role="assistant", content=text))
-
-    @Slot(str)
-    def _on_voice_error(self, error: str):
-        """Handle voice error."""
-        self._chat_area.add_system_message(f"Voice error: {error}")
-
-    def _on_voice_settings(self):
-        """Open voice settings."""
-        # TODO: Voice-specific settings dialog
-        self._chat_area.add_system_message(
-            f"Voice settings:\n"
-            f"  Wake words: {', '.join(self.settings.wake_word.keywords)}\n"
-            f"  Sensitivity: {self.settings.wake_word.sensitivity}\n"
-            f"  STT: {self.settings.stt.backend}\n"
-            f"  TTS: {self.settings.tts.backend}"
-        )
-
     def _on_settings(self):
         """Open settings dialog."""
         from .settings_dialog import SettingsDialog
@@ -1713,40 +1406,6 @@ class MainWindow(QMainWindow):
         self.hide()
         self.minimized_to_tray.emit()
 
-    def _on_mic_button_clicked(self):
-        """Handle mic button click - toggle voice recording.
-
-        Click 1: Start recording (like wake word was detected)
-        Click 2: Stop recording and process
-        """
-        # Check if already recording
-        if self._voice_controller and self._voice_controller.is_push_to_talk_active():
-            # Stop recording
-            self._voice_controller.push_to_talk_stop()
-            self._input_area.set_mic_state(MicState.PROCESSING)
-            return
-
-        # Start recording - ensure voice mode is enabled first
-        if not self._voice_controller or not self._voice_controller.is_running():
-            # Enable voice mode
-            self._voice_toggle_action.setChecked(True)
-            self._enable_voice()
-
-        # Start recording
-        if self._voice_controller:
-            self._voice_controller.push_to_talk_start()
-            self._input_area.set_mic_state(MicState.RECORDING)
-
-    def _toggle_audio_feedback(self, enabled: bool):
-        """Toggle audio feedback sounds."""
-        self.settings.voice.audio_feedback_enabled = enabled
-
-        if self._voice_controller:
-            self._voice_controller.set_audio_feedback_enabled(enabled)
-
-        status = "enabled" if enabled else "disabled"
-        self._chat_area.add_system_message(f"Audio feedback {status}")
-
     def closeEvent(self, event):
         """Handle window close."""
         self.closing.emit()
@@ -1754,14 +1413,6 @@ class MainWindow(QMainWindow):
         if self._core_subscription:
             self._core_subscription.cancel()
             self._core_subscription = None
-
-        # Cleanup voice
-        if self._voice_controller:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(self._voice_controller.stop())
-            else:
-                asyncio.run(self._voice_controller.stop())
 
         # Cleanup Hub connection
         asyncio.ensure_future(self._core.stop())
