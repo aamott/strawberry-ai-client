@@ -258,6 +258,11 @@ class SpokeCore:
         """Get the SettingsManager if one was provided."""
         return self._settings_manager
 
+    @property
+    def skill_service(self) -> Optional["SkillService"]:
+        """Get the SkillService if core has been started."""
+        return self._skills
+
     def _load_settings(self, settings_path: Optional[str]) -> Any:
         """Load settings with optional config path override.
 

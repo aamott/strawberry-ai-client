@@ -14,9 +14,6 @@ from PySide6.QtCore import QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
 
-from strawberry.skills.sandbox.executor import SandboxConfig
-from strawberry.skills.service import SkillService
-
 from ...config import Settings
 from ...config.persistence import persist_settings_and_env
 from ...hub.client import HubError
@@ -77,7 +74,6 @@ class MainWindow(QMainWindow):
         self._core_subscription = None
         self._conversation_history: List[ChatMessage] = []
         self._connected = False
-        self._skill_service: Optional[SkillService] = None
         self._current_session_id: Optional[str] = None
 
         # Offline mode components
@@ -105,8 +101,8 @@ class MainWindow(QMainWindow):
         # Connect offline mode listener
         self._offline_tracker.add_listener(self._on_offline_mode_changed)
 
-        # Initialize skills and Hub connection
-        self._init_skills()
+        # Check external dependencies and connect to Hub
+        # Skills are loaded by SpokeCore in _start_core()
         self._check_external_dependencies()
         QTimer.singleShot(100, lambda: asyncio.ensure_future(self._connect_hub()))
 
@@ -119,6 +115,19 @@ class MainWindow(QMainWindow):
                 return asyncio.ensure_future(self._handle_core_event(event))
 
             self._core_subscription = self._core.subscribe(_handler)
+
+            # Report loaded skills
+            skill_service = self._core.skill_service
+            if skill_service:
+                skills = skill_service.get_all_skills()
+                if skills:
+                    skill_names = [s.name for s in skills]
+                    self._chat_area.add_system_message(
+                        f"Loaded {len(skills)} skill(s): {', '.join(skill_names)}"
+                    )
+                else:
+                    self._chat_area.add_system_message("No skills found")
+
         except Exception as exc:
             logger.exception("Failed to start SpokeCore")
             self._chat_area.add_system_message(f"Failed to start core: {exc}")
@@ -349,46 +358,6 @@ class MainWindow(QMainWindow):
 
             # Note: Would need to properly track actions to update checkmarks
 
-    def _init_skills(self):
-        """Initialize skill service."""
-        skills_path = Path(self.settings.skills.path)
-
-        # Make path absolute if relative
-        if not skills_path.is_absolute():
-            # Resolve relative to project root, not cwd.
-            # This ensures ./skills works even if launched from a different directory.
-            from ...utils.paths import get_project_root
-            project_root = get_project_root()
-            skills_path = project_root / skills_path
-
-        sandbox_settings = self.settings.skills.sandbox
-        sandbox_config = SandboxConfig(
-            enabled=sandbox_settings.enabled,
-            timeout_seconds=sandbox_settings.timeout_seconds,
-            memory_limit_mb=sandbox_settings.memory_limit_mb,
-            deno_path=sandbox_settings.deno_path,
-        )
-        self._skill_service = SkillService(
-            skills_path,
-            device_name=self.settings.device.name,
-            use_sandbox=sandbox_settings.enabled,
-            sandbox_config=sandbox_config,
-            allow_unsafe_exec=self.settings.skills.allow_unsafe_exec,
-        )
-
-        # Load skills
-        skills = self._skill_service.load_skills()
-
-        if skills:
-            skill_names = [s.name for s in skills]
-            self._chat_area.add_system_message(
-                f"Loaded {len(skills)} skill(s): {', '.join(skill_names)}"
-            )
-        else:
-            self._chat_area.add_system_message(
-                f"No skills found in {skills_path}"
-            )
-
     def _check_external_dependencies(self) -> None:
         """Warn about missing external tools needed by skills."""
         if platform.system() == "Linux" and shutil.which("playerctl") is None:
@@ -424,10 +393,10 @@ class MainWindow(QMainWindow):
                 self._offline_tracker.get_status_text(self.settings.local_llm.model)
             )
 
-            if self._skill_service:
+            if self._core.skill_service:
                 from strawberry.skills.sandbox.proxy_gen import SkillMode
 
-                self._skill_service.set_mode_override(SkillMode.LOCAL)
+                self._core.skill_service.set_mode_override(SkillMode.LOCAL)
 
             self._pending_mode_notice = (
                 "Runtime mode switched to OFFLINE/LOCAL. "
@@ -438,10 +407,10 @@ class MainWindow(QMainWindow):
             self._offline_banner.set_online()
             self._status_bar.set_connected(True, self.settings.hub.url)
 
-            if self._skill_service:
+            if self._core.skill_service:
                 from strawberry.skills.sandbox.proxy_gen import SkillMode
 
-                self._skill_service.set_mode_override(SkillMode.REMOTE)
+                self._core.skill_service.set_mode_override(SkillMode.REMOTE)
 
             self._pending_mode_notice = (
                 "Runtime mode switched to ONLINE (Hub). "
@@ -561,7 +530,8 @@ class MainWindow(QMainWindow):
             assistant_turn = self._chat_area.add_assistant_turn("(Thinking...)")
 
             # Build initial messages with system prompt
-            system_prompt = self._skill_service.get_system_prompt() if self._skill_service else None
+            skill_svc = self._core.skill_service
+            system_prompt = skill_svc.get_system_prompt() if skill_svc else None
             messages_to_send = build_messages_with_history(
                 self._conversation_history, message, system_prompt
             )
@@ -586,8 +556,8 @@ class MainWindow(QMainWindow):
                 print(f"[Agent] LLM response: {response.content[:200]}...")
 
                 # Parse for code blocks
-                if self._skill_service:
-                    code_blocks = self._skill_service.parse_skill_calls(response.content)
+                if self._core.skill_service:
+                    code_blocks = self._core.skill_service.parse_skill_calls(response.content)
                 else:
                     code_blocks = []
                 print(f"[Agent] Found {len(code_blocks)} code blocks")
@@ -608,7 +578,7 @@ class MainWindow(QMainWindow):
                 # Execute code blocks
                 outputs = []
                 for code in code_blocks:
-                    result = await self._skill_service.execute_code_async(code)
+                    result = await self._core.skill_service.execute_code_async(code)
 
                     # Track tool call
                     ctx.add_tool_call(ToolCallInfo(
@@ -808,8 +778,8 @@ class MainWindow(QMainWindow):
 
             # Get system prompt
             system_prompt = None
-            if self._skill_service:
-                system_prompt = self._skill_service.get_system_prompt(
+            if self._core.skill_service:
+                system_prompt = self._core.skill_service.get_system_prompt(
                     mode_notice=self._pending_mode_notice
                 )
                 self._pending_mode_notice = None
@@ -901,8 +871,8 @@ class MainWindow(QMainWindow):
                                 "Please call a valid tool."
                             ),
                         }
-                    elif self._skill_service:
-                        result = await self._skill_service.execute_tool_async(
+                    elif self._core.skill_service:
+                        result = await self._core.skill_service.execute_tool_async(
                             tool_name,
                             tool_args,
                         )
@@ -976,8 +946,8 @@ class MainWindow(QMainWindow):
                     continue
 
                 # Execute legacy fenced tool_code blocks if no structured tool calls
-                if legacy_tool_request and not response.tool_calls and self._skill_service:
-                    code_blocks = self._skill_service.parse_skill_calls(response.content or "")
+                if legacy_tool_request and not response.tool_calls and self._core.skill_service:
+                    code_blocks = self._core.skill_service.parse_skill_calls(response.content or "")
                     if code_blocks:
                         outputs = []
                         for code in code_blocks:
@@ -1006,7 +976,7 @@ class MainWindow(QMainWindow):
                                         except Exception:
                                             tool_args = {}
 
-                                tool_result = await self._skill_service.execute_tool_async(
+                                tool_result = await self._core.skill_service.execute_tool_async(
                                     tool_name,
                                     tool_args,
                                 )
@@ -1048,7 +1018,7 @@ class MainWindow(QMainWindow):
                                     outputs.append(f"Error: {err}")
                                     assistant_turn.append_markdown(f"```bash\nError: {err}\n```")
                             else:
-                                result = await self._skill_service.execute_code_async(code)
+                                result = await self._core.skill_service.execute_code_async(code)
 
                                 all_tool_calls.append(
                                     {
@@ -1393,9 +1363,12 @@ class MainWindow(QMainWindow):
         if "skills" in changes:
             old_skills_path = self.settings.skills.path
             self.settings.skills.path = changes["skills"].get("path", self.settings.skills.path)
-            if self.settings.skills.path != old_skills_path and self._skill_service:
-                # Reload skills to pick up new directory and any env-dependent skill init
-                self._init_skills()
+            if self.settings.skills.path != old_skills_path:
+                # Skills path changed - would need restart to take effect
+                # SpokeCore manages skills now, dynamic reload not yet supported
+                self._chat_area.add_system_message(
+                    "Skills path changed. Restart to load skills from new location."
+                )
 
         self._chat_area.add_system_message("Settings updated")
 
