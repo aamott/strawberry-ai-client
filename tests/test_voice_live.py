@@ -5,6 +5,7 @@ mock-only tests miss.
 """
 
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -20,6 +21,11 @@ from strawberry.voice.state import VoiceState
 from strawberry.voice.vad.backends.silero import SileroVAD
 from strawberry.voice.vad.processor import VADConfig, VADProcessor
 from strawberry.voice.voice_core import VoiceConfig, VoiceCore
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_VOICE_TESTS") != "1",
+    reason="Set RUN_LIVE_VOICE_TESTS=1 to enable live voice integration tests",
+)
 
 # Enable detailed logging for debugging
 logging.basicConfig(
