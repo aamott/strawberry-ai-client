@@ -179,6 +179,7 @@ Available commands:
   /voice    - Toggle voice mode (green prompt when active)
   /connect  - Connect to Hub
   /status   - Show connection status
+  /settings - Open settings menu
 """
     print(styled(help_text, Colors.CYAN), flush=True)
 

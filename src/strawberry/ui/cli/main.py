@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from . import renderer
+from .settings_menu import CLISettingsMenu
 
 # Configure logging to file instead of console.
 LOG_DIR = Path(__file__).parent.parent.parent.parent.parent / ".cli-logs"
@@ -113,13 +114,28 @@ class CLIApp:
     """CLI application using SpokeCore with optional voice support."""
 
     def __init__(self) -> None:
-        self._core = SpokeCore()
+        # Create centralized SettingsManager (same pattern as Qt app)
+        from ...shared.settings import SettingsManager
+        from ...utils.paths import get_project_root
+
+        project_root = get_project_root()
+        config_dir = project_root / "config"
+        self._settings_manager = SettingsManager(
+            config_dir=config_dir,
+            env_filename="../.env",  # Use root .env for secrets
+        )
+
+        # Create SpokeCore with SettingsManager
+        self._core = SpokeCore(settings_manager=self._settings_manager)
         self._session_id: Optional[str] = None
         self._running = False
         self._response_event = asyncio.Event()
         self._response_event.set()
         self._last_tool_result: Optional[str] = None
         self._pending_tool_calls: dict = {}
+
+        # Settings menu
+        self._settings_menu = CLISettingsMenu(self._settings_manager)
 
         # Voice support
         self._voice_enabled = False
@@ -349,6 +365,9 @@ class CLIApp:
             status = "Online (Hub)" if online else "Local"
             renderer.print_status(f"Mode: {status} | Model: {model} | Voice: {voice}")
 
+        elif cmd == "/settings":
+            self._settings_menu.show()
+
         else:
             renderer.print_error(f"Unknown command: {cmd}")
             renderer.print_system("Type /help for available commands")
@@ -369,25 +388,17 @@ class CLIApp:
         """Start voice mode."""
         try:
             # Lazy import to avoid loading voice deps if not needed
-            from ...config import get_settings
             from ...voice import VoiceConfig, VoiceCore
 
-            # TODO: CLI should create SettingsManager like Qt and VoiceInterface do
-            settings = get_settings(_internal=True)
-
-            voice_config = VoiceConfig(
-                wake_words=settings.wake_word.keywords or ["strawberry"],
-                sensitivity=getattr(settings.wake_word, "sensitivity", 0.5),
-                sample_rate=16000,
-                stt_backend=settings.stt.backend,
-                tts_backend=settings.tts.backend,
-                vad_backend=settings.vad.backend,
-                wake_backend=settings.wake_word.backend,
-            )
+            # VoiceCore will read settings from SettingsManager and register
+            # its namespaces (voice_core, voice.stt.*, etc.)
+            # We just pass a default VoiceConfig - actual values come from SettingsManager
+            voice_config = VoiceConfig()
 
             self._voice_core = VoiceCore(
                 config=voice_config,
                 response_handler=self._voice_response_handler,
+                settings_manager=self._settings_manager,
             )
 
             # Subscribe to voice events

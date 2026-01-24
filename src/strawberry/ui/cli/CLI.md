@@ -16,12 +16,37 @@ planning/design doc.
 
 - Plan: [`docs/plans/CLI-UI-Design.md`](../../../../../docs/plans/CLI-UI-Design.md)
 
-## Notes
-- There are two versions of the CLI UI: 
-- The CLI is wired for a future `SpokeCore` entrypoint and currently falls back
-  to a minimal echo core when the core is not available.
-- Tool call expansion uses `Shift+Tab` with `/last` as a fallback.
+## Commands
 
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/quit`, `/q` | Quit the CLI |
+| `/clear` | Clear conversation history |
+| `/last` | Show full output of last tool call |
+| `/voice` | Toggle voice mode |
+| `/connect` | Connect to Hub |
+| `/status` | Show connection status |
+| `/settings` | Open interactive settings menu |
+
+## Architecture
+
+The CLI uses the same architecture as the Qt UI:
+
+- **SettingsManager**: Centralized settings service (shared with Qt UI)
+- **SpokeCore**: Chat and skill execution engine
+- **VoiceCore**: Voice processing (STT/TTS/VAD/wake word)
+
+Settings are persisted to:
+- `config/settings.yaml` - General settings
+- `.env` - Secrets (API keys, tokens)
+
+## Notes
+
+- Tool call expansion uses `Shift+Tab` with `/last` as a fallback.
+- Voice mode uses the same VoiceCore as the Qt UI.
+- Settings changes in CLI are immediately visible in Qt UI and vice versa.
 
 ## TODO
+
 - [ ] Detect hub coming online/offline
