@@ -135,7 +135,7 @@ class VoiceConfig:
         wake_backend: Wake word detection backend module name.
     """
 
-    wake_words: List[str] = field(default_factory=lambda: ["computer"])
+    wake_words: List[str] = field(default_factory=lambda: ["hey barista"])
     sensitivity: float = 0.5
     sample_rate: int = 16000
     audio_feedback_enabled: bool = True
@@ -273,7 +273,12 @@ class VoiceCore:
         self._settings_manager.on_change(self._on_settings_changed)
 
     def _sync_config_to_manager(self) -> None:
-        """Sync current VoiceConfig to the SettingsManager."""
+        """Sync VoiceConfig with SettingsManager.
+
+        - Reads existing values from SettingsManager (loaded from settings.yaml)
+        - Updates VoiceConfig with those values
+        - Only writes defaults for keys that don't exist yet
+        """
         if not self._settings_manager:
             return
 
@@ -285,39 +290,28 @@ class VoiceCore:
                 return val
             return ",".join(val)
 
-        self._settings_manager.set(
-            "voice_core", "stt.order", to_order_string(cfg.stt_backend),
-            skip_validation=True
-        )
-        self._settings_manager.set(
-            "voice_core", "tts.order", to_order_string(cfg.tts_backend),
-            skip_validation=True
-        )
-        self._settings_manager.set(
-            "voice_core", "vad.order", to_order_string(cfg.vad_backend),
-            skip_validation=True
-        )
-        self._settings_manager.set(
-            "voice_core", "wakeword.order", to_order_string(cfg.wake_backend),
-            skip_validation=True
-        )
-        self._settings_manager.set(
-            "voice_core", "wakeword.phrase",
-            ",".join(cfg.wake_words) if cfg.wake_words else "computer",
-            skip_validation=True
-        )
-        self._settings_manager.set(
-            "voice_core", "wakeword.sensitivity", cfg.sensitivity,
-            skip_validation=True
-        )
-        self._settings_manager.set(
-            "voice_core", "audio.sample_rate", str(cfg.sample_rate),
-            skip_validation=True
-        )
-        self._settings_manager.set(
-            "voice_core", "audio.feedback_enabled", cfg.audio_feedback_enabled,
-            skip_validation=True
-        )
+        # Keys to sync with their default values
+        keys_and_defaults = [
+            ("stt.order", to_order_string(cfg.stt_backend)),
+            ("tts.order", to_order_string(cfg.tts_backend)),
+            ("vad.order", to_order_string(cfg.vad_backend)),
+            ("wakeword.order", to_order_string(cfg.wake_backend)),
+            ("wakeword.phrase", ",".join(cfg.wake_words) if cfg.wake_words else "hey barista"),
+            ("wakeword.sensitivity", cfg.sensitivity),
+            ("audio.sample_rate", str(cfg.sample_rate)),
+            ("audio.feedback_enabled", cfg.audio_feedback_enabled),
+        ]
+
+        for key, default_value in keys_and_defaults:
+            existing = self._settings_manager.get("voice_core", key)
+            if existing is not None:
+                # Update VoiceConfig from settings (settings.yaml takes priority)
+                self._update_config_from_settings(key, existing)
+            else:
+                # Write default to settings manager
+                self._settings_manager.set(
+                    "voice_core", key, default_value, skip_validation=True
+                )
 
     def _register_backend_namespaces(self) -> None:
         """Register settings namespaces for all discovered backends."""

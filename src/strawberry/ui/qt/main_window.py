@@ -322,18 +322,21 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            # Show loading state while VoiceCore initializes
-            if self._voice_core.get_state() == VoiceState.STOPPED:
+            current_state = self._voice_core.get_state()
+
+            # Only start if not already running
+            if current_state == VoiceState.STOPPED:
                 self._input_area.set_voice_mode_state(VoiceButtonState.LOADING)
 
-            started = await self._voice_core.start()
-            if not started:
-                self._chat_area.add_system_message(
-                    "Failed to start voice mode. Check Settings > Voice for configuration."
-                )
-                self._input_area.set_voice_mode_active(False)
-                return
+                started = await self._voice_core.start()
+                if not started:
+                    self._chat_area.add_system_message(
+                        "Failed to start voice mode. Check Settings > Voice for configuration."
+                    )
+                    self._input_area.set_voice_mode_active(False)
+                    return
 
+            # Mark voice mode as active (VoiceCore may already be running from mic button)
             self._input_area.set_voice_mode_active(True)
 
             # Check if wake word detection is available
@@ -358,7 +361,9 @@ class MainWindow(QMainWindow):
 
         try:
             await self._voice_core.stop()
+            # Reset both buttons since stopping voice mode stops VoiceCore entirely
             self._input_area.set_voice_mode_active(False)
+            self._input_area.set_mic_state(VoiceButtonState.IDLE)
             self._chat_area.add_system_message("Voice mode stopped.")
         except Exception as e:
             logger.exception("Failed to stop voice mode")
