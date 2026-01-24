@@ -13,6 +13,7 @@ class VoiceButtonState:
     """Voice button states (shared by mic and voice mode buttons)."""
 
     IDLE = "idle"  # Ready to start
+    LOADING = "loading"  # Initializing voice system
     LISTENING = "listening"  # Waiting for wake word / listening for speech
     RECORDING = "recording"  # Recording speech
     PROCESSING = "processing"  # Processing recorded audio
@@ -21,6 +22,283 @@ class VoiceButtonState:
 
 # Backwards compatibility alias
 MicState = VoiceButtonState
+
+
+class MicButton(QPushButton):
+    """Animated mic button with loading spinner and recording waveform.
+
+    States:
+    - IDLE: Shows mic icon (🎤)
+    - LOADING: Grayed out with spinning arc animation
+    - RECORDING: Red background with animated waveform bars
+    - PROCESSING: Orange with static waveform
+    """
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._state = VoiceButtonState.IDLE
+        self._theme: Optional[Theme] = None
+        self._spin_angle = 0.0
+        self._waveform_phase = 0.0
+        self._animation_timer_id: Optional[int] = None
+
+        # No text - we draw everything custom
+        self.setText("")
+
+    def set_theme(self, theme: Theme):
+        """Apply theme styling."""
+        self._theme = theme
+        self._update_style()
+
+    def _update_style(self):
+        """Update stylesheet based on current state."""
+        if not self._theme:
+            return
+
+        if self._state == VoiceButtonState.LOADING:
+            # Grayed out while loading
+            self.setStyleSheet(f"""
+                MicButton {{
+                    background-color: {self._theme.bg_tertiary};
+                    border: 2px solid {self._theme.border};
+                    border-radius: 20px;
+                }}
+            """)
+        elif self._state == VoiceButtonState.RECORDING:
+            # Red while recording
+            self.setStyleSheet(f"""
+                MicButton {{
+                    background-color: #ffebee;
+                    border: 2px solid {self._theme.error};
+                    border-radius: 20px;
+                }}
+            """)
+        elif self._state == VoiceButtonState.PROCESSING:
+            # Orange while processing
+            self.setStyleSheet(f"""
+                MicButton {{
+                    background-color: #fff3e0;
+                    border: 2px solid {self._theme.warning};
+                    border-radius: 20px;
+                }}
+            """)
+        else:
+            # Default idle state - show mic icon via paint
+            self.setStyleSheet(f"""
+                MicButton {{
+                    background-color: {self._theme.bg_tertiary};
+                    border: 1px solid {self._theme.border};
+                    border-radius: 20px;
+                }}
+                MicButton:hover {{
+                    background-color: {self._theme.accent};
+                    border-color: {self._theme.accent};
+                }}
+            """)
+
+    def set_state(self, state: str):
+        """Set the button state."""
+        old_state = self._state
+        self._state = state
+
+        # Update tooltip
+        tooltips = {
+            VoiceButtonState.IDLE: "Speech to text",
+            VoiceButtonState.LOADING: "Starting voice system...",
+            VoiceButtonState.RECORDING: "Recording... click to stop",
+            VoiceButtonState.PROCESSING: "Processing speech...",
+        }
+        self.setToolTip(tooltips.get(state, "Speech to text"))
+
+        self._update_style()
+
+        # Start/stop animation
+        needs_animation = state in (
+            VoiceButtonState.LOADING,
+            VoiceButtonState.RECORDING,
+            VoiceButtonState.PROCESSING,
+        )
+        had_animation = old_state in (
+            VoiceButtonState.LOADING,
+            VoiceButtonState.RECORDING,
+            VoiceButtonState.PROCESSING,
+        )
+
+        if needs_animation and not had_animation:
+            self._start_animation()
+        elif not needs_animation and had_animation:
+            self._stop_animation()
+
+        self.update()
+
+    def _start_animation(self):
+        """Start animation."""
+        if self._animation_timer_id is None:
+            self._animation_timer_id = self.startTimer(50)  # 20 FPS
+
+    def _stop_animation(self):
+        """Stop animation."""
+        if self._animation_timer_id is not None:
+            self.killTimer(self._animation_timer_id)
+            self._animation_timer_id = None
+            self._spin_angle = 0.0
+            self._waveform_phase = 0.0
+
+    def timerEvent(self, event):
+        """Handle animation timer."""
+        self._spin_angle += 8
+        if self._spin_angle >= 360:
+            self._spin_angle = 0
+        self._waveform_phase += 0.2
+        if self._waveform_phase > 6.28:
+            self._waveform_phase -= 6.28
+        self.update()
+
+    def paintEvent(self, event):
+        """Draw the button with state-appropriate visuals."""
+        super().paintEvent(event)
+
+        if self._state == VoiceButtonState.IDLE:
+            self._draw_mic_icon()
+        elif self._state == VoiceButtonState.LOADING:
+            self._draw_loading_spinner()
+        elif self._state == VoiceButtonState.RECORDING:
+            self._draw_waveform(animated=True, color="#f44336")  # Red
+        elif self._state == VoiceButtonState.PROCESSING:
+            self._draw_waveform(animated=False, color="#ff9800")  # Orange
+
+    def _draw_mic_icon(self):
+        """Draw a mic icon in the center."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        rect = self.rect()
+        cx, cy = rect.width() / 2, rect.height() / 2
+
+        # Determine color based on hover state
+        color = QColor("#888888")
+        if self._theme:
+            color = QColor(self._theme.text_secondary)
+
+        pen = QPen(color)
+        pen.setWidth(2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        # Draw mic body (rounded rectangle)
+        mic_width = 8
+        mic_height = 12
+        mic_x = cx - mic_width / 2
+        mic_y = cy - mic_height / 2 - 2
+        painter.drawRoundedRect(
+            int(mic_x), int(mic_y), int(mic_width), int(mic_height), 4, 4
+        )
+
+        # Draw mic stand (arc below)
+        arc_rect = rect.adjusted(
+            int(cx - 8), int(cy - 2), int(-(cx - 8)), int(-cy + 14)
+        )
+        painter.drawArc(arc_rect, 0, -180 * 16)
+
+        # Draw mic base (vertical line)
+        painter.drawLine(int(cx), int(cy + 10), int(cx), int(cy + 14))
+
+        painter.end()
+
+    def _draw_loading_spinner(self):
+        """Draw a spinning arc to indicate loading."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        rect = self.rect()
+
+        # Draw grayed out mic icon first
+        self._draw_mic_icon_internal(painter, QColor("#aaaaaa"))
+
+        # Draw spinning arc on top
+        arc_rect = rect.adjusted(4, 4, -4, -4)
+        pen = QPen(QColor("#2196f3"))  # Blue spinner
+        pen.setWidth(3)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+
+        # Draw arc (120 degrees)
+        painter.drawArc(arc_rect, int(self._spin_angle * 16), 120 * 16)
+
+        painter.end()
+
+    def _draw_mic_icon_internal(self, painter: QPainter, color: QColor):
+        """Draw mic icon with given painter and color."""
+        rect = self.rect()
+        cx, cy = rect.width() / 2, rect.height() / 2
+
+        pen = QPen(color)
+        pen.setWidth(2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        # Draw mic body
+        mic_width = 8
+        mic_height = 12
+        mic_x = cx - mic_width / 2
+        mic_y = cy - mic_height / 2 - 2
+        painter.drawRoundedRect(
+            int(mic_x), int(mic_y), int(mic_width), int(mic_height), 4, 4
+        )
+
+        # Draw mic stand arc
+        arc_rect = rect.adjusted(
+            int(cx - 8), int(cy - 2), int(-(cx - 8)), int(-cy + 14)
+        )
+        painter.drawArc(arc_rect, 0, -180 * 16)
+
+        # Draw mic base line
+        painter.drawLine(int(cx), int(cy + 10), int(cx), int(cy + 14))
+
+    def _draw_waveform(self, animated: bool, color: str):
+        """Draw waveform bars (like VoiceModeButton)."""
+        import math
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        rect = self.rect()
+        cx = rect.width() / 2
+        cy = rect.height() / 2
+
+        bar_width = 3
+        bar_spacing = 5
+        num_bars = 5
+        max_height = rect.height() * 0.5
+
+        pen = QPen(QColor(color))
+        pen.setWidth(bar_width)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+
+        # Draw waveform bars
+        total_width = (num_bars - 1) * bar_spacing
+        start_x = cx - total_width / 2
+
+        for i in range(num_bars):
+            x = start_x + i * bar_spacing
+
+            if animated:
+                # Animated wave
+                phase_offset = i * 0.8
+                h = max_height * (0.3 + 0.5 * abs(math.sin(self._waveform_phase + phase_offset)))
+            else:
+                # Static wave pattern
+                heights = [0.3, 0.6, 0.8, 0.6, 0.3]
+                h = max_height * heights[i]
+
+            y1 = cy - h / 2
+            y2 = cy + h / 2
+            painter.drawLine(int(x), int(y1), int(x), int(y2))
+
+        painter.end()
 
 
 class VoiceModeButton(QPushButton):
@@ -63,6 +341,9 @@ class VoiceModeButton(QPushButton):
         if self._state == VoiceButtonState.IDLE:
             bg = "#ffffff"
             border = self._theme.border
+        elif self._state == VoiceButtonState.LOADING:
+            bg = "#e3f2fd"  # Light blue
+            border = self._theme.accent
         elif self._state == VoiceButtonState.LISTENING:
             bg = "#e8f5e9"  # Light green
             border = "#4caf50"  # Green
@@ -265,11 +546,10 @@ class InputArea(QWidget):
         self._text_edit.textChanged.connect(self._adjust_height)
         layout.addWidget(self._text_edit)
 
-        # Mic button (speech-to-text only)
-        self._mic_btn = QPushButton("🎤")
+        # Mic button (speech-to-text only) - custom animated button
+        self._mic_btn = MicButton()
         self._mic_btn.setObjectName("micButton")
         self._mic_btn.setFixedSize(40, 40)
-        self._mic_btn.setToolTip("Speech to text (skip wake word)")
         self._mic_btn.clicked.connect(self._on_mic_clicked)
         self._mic_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         layout.addWidget(self._mic_btn)
@@ -306,29 +586,6 @@ class InputArea(QWidget):
                 border-top: 1px solid {self._theme.border};
             }}
 
-            /* Mic button (speech-to-text) */
-            QPushButton#micButton {{
-                background-color: {self._theme.bg_tertiary};
-                border: 1px solid {self._theme.border};
-                border-radius: 20px;
-                font-size: 16px;
-            }}
-
-            QPushButton#micButton:hover {{
-                background-color: {self._theme.accent};
-                border-color: {self._theme.accent};
-            }}
-
-            QPushButton#micButton[recording="true"] {{
-                background-color: {self._theme.error};
-                border-color: {self._theme.error};
-            }}
-
-            QPushButton#micButton[processing="true"] {{
-                background-color: {self._theme.warning};
-                border-color: {self._theme.warning};
-            }}
-
             /* Send button */
             QPushButton#sendButton {{
                 background-color: {self._theme.accent};
@@ -349,7 +606,8 @@ class InputArea(QWidget):
             }}
         """)
 
-        # Update voice mode button theme
+        # Update custom button themes
+        self._mic_btn.set_theme(self._theme)
         self._voice_mode_btn.set_theme(self._theme)
 
     def _adjust_height(self):
@@ -406,28 +664,10 @@ class InputArea(QWidget):
         """Set the mic button state.
 
         Args:
-            state: One of VoiceButtonState values
+            state: One of VoiceButtonState values (IDLE, LOADING, RECORDING, PROCESSING)
         """
         self._mic_state = state
-
-        # Update button appearance via properties
-        self._mic_btn.setProperty("recording", state == VoiceButtonState.RECORDING)
-        self._mic_btn.setProperty("processing", state == VoiceButtonState.PROCESSING)
-
-        # Update tooltip and icon
-        if state == VoiceButtonState.RECORDING:
-            self._mic_btn.setToolTip("Recording... click to stop")
-            self._mic_btn.setText("⏹️")
-        elif state == VoiceButtonState.PROCESSING:
-            self._mic_btn.setToolTip("Processing speech...")
-            self._mic_btn.setText("⏳")
-        else:
-            self._mic_btn.setToolTip("Speech to text (skip wake word)")
-            self._mic_btn.setText("🎤")
-
-        # Force style refresh
-        self._mic_btn.style().unpolish(self._mic_btn)
-        self._mic_btn.style().polish(self._mic_btn)
+        self._mic_btn.set_state(state)
 
     def set_voice_mode_state(self, state: str):
         """Set the voice mode button state.

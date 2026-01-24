@@ -275,8 +275,10 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            # Ensure VoiceCore is started
+            # Show loading state while VoiceCore initializes
             if self._voice_core.get_state() == VoiceState.STOPPED:
+                self._input_area.set_mic_state(VoiceButtonState.LOADING)
+
                 started = await self._voice_core.start()
                 if not started:
                     self._chat_area.add_system_message(
@@ -292,8 +294,8 @@ class MainWindow(QMainWindow):
                 return
 
             # Trigger wake word to start listening immediately
+            # The voice event handler will update the button to RECORDING state
             self._voice_core.trigger_wakeword()
-            self._input_area.set_mic_state(VoiceButtonState.RECORDING)
         except Exception as e:
             logger.exception("Failed to start speech-to-text")
             self._chat_area.add_system_message(f"Voice error: {e}")
@@ -320,6 +322,10 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            # Show loading state while VoiceCore initializes
+            if self._voice_core.get_state() == VoiceState.STOPPED:
+                self._input_area.set_voice_mode_state(VoiceButtonState.LOADING)
+
             started = await self._voice_core.start()
             if not started:
                 self._chat_area.add_system_message(
