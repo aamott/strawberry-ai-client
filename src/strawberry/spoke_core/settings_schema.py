@@ -1,93 +1,35 @@
-"""Settings schema definitions for auto-rendering UIs.
+"""Settings schema definitions for SpokeCore.
 
-This module provides the schema types that allow UIs to automatically
-render settings forms from a declarative configuration.
+This module defines the SPOKE_CORE_SCHEMA for SpokeCore settings.
+The core types (FieldType, SettingField, ActionResult) are imported
+from the shared settings package.
+
+For backward compatibility, the types are re-exported from this module.
 """
 
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Callable, List, Optional
+from typing import List
 
+# Import from shared settings package
+from strawberry.shared.settings import (
+    ActionResult,
+    FieldType,
+    SettingField,
+    get_field_by_key,
+    group_fields,
+)
 
-class FieldType(Enum):
-    """Types of setting fields for UI rendering.
+# Re-export for backward compatibility
+__all__ = [
+    "FieldType",
+    "SettingField",
+    "ActionResult",
+    "SPOKE_CORE_SCHEMA",
+    "get_field_by_key",
+    "group_fields",
+]
 
-    TEXT: Simple text input
-    PASSWORD: Masked text input, typically stored in .env
-    NUMBER: Numeric input (int or float)
-    CHECKBOX: Boolean toggle
-    SELECT: Dropdown with static options
-    DYNAMIC_SELECT: Dropdown populated at runtime via options_provider
-    ACTION: Button that triggers a flow (e.g., OAuth)
-    """
-    TEXT = "text"
-    PASSWORD = "password"
-    NUMBER = "number"
-    CHECKBOX = "checkbox"
-    SELECT = "select"
-    DYNAMIC_SELECT = "dynamic_select"
-    ACTION = "action"
-
-
-@dataclass
-class SettingField:
-    """Definition of a single setting field for UI rendering.
-
-    Attributes:
-        key: Dot-separated path to the setting (e.g., "hub.url")
-        label: Human-readable label for the UI
-        type: Field type determining widget rendering
-        default: Default value if not set
-        description: Help text shown in UI
-        options: Static list of options for SELECT type
-        options_provider: Method name to call for DYNAMIC_SELECT options
-        action: Method name to call for ACTION type
-        secret: If True, store in .env instead of config.yaml
-        group: Grouping key for UI organization
-        depends_on: Only show if this key has a truthy value
-        validation: Optional validation function
-    """
-    key: str
-    label: str
-    type: FieldType
-    default: Any = None
-    description: str = ""
-    options: Optional[List[str]] = None
-    options_provider: Optional[str] = None
-    action: Optional[str] = None
-    secret: bool = False
-    group: str = "general"
-    depends_on: Optional[str] = None
-    validation: Optional[Callable[[Any], bool]] = field(default=None, repr=False)
-
-    def __post_init__(self):
-        """Validate field configuration."""
-        if self.type == FieldType.SELECT and not self.options:
-            raise ValueError(f"Field '{self.key}': SELECT type requires options")
-        if self.type == FieldType.DYNAMIC_SELECT and not self.options_provider:
-            raise ValueError(f"Field '{self.key}': DYNAMIC_SELECT type requires options_provider")
-        if self.type == FieldType.ACTION and not self.action:
-            raise ValueError(f"Field '{self.key}': ACTION type requires action")
-
-
-@dataclass
-class ActionResult:
-    """Result from executing a settings action.
-
-    Attributes:
-        type: Action type ("open_browser", "show_dialog", "success", "error")
-        url: URL to open for "open_browser" type
-        message: Message to display to user
-        pending: If True, UI should wait for a follow-up event
-    """
-    type: str  # "open_browser", "show_dialog", "success", "error"
-    url: Optional[str] = None
-    message: str = ""
-    pending: bool = False
-
-
-# Core settings schema - shared by all UIs
-CORE_SETTINGS_SCHEMA: List[SettingField] = [
+# Spoke Core settings schema
+SPOKE_CORE_SCHEMA: List[SettingField] = [
     # General
     SettingField(
         key="device.name",
@@ -155,34 +97,5 @@ CORE_SETTINGS_SCHEMA: List[SettingField] = [
 ]
 
 
-def get_field_by_key(schema: List[SettingField], key: str) -> Optional[SettingField]:
-    """Find a field in a schema by its key.
-
-    Args:
-        schema: List of SettingField objects
-        key: The key to search for
-
-    Returns:
-        The matching SettingField or None
-    """
-    for setting_field in schema:
-        if setting_field.key == key:
-            return setting_field
-    return None
-
-
-def group_fields(schema: List[SettingField]) -> dict[str, List[SettingField]]:
-    """Group fields by their group attribute.
-
-    Args:
-        schema: List of SettingField objects
-
-    Returns:
-        Dictionary mapping group names to lists of fields
-    """
-    groups: dict[str, List[SettingField]] = {}
-    for setting_field in schema:
-        if setting_field.group not in groups:
-            groups[setting_field.group] = []
-        groups[setting_field.group].append(setting_field)
-    return groups
+# Alias for backward compatibility
+CORE_SETTINGS_SCHEMA = SPOKE_CORE_SCHEMA

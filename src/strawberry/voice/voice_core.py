@@ -10,6 +10,8 @@ The audio stream remains open throughout the voice session to prevent
 frame loss between components.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import queue
@@ -17,7 +19,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Sequence
 
 import numpy as np
 
@@ -29,6 +31,9 @@ from .stt import STTEngine, discover_stt_modules
 from .tts import TTSEngine, discover_tts_modules
 from .vad import VADBackend, VADProcessor, discover_vad_modules
 from .wakeword import WakeWordDetector, discover_wake_modules
+
+if TYPE_CHECKING:
+    from strawberry.shared.settings import SettingsManager
 
 logger = logging.getLogger(__name__)
 
@@ -178,15 +183,20 @@ class VoiceCore:
         self,
         config: VoiceConfig,
         response_handler: Optional[Callable[[str], str]] = None,
+        settings_manager: Optional["SettingsManager"] = None,
     ):
         """Initialize VoiceCore.
 
         Args:
-            config: Voice configuration
-            response_handler: Callback(transcription) -> response_text
+            config: Voice configuration.
+            response_handler: Callback(transcription) -> response_text.
+            settings_manager: Optional SettingsManager for shared settings.
+                If provided, VoiceCore will register its namespace and backend
+                namespaces with the manager.
         """
         self._config = config
         self._response_handler = response_handler
+        self._settings_manager = settings_manager
 
         # State
         self._state = VoiceState.STOPPED
@@ -232,6 +242,174 @@ class VoiceCore:
         self._speak_queue: queue.Queue[str] = queue.Queue()
         self._speak_thread: Optional[threading.Thread] = None
         self._speak_stop = threading.Event()
+
+        # Register with SettingsManager if provided
+        if self._settings_manager:
+            self._register_with_settings_manager()
+
+    def _register_with_settings_manager(self) -> None:
+        """Register VoiceCore's namespace and backend namespaces with SettingsManager."""
+        if not self._settings_manager:
+            return
+
+        from .settings_schema import VOICE_CORE_SCHEMA
+
+        # Register voice_core namespace if not already registered
+        if not self._settings_manager.is_registered("voice_core"):
+            self._settings_manager.register(
+                namespace="voice_core",
+                display_name="Voice",
+                schema=VOICE_CORE_SCHEMA,
+                order=20,
+            )
+
+            # Sync config to manager
+            self._sync_config_to_manager()
+
+        # Register backend namespaces
+        self._register_backend_namespaces()
+
+        # Listen for settings changes
+        self._settings_manager.on_change(self._on_settings_changed)
+
+    def _sync_config_to_manager(self) -> None:
+        """Sync current VoiceConfig to the SettingsManager."""
+        if not self._settings_manager:
+            return
+
+        cfg = self._config
+
+        # Convert backend fields to comma-separated strings if needed
+        def to_order_string(val: str | Sequence[str]) -> str:
+            if isinstance(val, str):
+                return val
+            return ",".join(val)
+
+        self._settings_manager.set(
+            "voice_core", "stt.order", to_order_string(cfg.stt_backend),
+            skip_validation=True
+        )
+        self._settings_manager.set(
+            "voice_core", "tts.order", to_order_string(cfg.tts_backend),
+            skip_validation=True
+        )
+        self._settings_manager.set(
+            "voice_core", "vad.order", to_order_string(cfg.vad_backend),
+            skip_validation=True
+        )
+        self._settings_manager.set(
+            "voice_core", "wakeword.order", to_order_string(cfg.wake_backend),
+            skip_validation=True
+        )
+        self._settings_manager.set(
+            "voice_core", "wakeword.phrase",
+            ",".join(cfg.wake_words) if cfg.wake_words else "strawberry",
+            skip_validation=True
+        )
+        self._settings_manager.set(
+            "voice_core", "wakeword.sensitivity", cfg.sensitivity,
+            skip_validation=True
+        )
+        self._settings_manager.set(
+            "voice_core", "audio.sample_rate", str(cfg.sample_rate),
+            skip_validation=True
+        )
+        self._settings_manager.set(
+            "voice_core", "audio.feedback_enabled", cfg.audio_feedback_enabled,
+            skip_validation=True
+        )
+
+    def _register_backend_namespaces(self) -> None:
+        """Register settings namespaces for all discovered backends."""
+        if not self._settings_manager:
+            return
+
+        # Register STT backends
+        for name, cls in discover_stt_modules().items():
+            namespace = f"voice.stt.{name}"
+            if not self._settings_manager.is_registered(namespace):
+                schema = cls.get_settings_schema()
+                if schema:
+                    self._settings_manager.register(
+                        namespace=namespace,
+                        display_name=f"STT: {cls.name}",
+                        schema=schema,
+                        order=100,
+                    )
+
+        # Register TTS backends
+        for name, cls in discover_tts_modules().items():
+            namespace = f"voice.tts.{name}"
+            if not self._settings_manager.is_registered(namespace):
+                schema = cls.get_settings_schema()
+                if schema:
+                    self._settings_manager.register(
+                        namespace=namespace,
+                        display_name=f"TTS: {cls.name}",
+                        schema=schema,
+                        order=100,
+                    )
+
+        # Register VAD backends
+        for name, cls in discover_vad_modules().items():
+            namespace = f"voice.vad.{name}"
+            if not self._settings_manager.is_registered(namespace):
+                schema = cls.get_settings_schema()
+                if schema:
+                    self._settings_manager.register(
+                        namespace=namespace,
+                        display_name=f"VAD: {cls.name}",
+                        schema=schema,
+                        order=100,
+                    )
+
+        # Register wake word backends
+        for name, cls in discover_wake_modules().items():
+            namespace = f"voice.wakeword.{name}"
+            if not self._settings_manager.is_registered(namespace):
+                schema = cls.get_settings_schema()
+                if schema:
+                    self._settings_manager.register(
+                        namespace=namespace,
+                        display_name=f"Wake: {cls.name}",
+                        schema=schema,
+                        order=100,
+                    )
+
+    def _on_settings_changed(self, namespace: str, key: str, value: Any) -> None:
+        """Handle settings changes from the SettingsManager."""
+        if not namespace.startswith("voice"):
+            return
+
+        # Update config if voice_core settings changed
+        if namespace == "voice_core":
+            self._update_config_from_settings(key, value)
+
+    def _update_config_from_settings(self, key: str, value: Any) -> None:
+        """Update VoiceConfig from a settings change."""
+        cfg = self._config
+
+        if key == "wakeword.phrase":
+            cfg.wake_words = [w.strip() for w in str(value).split(",") if w.strip()]
+        elif key == "wakeword.sensitivity":
+            cfg.sensitivity = float(value) if value else 0.5
+        elif key == "audio.sample_rate":
+            cfg.sample_rate = int(value) if value else 16000
+        elif key == "audio.feedback_enabled":
+            cfg.audio_feedback_enabled = bool(value)
+        elif key == "stt.order":
+            cfg.stt_backend = str(value) if value else "leopard"
+        elif key == "tts.order":
+            cfg.tts_backend = str(value) if value else "pocket"
+        elif key == "vad.order":
+            cfg.vad_backend = str(value) if value else "silero"
+        elif key == "wakeword.order":
+            cfg.wake_backend = str(value) if value else "porcupine"
+
+    @property
+    def settings_manager(self) -> Optional["SettingsManager"]:
+        """Get the SettingsManager if one was provided."""
+        return self._settings_manager
 
     # -------------------------------------------------------------------------
     # Public API: State

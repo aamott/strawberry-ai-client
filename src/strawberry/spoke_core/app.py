@@ -10,6 +10,7 @@ from ..config import get_settings
 from ..config.loader import load_config, reset_settings
 from ..hub import HubClient, HubConfig, HubError
 from ..llm.tensorzero_client import TensorZeroClient
+from ..shared.settings import ActionResult, SettingsManager
 from ..skills.service import SkillService
 from .events import (
     ConnectionChanged,
@@ -22,7 +23,7 @@ from .events import (
     ToolCallStarted,
 )
 from .session import ChatSession
-from .settings_schema import ActionResult
+from .settings_schema import SPOKE_CORE_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +54,22 @@ class SpokeCore:
     - Managing agent loop (online/offline)
     """
 
-    def __init__(self, settings_path: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        settings_path: Optional[str] = None,
+        settings_manager: Optional[SettingsManager] = None,
+    ) -> None:
         """Initialize SpokeCore.
 
         Args:
             settings_path: Optional path to a config.yaml to load instead of the
                 default project config.
+            settings_manager: Optional SettingsManager instance for shared settings.
+                If provided, SpokeCore will register its namespace and use the
+                manager for settings. If not provided, uses legacy settings loading.
         """
         self._settings = self._load_settings(settings_path)
+        self._settings_manager = settings_manager
         self._llm: Optional[TensorZeroClient] = None
         self._skills: Optional[SkillService] = None
         self._hub_client: Optional[HubClient] = None
@@ -73,6 +82,10 @@ class SpokeCore:
         self._last_online_state: Optional[bool] = None
         self._pending_mode_notice: Optional[str] = None
 
+        # Register with SettingsManager if provided
+        if self._settings_manager:
+            self._register_with_settings_manager()
+
         # Paths from settings
         skills_path = Path(self._settings.skills.path)
         if not skills_path.is_absolute():
@@ -81,6 +94,113 @@ class SpokeCore:
             skills_path = get_project_root() / skills_path
 
         self._skills_path = skills_path
+
+    def _register_with_settings_manager(self) -> None:
+        """Register SpokeCore's namespace with the SettingsManager."""
+        if not self._settings_manager:
+            return
+
+        # Register namespace if not already registered
+        if not self._settings_manager.is_registered("spoke_core"):
+            self._settings_manager.register(
+                namespace="spoke_core",
+                display_name="Spoke Core",
+                schema=SPOKE_CORE_SCHEMA,
+                order=10,
+            )
+
+        # Register options providers
+        self._settings_manager.register_options_provider(
+            "get_available_models",
+            self._get_available_models,
+        )
+
+        # Register action handlers
+        self._settings_manager.register_action_handler(
+            "spoke_core",
+            "hub_oauth",
+            self._hub_oauth_action,
+        )
+
+        # Listen for settings changes
+        self._settings_manager.on_change(self._on_settings_changed)
+
+        # Sync current pydantic settings to manager
+        self._sync_settings_to_manager()
+
+    def _sync_settings_to_manager(self) -> None:
+        """Sync current Pydantic settings to the SettingsManager."""
+        if not self._settings_manager:
+            return
+
+        # Sync key settings
+        self._settings_manager.set(
+            "spoke_core", "device.name", self._settings.device.name, skip_validation=True
+        )
+        self._settings_manager.set(
+            "spoke_core", "hub.url", self._settings.hub.url, skip_validation=True
+        )
+        if self._settings.hub.token:
+            self._settings_manager.set(
+                "spoke_core", "hub.token", self._settings.hub.token, skip_validation=True
+            )
+        self._settings_manager.set(
+            "spoke_core", "local_llm.model", self._settings.local_llm.model, skip_validation=True
+        )
+        self._settings_manager.set(
+            "spoke_core", "local_llm.enabled",
+            self._settings.local_llm.enabled, skip_validation=True
+        )
+        self._settings_manager.set(
+            "spoke_core", "skills.allow_unsafe_exec",
+            self._settings.skills.allow_unsafe_exec, skip_validation=True
+        )
+
+    def _on_settings_changed(self, namespace: str, key: str, value: Any) -> None:
+        """Handle settings changes from the SettingsManager."""
+        if namespace != "spoke_core":
+            return
+
+        # Update the Pydantic settings object
+        try:
+            parts = key.split(".")
+            if len(parts) == 2:
+                section, field = parts
+                section_obj = getattr(self._settings, section, None)
+                if section_obj and hasattr(section_obj, field):
+                    setattr(section_obj, field, value)
+                    logger.debug(f"Updated setting {key} = {value}")
+        except Exception as e:
+            logger.warning(f"Failed to sync setting {key}: {e}")
+
+    def _get_available_models(self) -> List[str]:
+        """Get available Ollama models for dynamic options."""
+        try:
+            import httpx
+            url = self._settings.local_llm.url.replace("/v1", "")
+            response = httpx.get(f"{url}/api/tags", timeout=5.0)
+            if response.status_code == 200:
+                models = response.json().get("models", [])
+                return [m["name"] for m in models]
+        except Exception as e:
+            logger.warning(f"Failed to fetch Ollama models: {e}")
+
+        # Fallback to common models
+        return ["llama3.2:3b", "llama3.2:1b", "gemma:7b", "mistral:7b"]
+
+    def _hub_oauth_action(self) -> ActionResult:
+        """Execute Hub OAuth action."""
+        return ActionResult(
+            type="open_browser",
+            url=f"{self._settings.hub.url}/auth/device",
+            message="Opening browser to connect to Hub...",
+            pending=True,
+        )
+
+    @property
+    def settings_manager(self) -> Optional[SettingsManager]:
+        """Get the SettingsManager if one was provided."""
+        return self._settings_manager
 
     def _load_settings(self, settings_path: Optional[str]) -> Any:
         """Load settings with optional config path override.
@@ -853,8 +973,9 @@ class SpokeCore:
         Returns:
             List of SettingField objects defining configurable options
         """
-        from .settings_schema import CORE_SETTINGS_SCHEMA
-        return CORE_SETTINGS_SCHEMA
+        if self._settings_manager and self._settings_manager.is_registered("spoke_core"):
+            return self._settings_manager.get_schema("spoke_core")
+        return SPOKE_CORE_SCHEMA
 
     def get_settings(self) -> Dict[str, Any]:
         """Get current settings values as a flat dictionary.
@@ -863,6 +984,11 @@ class SpokeCore:
             Dictionary mapping dot-separated keys to values.
             Example: {"device.name": "My PC", "hub.url": "http://..."}
         """
+        # Use SettingsManager if available
+        if self._settings_manager and self._settings_manager.is_registered("spoke_core"):
+            return self._settings_manager.get_all("spoke_core")
+
+        # Fallback to Pydantic model
         settings = self._settings
         result = {}
 
@@ -892,6 +1018,18 @@ class SpokeCore:
         Raises:
             ValueError: If a key is not recognized
         """
+        # Use SettingsManager if available
+        if self._settings_manager and self._settings_manager.is_registered("spoke_core"):
+            errors = self._settings_manager.update("spoke_core", patch)
+            if errors:
+                raise ValueError(f"Validation errors: {errors}")
+            # Emit settings changed event
+            from .events import SettingsChanged
+            await self._emit(SettingsChanged(changed_keys=list(patch.keys())))
+            logger.info(f"Settings updated via manager: {list(patch.keys())}")
+            return
+
+        # Fallback to legacy behavior
         from ..config.persistence import save_settings
 
         # Apply patch to settings object
@@ -925,24 +1063,19 @@ class SpokeCore:
         Returns:
             List of available options
         """
-        if provider == "get_available_models":
-            # Try to get models from Ollama
-            try:
-                import httpx
-                url = self._settings.local_llm.url.replace("/v1", "")
-                response = httpx.get(f"{url}/api/tags", timeout=5.0)
-                if response.status_code == 200:
-                    models = response.json().get("models", [])
-                    return [m["name"] for m in models]
-            except Exception as e:
-                logger.warning(f"Failed to fetch Ollama models: {e}")
+        # Use SettingsManager if available
+        if self._settings_manager:
+            options = self._settings_manager.get_options(provider)
+            if options:
+                return options
 
-            # Fallback to common models
-            return ["llama3.2:3b", "llama3.2:1b", "gemma:7b", "mistral:7b"]
+        # Fallback to direct handling
+        if provider == "get_available_models":
+            return self._get_available_models()
 
         raise ValueError(f"Unknown options provider: {provider}")
 
-    async def execute_settings_action(self, action: str) -> "ActionResult":
+    async def execute_settings_action(self, action: str) -> ActionResult:
         """Execute a settings action (e.g., hub OAuth flow).
 
         Args:
@@ -951,15 +1084,13 @@ class SpokeCore:
         Returns:
             ActionResult with instructions for the UI
         """
-        from .settings_schema import ActionResult
+        # Use SettingsManager if available
+        if self._settings_manager:
+            return await self._settings_manager.execute_action("spoke_core", action)
 
+        # Fallback to direct handling
         if action == "hub_oauth":
-            return ActionResult(
-                type="open_browser",
-                url=f"{self._settings.hub.url}/auth/device",
-                message="Opening browser to connect to Hub...",
-                pending=True,
-            )
+            return self._hub_oauth_action()
 
         raise ValueError(f"Unknown action: {action}")
 
