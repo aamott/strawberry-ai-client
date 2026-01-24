@@ -8,3 +8,17 @@ spoke_core:
     enabled: true
   skills:
     allow_unsafe_exec: true
+voice_core:
+  stt:
+    order: leopard
+  tts:
+    order: pocket
+  vad:
+    order: silero
+  wakeword:
+    order: porcupine
+    phrase: computer
+    sensitivity: 0.5
+  audio:
+    sample_rate: '16000'
+    feedback_enabled: true

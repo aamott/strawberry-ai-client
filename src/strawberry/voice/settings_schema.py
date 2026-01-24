@@ -83,9 +83,14 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
     SettingField(
         key="wakeword.phrase",
         label="Wake Word",
-        type=FieldType.TEXT,
-        default="strawberry",
-        description="The phrase that activates the assistant",
+        type=FieldType.SELECT,
+        options=[
+            "computer", "jarvis", "alexa", "hey google", "ok google",
+            "hey siri", "porcupine", "picovoice", "bumblebee", "terminator",
+            "blueberry", "grapefruit", "grasshopper", "americano",
+        ],
+        default="computer",
+        description="The phrase that activates the assistant (Porcupine built-in keywords)",
         group="wakeword",
     ),
     SettingField(

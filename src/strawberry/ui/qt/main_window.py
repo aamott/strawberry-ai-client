@@ -23,6 +23,16 @@ from ...spoke_core import ConnectionChanged, CoreError, ModeChanged, SpokeCore
 
 if TYPE_CHECKING:
     from ...shared.settings import SettingsManager
+    from ...voice import VoiceCore
+
+from ...voice import (
+    VoiceEvent,
+    VoiceListening,
+    VoiceNoSpeechDetected,
+    VoiceState,
+    VoiceStateChanged,
+    VoiceTranscription,
+)
 from .agent_helpers import (
     AgentLoopContext,
     ToolCallInfo,
@@ -40,6 +50,7 @@ from .widgets import (
     OfflineModeBanner,
     RenameDialog,
     StatusBar,
+    VoiceButtonState,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,22 +62,35 @@ class MainWindow(QMainWindow):
     Signals:
         closing: Emitted when window is about to close
         minimized_to_tray: Emitted when minimized to system tray
+        hub_connection_changed: Emitted when hub connection status changes
+        _voice_state_changed: Internal signal for thread-safe voice state updates
+        _voice_transcription: Internal signal for thread-safe transcription handling
+        _voice_error: Internal signal for thread-safe error handling
     """
 
     closing = Signal()
     minimized_to_tray = Signal()
     hub_connection_changed = Signal(bool)
 
+    # Internal signals for thread-safe voice event handling
+    # (VoiceCore emits events from worker threads)
+    _voice_state_changed = Signal(object)  # VoiceState enum
+    _voice_transcription = Signal(str)  # Transcribed text
+    _voice_no_speech = Signal()
+    _voice_error = Signal(str)  # Error message
+
     def __init__(
         self,
         settings: Settings,
         settings_manager: Optional["SettingsManager"] = None,
+        voice_core: Optional["VoiceCore"] = None,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
 
         self.settings = settings
         self._settings_manager = settings_manager
+        self._voice_core = voice_core
         self._theme = THEMES.get(settings.ui.theme, DARK_THEME)
 
         # Create SpokeCore with SettingsManager if available
@@ -100,6 +124,17 @@ class MainWindow(QMainWindow):
 
         # Connect offline mode listener
         self._offline_tracker.add_listener(self._on_offline_mode_changed)
+
+        # Set up VoiceCore event listener if available
+        # Voice events come from worker threads, so we use Qt signals
+        # to safely marshal them to the main UI thread
+        if self._voice_core:
+            self._voice_core.add_listener(self._on_voice_event)
+            # Connect internal voice signals to handlers (runs on main thread)
+            self._voice_state_changed.connect(self._handle_voice_state_changed)
+            self._voice_transcription.connect(self._handle_voice_transcription)
+            self._voice_no_speech.connect(self._handle_voice_no_speech)
+            self._voice_error.connect(self._handle_voice_error)
 
         # Check external dependencies and connect to Hub
         # Skills are loaded by SpokeCore in _start_core()
@@ -155,6 +190,173 @@ class MainWindow(QMainWindow):
 
         elif isinstance(event, CoreError):
             self._chat_area.add_system_message(f"Core error: {event.error}")
+
+    # =========================================================================
+    # Voice Event Handling
+    # =========================================================================
+
+    def _on_voice_event(self, event: "VoiceEvent") -> None:
+        """Handle VoiceCore events - emit Qt signals for thread safety.
+
+        This method is called from VoiceCore worker threads. We emit Qt signals
+        to safely handle events on the main UI thread.
+        """
+        if isinstance(event, VoiceStateChanged):
+            self._voice_state_changed.emit(event.new_state)
+
+        elif isinstance(event, VoiceTranscription):
+            if event.is_final and event.text.strip():
+                self._voice_transcription.emit(event.text.strip())
+
+        elif isinstance(event, VoiceListening):
+            self._voice_state_changed.emit(VoiceState.LISTENING)
+
+        elif isinstance(event, VoiceNoSpeechDetected):
+            self._voice_no_speech.emit()
+
+    # -------------------------------------------------------------------------
+    # Voice Signal Handlers (run on main UI thread)
+    # -------------------------------------------------------------------------
+
+    @Slot(object)
+    def _handle_voice_state_changed(self, state: "VoiceState") -> None:
+        """Update UI based on voice state (main thread)."""
+        state_mapping = {
+            VoiceState.STOPPED: VoiceButtonState.IDLE,
+            VoiceState.IDLE: VoiceButtonState.LISTENING,
+            VoiceState.LISTENING: VoiceButtonState.RECORDING,
+            VoiceState.PROCESSING: VoiceButtonState.PROCESSING,
+            VoiceState.SPEAKING: VoiceButtonState.SPEAKING,
+        }
+        ui_state = state_mapping.get(state, VoiceButtonState.IDLE)
+
+        # Update the appropriate button based on whether voice mode is active
+        if self._input_area.is_voice_mode_active():
+            self._input_area.set_voice_mode_state(ui_state)
+        else:
+            self._input_area.set_mic_state(ui_state)
+
+    @Slot(str)
+    def _handle_voice_transcription(self, text: str) -> None:
+        """Handle transcription result - submit as message (main thread)."""
+        self._on_message_submitted(text)
+
+    @Slot()
+    def _handle_voice_no_speech(self) -> None:
+        """Handle no speech detected (main thread)."""
+        self._chat_area.add_system_message("No speech detected")
+        self._input_area.set_mic_state(VoiceButtonState.IDLE)
+
+    @Slot(str)
+    def _handle_voice_error(self, error: str) -> None:
+        """Handle voice error (main thread)."""
+        self._chat_area.add_system_message(f"Voice error: {error}")
+        self._input_area.set_mic_state(VoiceButtonState.IDLE)
+
+    def _on_mic_clicked(self) -> None:
+        """Handle mic button click - trigger speech-to-text (skip wake word)."""
+        if not self._voice_core:
+            self._chat_area.add_system_message(
+                "Voice not available. Check voice settings."
+            )
+            return
+
+        # If already recording, this will stop it
+        current_state = self._voice_core.get_state()
+        if current_state == VoiceState.LISTENING:
+            asyncio.ensure_future(self._voice_core.stop_listening())
+        else:
+            # Trigger wake word (starts listening immediately)
+            asyncio.ensure_future(self._start_speech_to_text())
+
+    async def _start_speech_to_text(self) -> None:
+        """Start speech-to-text via VoiceCore."""
+        if not self._voice_core:
+            return
+
+        try:
+            # Ensure VoiceCore is started
+            if self._voice_core.get_state() == VoiceState.STOPPED:
+                started = await self._voice_core.start()
+                if not started:
+                    self._chat_area.add_system_message(
+                        "Failed to start voice. Check Settings > Voice for configuration."
+                    )
+                    self._input_area.set_mic_state(VoiceButtonState.IDLE)
+                    return
+
+            # Check if still in STOPPED state (shouldn't happen, but be safe)
+            if self._voice_core.get_state() == VoiceState.STOPPED:
+                self._chat_area.add_system_message("Voice system not ready.")
+                self._input_area.set_mic_state(VoiceButtonState.IDLE)
+                return
+
+            # Trigger wake word to start listening immediately
+            self._voice_core.trigger_wakeword()
+            self._input_area.set_mic_state(VoiceButtonState.RECORDING)
+        except Exception as e:
+            logger.exception("Failed to start speech-to-text")
+            self._chat_area.add_system_message(f"Voice error: {e}")
+            self._input_area.set_mic_state(VoiceButtonState.IDLE)
+
+    def _on_voice_mode_clicked(self) -> None:
+        """Handle voice mode button click - toggle full voice mode."""
+        if not self._voice_core:
+            self._chat_area.add_system_message(
+                "Voice not available. Check voice settings."
+            )
+            return
+
+        if self._input_area.is_voice_mode_active():
+            # Stop voice mode
+            asyncio.ensure_future(self._stop_voice_mode())
+        else:
+            # Start voice mode
+            asyncio.ensure_future(self._start_voice_mode())
+
+    async def _start_voice_mode(self) -> None:
+        """Start full voice mode (wake word detection + auto response)."""
+        if not self._voice_core:
+            return
+
+        try:
+            started = await self._voice_core.start()
+            if not started:
+                self._chat_area.add_system_message(
+                    "Failed to start voice mode. Check Settings > Voice for configuration."
+                )
+                self._input_area.set_voice_mode_active(False)
+                return
+
+            self._input_area.set_voice_mode_active(True)
+
+            # Check if wake word detection is available
+            if self._voice_core._wake_detector:
+                wake_words = ", ".join(self._voice_core._config.wake_words)
+                self._chat_area.add_system_message(
+                    f"Voice mode started. Say '{wake_words}' to begin speaking."
+                )
+            else:
+                self._chat_area.add_system_message(
+                    "Voice mode started (wake word unavailable - use mic button to speak)."
+                )
+        except Exception as e:
+            logger.exception("Failed to start voice mode")
+            self._chat_area.add_system_message(f"Voice error: {e}")
+            self._input_area.set_voice_mode_active(False)
+
+    async def _stop_voice_mode(self) -> None:
+        """Stop voice mode."""
+        if not self._voice_core:
+            return
+
+        try:
+            await self._voice_core.stop()
+            self._input_area.set_voice_mode_active(False)
+            self._chat_area.add_system_message("Voice mode stopped.")
+        except Exception as e:
+            logger.exception("Failed to stop voice mode")
+            self._chat_area.add_system_message(f"Error stopping voice: {e}")
 
     async def _bootstrap_sessions(self) -> None:
         """Ensure sessions are ready and visible in the sidebar.
@@ -284,6 +486,8 @@ class MainWindow(QMainWindow):
             placeholder="Type your message... (Enter to send, Shift+Enter for newline)",
         )
         self._input_area.message_submitted.connect(self._on_message_submitted)
+        self._input_area.mic_clicked.connect(self._on_mic_clicked)
+        self._input_area.voice_mode_clicked.connect(self._on_voice_mode_clicked)
         layout.addWidget(self._input_area)
 
         # Status bar
