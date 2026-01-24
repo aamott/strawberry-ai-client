@@ -17,8 +17,9 @@ voice_core:
     order: silero
   wakeword:
     order: porcupine
-    phrase: computer
+    phrase: hey barista
     sensitivity: 0.5
+    enabled: true
   audio:
-    sample_rate: '16000'
+    sample_rate: '48000'
     feedback_enabled: true

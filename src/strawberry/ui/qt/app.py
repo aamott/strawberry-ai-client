@@ -1,12 +1,20 @@
 """Main application class with system tray support."""
 
+import asyncio
+import logging
 import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+
+from ...config import Settings, load_config
+from ...shared.settings import SettingsManager
+from ...utils.paths import get_project_root
+from ...voice import VoiceConfig, VoiceCore
+from .main_window import MainWindow
 
 try:
     import qasync
@@ -14,11 +22,7 @@ try:
 except ImportError:
     HAS_QASYNC = False
 
-from ...config import Settings, load_config
-from ...shared.settings import SettingsManager
-from ...utils.paths import get_project_root
-from ...voice import VoiceConfig, VoiceCore
-from .main_window import MainWindow
+logger = logging.getLogger(__name__)
 
 
 def create_strawberry_icon() -> QIcon:
@@ -132,6 +136,10 @@ class StrawberryApp:
         else:
             self._window.show()
 
+        # Pre-start VoiceCore in the background so it's ready for first use
+        # Scheduled after event loop starts to avoid blocking UI
+        QTimer.singleShot(500, self._prestart_voice_core)
+
         # Run event loop
         if HAS_QASYNC:
             # Use qasync for proper async integration
@@ -239,6 +247,22 @@ class StrawberryApp:
                 QSystemTrayIcon.MessageIcon.Information,
                 1500
             )
+
+    def _prestart_voice_core(self):
+        """Pre-start VoiceCore in the background so it's ready for first use."""
+        if self._voice_core:
+            asyncio.ensure_future(self._start_voice_core_async())
+
+    async def _start_voice_core_async(self):
+        """Start VoiceCore asynchronously."""
+        try:
+            started = await self._voice_core.start()
+            if started:
+                logger.info("VoiceCore pre-started successfully")
+            else:
+                logger.warning("VoiceCore pre-start failed (will retry on first use)")
+        except Exception as e:
+            logger.warning(f"VoiceCore pre-start error (will retry on first use): {e}")
 
 
 def main():
