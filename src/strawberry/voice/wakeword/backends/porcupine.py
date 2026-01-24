@@ -24,6 +24,25 @@ class PorcupineDetector(WakeWordDetector):
     Custom keywords require training at https://console.picovoice.ai/
     """
 
+    # Module metadata for discovery
+    name = "Porcupine (Picovoice)"
+    description = "On-device wake word detection using Picovoice Porcupine. Requires license key."
+
+    @classmethod
+    def get_settings_schema(cls) -> List:
+        """Return settings schema for Porcupine configuration."""
+        from strawberry.spoke_core.settings_schema import FieldType, SettingField
+
+        return [
+            SettingField(
+                key="access_key",
+                label="Picovoice Access Key",
+                type=FieldType.PASSWORD,
+                secret=True,
+                description="API key from Picovoice Console (same as STT/TTS)",
+            ),
+        ]
+
     def __init__(
         self,
         keywords: List[str],

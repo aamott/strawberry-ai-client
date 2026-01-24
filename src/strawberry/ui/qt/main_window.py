@@ -8,7 +8,7 @@ import platform
 import shutil
 import traceback
 from pathlib import Path
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from PySide6.QtCore import QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QFont
@@ -23,6 +23,9 @@ from ...hub.client import HubError
 from ...llm import OfflineModeTracker, TensorZeroClient
 from ...models import ChatMessage
 from ...spoke_core import ConnectionChanged, CoreError, ModeChanged, SpokeCore
+
+if TYPE_CHECKING:
+    from ...shared.settings import SettingsManager
 from .agent_helpers import (
     AgentLoopContext,
     ToolCallInfo,
@@ -60,13 +63,17 @@ class MainWindow(QMainWindow):
     def __init__(
         self,
         settings: Settings,
+        settings_manager: Optional["SettingsManager"] = None,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
 
         self.settings = settings
+        self._settings_manager = settings_manager
         self._theme = THEMES.get(settings.ui.theme, DARK_THEME)
-        self._core = SpokeCore()
+
+        # Create SpokeCore with SettingsManager if available
+        self._core = SpokeCore(settings_manager=settings_manager)
         self._core_subscription = None
         self._conversation_history: List[ChatMessage] = []
         self._connected = False
@@ -1270,15 +1277,26 @@ class MainWindow(QMainWindow):
 
     def _on_settings(self):
         """Open settings dialog."""
-        from .settings_dialog import SettingsDialog
+        # Use new schema-driven dialog if SettingsManager is available
+        if self._settings_manager:
+            from .widgets.settings import SettingsDialog as NewSettingsDialog
 
-        dialog = SettingsDialog(
-            settings=self.settings,
-            theme=self._theme,
-            parent=self,
-        )
-        dialog.settings_changed.connect(self._apply_settings_changes)
-        dialog.exec()
+            dialog = NewSettingsDialog(
+                settings_manager=self._settings_manager,
+                parent=self,
+            )
+            dialog.exec()
+        else:
+            # Fall back to legacy dialog
+            from .settings_dialog import SettingsDialog
+
+            dialog = SettingsDialog(
+                settings=self.settings,
+                theme=self._theme,
+                parent=self,
+            )
+            dialog.settings_changed.connect(self._apply_settings_changes)
+            dialog.exec()
 
     def open_settings_dialog(self) -> None:
         """Open the settings dialog."""

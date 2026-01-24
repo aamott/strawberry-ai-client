@@ -8,11 +8,13 @@ Usage:
     python -m strawberry.ui.voice_interface  # Run as module
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
 import signal
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from ...config import get_settings
 from ...spoke_core import SpokeCore
@@ -27,6 +29,9 @@ from ...voice import (
     VoiceTranscription,
     VoiceWakeWordDetected,
 )
+
+if TYPE_CHECKING:
+    from ...shared.settings import SettingsManager
 
 logger = logging.getLogger(__name__)
 
@@ -50,20 +55,57 @@ class VoiceInterface:
         self,
         spoke_core: Optional[SpokeCore] = None,
         voice_core: Optional[VoiceCore] = None,
+        settings_manager: Optional["SettingsManager"] = None,
     ):
         """Initialize VoiceInterface.
 
         Args:
             spoke_core: Optional SpokeCore instance (creates one if not provided)
             voice_core: Optional VoiceCore instance (creates one if not provided)
+            settings_manager: Optional SettingsManager for shared settings.
+                If provided, will be passed to SpokeCore and VoiceCore.
         """
         self._spoke_core = spoke_core
         self._voice_core = voice_core
+        self._settings_manager = settings_manager
         self._session_id: Optional[str] = None
         self._running = False
         self._owns_spoke_core = spoke_core is None
         self._owns_voice_core = voice_core is None
         self._printed_offline_notice = False
+
+    def _build_voice_config(self) -> VoiceConfig:
+        """Build VoiceConfig from SettingsManager or legacy settings.
+
+        Returns:
+            Configured VoiceConfig instance.
+        """
+        # Try SettingsManager first
+        if self._settings_manager and self._settings_manager.is_registered("voice_core"):
+            mgr = self._settings_manager
+            wake_phrase = mgr.get("voice_core", "wakeword.phrase", "strawberry")
+            wake_words = [w.strip() for w in wake_phrase.split(",") if w.strip()]
+            return VoiceConfig(
+                wake_words=wake_words or ["strawberry"],
+                sensitivity=float(mgr.get("voice_core", "wakeword.sensitivity", 0.5)),
+                sample_rate=int(mgr.get("voice_core", "audio.sample_rate", 16000)),
+                stt_backend=mgr.get("voice_core", "stt.order", "leopard"),
+                tts_backend=mgr.get("voice_core", "tts.order", "pocket"),
+                vad_backend=mgr.get("voice_core", "vad.order", "silero"),
+                wake_backend=mgr.get("voice_core", "wakeword.order", "porcupine"),
+            )
+
+        # Fall back to legacy settings
+        settings = get_settings()
+        return VoiceConfig(
+            wake_words=settings.wake_word.keywords or ["strawberry"],
+            sensitivity=getattr(settings.wake_word, "sensitivity", 0.5),
+            sample_rate=16000,
+            stt_backend=settings.stt.backend,
+            tts_backend=settings.tts.backend,
+            vad_backend=settings.vad.backend,
+            wake_backend=settings.wake_word.backend,
+        )
 
     async def start(self) -> bool:
         """Start the voice interface.
@@ -74,7 +116,7 @@ class VoiceInterface:
         try:
             # Create SpokeCore if not provided
             if self._spoke_core is None:
-                self._spoke_core = SpokeCore()
+                self._spoke_core = SpokeCore(settings_manager=self._settings_manager)
                 await self._spoke_core.start()
 
             # Create session
@@ -83,17 +125,12 @@ class VoiceInterface:
 
             # Create VoiceCore if not provided
             if self._voice_core is None:
-                settings = get_settings()
-                voice_config = VoiceConfig(
-                    wake_words=settings.wake_word.keywords or ["strawberry"],
-                    sensitivity=getattr(settings.wake_word, "sensitivity", 0.5),
-                    sample_rate=16000,
-                    stt_backend=settings.stt.backend,
-                    tts_backend=settings.tts.backend,
-                    vad_backend=settings.vad.backend,
-                    wake_backend=settings.wake_word.backend,
+                # Get voice config from SettingsManager or fall back to legacy settings
+                voice_config = self._build_voice_config()
+                self._voice_core = VoiceCore(
+                    config=voice_config,
+                    settings_manager=self._settings_manager,
                 )
-                self._voice_core = VoiceCore(config=voice_config)
 
             # Wire events
             self._wire_events()
@@ -253,7 +290,17 @@ def main() -> None:
     # Silence TensorZero Rust logs
     os.environ.setdefault("RUST_LOG", "off")
 
-    interface = VoiceInterface()
+    # Create SettingsManager for shared settings
+    from ...shared.settings import SettingsManager
+    from ...utils.paths import get_project_root
+
+    config_dir = get_project_root() / "config"
+    settings_manager = SettingsManager(
+        config_dir=config_dir,
+        env_filename="../.env",  # Use root .env for secrets
+    )
+
+    interface = VoiceInterface(settings_manager=settings_manager)
     try:
         asyncio.run(interface.run_forever())
     except KeyboardInterrupt:

@@ -15,6 +15,7 @@ except ImportError:
     HAS_QASYNC = False
 
 from ...config import Settings, load_config
+from ...shared.settings import SettingsManager
 from ...utils.paths import get_project_root
 from .main_window import MainWindow
 
@@ -71,6 +72,7 @@ class StrawberryApp:
         self._window: Optional[MainWindow] = None
         self._tray: Optional[QSystemTrayIcon] = None
         self._settings: Optional[Settings] = None
+        self._settings_manager: Optional[SettingsManager] = None
 
     def run(self) -> int:
         """Run the application.
@@ -84,11 +86,24 @@ class StrawberryApp:
         self._app.setOrganizationName("Strawberry")
         self._app.setQuitOnLastWindowClosed(False)  # Keep running in tray
 
-        # Load configuration
+        # Load legacy configuration (for backward compatibility)
         self._settings = load_config(self.config_path)
 
-        # Create main window
-        self._window = MainWindow(self._settings)
+        # Create centralized SettingsManager
+        # Config directory is at ai-pc-spoke/config/ for settings.yaml
+        # But secrets (.env) should be at project root for compatibility
+        project_root = get_project_root()
+        config_dir = project_root / "config"
+        self._settings_manager = SettingsManager(
+            config_dir=config_dir,
+            env_filename="../.env",  # Use root .env for secrets
+        )
+
+        # Create main window with both old settings and new manager
+        self._window = MainWindow(
+            settings=self._settings,
+            settings_manager=self._settings_manager,
+        )
         self._window.closing.connect(self._on_window_closing)
         self._window.minimized_to_tray.connect(self._on_minimized_to_tray)
 

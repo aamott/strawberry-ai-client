@@ -170,8 +170,64 @@ class SpokeCore:
                 if section_obj and hasattr(section_obj, field):
                     setattr(section_obj, field, value)
                     logger.debug(f"Updated setting {key} = {value}")
+
+                    # Special handling for hub token - set and persist legacy env vars
+                    # The hub client reads from HUB_DEVICE_TOKEN/HUB_TOKEN, not the
+                    # namespaced SPOKE_CORE__HUB__TOKEN that SettingsManager uses.
+                    if section == "hub" and field == "token" and value:
+                        import os
+                        str_value = str(value)
+                        os.environ["HUB_DEVICE_TOKEN"] = str_value
+                        os.environ["HUB_TOKEN"] = str_value
+                        logger.debug("Updated HUB_DEVICE_TOKEN and HUB_TOKEN env vars")
+
+                        # Also persist to .env file with legacy names
+                        if self._settings_manager:
+                            try:
+                                env_storage = self._settings_manager._env_storage
+                                env_storage.set("HUB_DEVICE_TOKEN", str_value)
+                                env_storage.set("HUB_TOKEN", str_value)
+                                logger.debug("Persisted HUB_DEVICE_TOKEN to .env")
+                            except Exception as e:
+                                logger.warning(f"Failed to persist hub token: {e}")
+
+                    # Trigger hub reconnection when hub settings change
+                    if section == "hub" and field in ("url", "token"):
+                        logger.info(f"Hub setting changed ({field}), triggering reconnection")
+                        self._schedule_hub_reconnection()
+
         except Exception as e:
             logger.warning(f"Failed to sync setting {key}: {e}")
+
+    def _schedule_hub_reconnection(self) -> None:
+        """Schedule hub reconnection after settings change.
+
+        Uses asyncio to run the reconnection in the background.
+        """
+        import asyncio
+
+        async def reconnect():
+            try:
+                await self.disconnect_hub()
+                await self.connect_hub()
+            except Exception as e:
+                logger.error(f"Hub reconnection failed: {e}")
+
+        # Try to get the running event loop
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(reconnect())
+        except RuntimeError:
+            # No running loop - try to schedule via event loop
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.ensure_future(reconnect())
+                else:
+                    # Last resort: run synchronously
+                    loop.run_until_complete(reconnect())
+            except Exception as e:
+                logger.warning(f"Could not schedule hub reconnection: {e}")
 
     def _get_available_models(self) -> List[str]:
         """Get available Ollama models for dynamic options."""
