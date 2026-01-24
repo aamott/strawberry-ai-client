@@ -1,0 +1,10 @@
+spoke_core:
+  device:
+    name: Strawberry Spoke
+  hub:
+    url: http://localhost:8000
+  local_llm:
+    model: llama3.2:3b
+    enabled: true
+  skills:
+    allow_unsafe_exec: true

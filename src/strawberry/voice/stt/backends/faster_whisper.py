@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import ClassVar, List, Optional
 
 import pynvml
 import torch
@@ -13,10 +13,51 @@ try:
 except ImportError:
     from base import STTEngine, TranscriptionResult
 
+
 class FasterWhisperSTT(STTEngine):
     """
-    Medium.en Whisper model with optional real-time GPU stats.
+    Faster-Whisper model with optional real-time GPU stats.
+
+    Runs OpenAI's Whisper model locally using CTranslate2 for faster inference.
+    Supports CPU and GPU acceleration.
     """
+
+    # Module metadata for discovery
+    name: ClassVar[str] = "Faster Whisper"
+    description: ClassVar[str] = "Local Whisper model using CTranslate2 for faster inference"
+
+    @classmethod
+    def get_settings_schema(cls) -> List:
+        """Return settings schema for Faster Whisper configuration."""
+        from strawberry.spoke_core.settings_schema import FieldType, SettingField
+
+        return [
+            SettingField(
+                key="model_size",
+                label="Model Size",
+                type=FieldType.SELECT,
+                default="medium.en",
+                options=["tiny", "tiny.en", "base", "base.en", "small", "small.en",
+                         "medium", "medium.en", "large-v2", "large-v3"],
+                description="Whisper model size. Larger = more accurate but slower.",
+            ),
+            SettingField(
+                key="device",
+                label="Device",
+                type=FieldType.SELECT,
+                default="auto",
+                options=["auto", "cuda", "cpu"],
+                description="Compute device. Auto selects CUDA if available.",
+            ),
+            SettingField(
+                key="precision",
+                label="Precision",
+                type=FieldType.SELECT,
+                default="float16",
+                options=["float16", "int8", "int8_float16"],
+                description="Model precision. int8 uses less memory.",
+            ),
+        ]
 
     def __init__(
         self,
@@ -51,6 +92,11 @@ class FasterWhisperSTT(STTEngine):
             device=self._device,
             compute_type=compute_type
         )
+
+    @property
+    def sample_rate(self) -> int:
+        """Required audio sample rate in Hz."""
+        return self._sample_rate
 
     def _log_stats(self, stage: str):
         """Helper to print current GPU health."""
