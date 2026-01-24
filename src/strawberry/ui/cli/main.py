@@ -423,6 +423,7 @@ class CLIApp:
         from ...voice import (
             VoiceError,
             VoiceListening,
+            VoiceNoSpeechDetected,
             VoiceSpeaking,
             VoiceState,
             VoiceStateChanged,
@@ -435,6 +436,9 @@ class CLIApp:
 
         elif isinstance(event, VoiceListening):
             renderer.print_system("🎤 Listening...")
+
+        elif isinstance(event, VoiceNoSpeechDetected):
+            renderer.print_system("🎤 No speech detected.")
 
         elif isinstance(event, VoiceTranscription):
             if event.is_final and event.text:

@@ -6,6 +6,7 @@ from strawberry.voice import (
     VoiceConfig,
     VoiceController,
     VoiceCore,
+    VoiceNoSpeechDetected,
     VoiceState,
     VoiceStateChanged,
     VoiceStateError,
@@ -244,3 +245,36 @@ class TestVoiceConfig:
         assert config.wake_words == ["hey computer"]
         assert config.sensitivity == 0.8
         assert config.sample_rate == 44100
+
+
+class TestNoSpeechEvent:
+    """Tests for emitting a no-speech event when recording ends silently."""
+
+    def test_finish_recording_emits_no_speech_detected_when_vad_saw_no_speech(self):
+        """If VAD never detects speech, VoiceCore should emit a no-speech event."""
+        from strawberry.voice.vad.backends.mock import MockVAD
+        from strawberry.voice.vad.processor import VADProcessor
+
+        config = make_test_voice_config()
+        core = VoiceCore(config)
+
+        events = []
+        core.add_listener(lambda e: events.append(e))
+
+        # Avoid starting the full audio pipeline; we only need VADProcessor state.
+        core._vad_processor = VADProcessor(MockVAD(), frame_duration_ms=30)  # noqa: SLF001
+
+        # Simulate the state reached after wake word / PTT.
+        core._transition_to(VoiceState.IDLE)
+        core._start_recording()  # Emits VoiceListening and resets VADProcessor  # noqa: SLF001
+
+        # Simulate buffered audio (silence). We intentionally do not call
+        # _handle_listening() so VAD never sees speech.
+        import numpy as np
+
+        core._recording_buffer.append(np.zeros(480, dtype=np.int16))  # noqa: SLF001
+
+        core._finish_recording()  # Should early-return to IDLE  # noqa: SLF001
+
+        assert core.state == VoiceState.IDLE
+        assert any(isinstance(e, VoiceNoSpeechDetected) for e in events)

@@ -69,6 +69,17 @@ class VoiceListening(VoiceEvent):
 
 
 @dataclass
+class VoiceNoSpeechDetected(VoiceEvent):
+    """Recording ended without detecting any speech.
+
+    This is emitted when we enter LISTENING (after wake word / PTT) but VAD
+    determines that no speech occurred before recording ended.
+    """
+
+    duration_s: float = 0.0
+
+
+@dataclass
 class VoiceTranscription(VoiceEvent):
     """Speech was transcribed."""
 
@@ -791,6 +802,18 @@ class VoiceCore:
 
     def _finish_recording(self) -> None:
         """Process recorded audio through STT and response handler."""
+        # If VAD never saw speech, don't waste STT cycles. Report the condition
+        # and return to idle so UIs can reflect "no speech detected".
+        if self._vad_processor and not self._vad_processor.speech_detected:
+            duration_s = max(0.0, time.time() - self._recording_start_time)
+            logger.info(
+                "Recording ended with no speech detected (duration=%.2fs)", duration_s
+            )
+            self._recording_buffer.clear()
+            self._emit(VoiceNoSpeechDetected(duration_s=duration_s))
+            self._transition_to(VoiceState.IDLE)
+            return
+
         self._transition_to(VoiceState.PROCESSING)
 
         if self._recording_buffer:

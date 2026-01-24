@@ -14,6 +14,7 @@ from .voice_core import (
     VoiceError,
     VoiceEvent,
     VoiceListening,
+    VoiceNoSpeechDetected,
     VoiceResponse,
     VoiceSpeaking,
     VoiceStateChanged,
@@ -38,6 +39,7 @@ __all__ = [
     "VoiceStatusChanged",  # Alias for backwards compatibility
     "VoiceWakeWordDetected",
     "VoiceListening",
+    "VoiceNoSpeechDetected",
     "VoiceTranscription",
     "VoiceResponse",
     "VoiceSpeaking",

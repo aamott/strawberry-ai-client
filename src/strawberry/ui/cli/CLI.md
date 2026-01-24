@@ -1,5 +1,5 @@
 ---
-description: CLI UI overview for the Spoke
+description: CLI UI overview for the Spoke and todo items. 
 ---
 
 # CLI UI (Spoke)
@@ -24,5 +24,4 @@ planning/design doc.
 
 
 ## TODO
-- [ ] Add support for streaming responses
 - [ ] Detect hub coming online/offline
