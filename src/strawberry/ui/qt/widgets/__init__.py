@@ -10,7 +10,7 @@ try:
     from .chat_area import ChatArea
     from .chat_bubble import ChatBubble
     from .chat_history import ChatHistorySidebar
-    from .input_area import InputArea, MicState, VoiceButtonState, VoiceModeButton
+    from .input_area import InputArea, MicButton, MicState, VoiceButtonState, VoiceModeButton
     from .offline_banner import OfflineModeBanner
     from .rename_dialog import RenameDialog
     from .schema_settings import SchemaSettingsWidget
@@ -24,6 +24,7 @@ try:
         "ChatBubble",
         "ChatHistorySidebar",
         "InputArea",
+        "MicButton",
         "MicState",
         "OfflineModeBanner",
         "RenameDialog",
