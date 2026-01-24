@@ -24,3 +24,10 @@ def get_soprano_tts():
     from .soprano import SopranoTTS
 
     return SopranoTTS
+
+
+def get_sopro_tts():
+    """Get SoproTTS class (requires sopro, supports CPU and voice cloning)."""
+    from .sopro import SoproTTS
+
+    return SoproTTS
