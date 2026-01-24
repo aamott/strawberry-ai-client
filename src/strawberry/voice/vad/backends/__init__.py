@@ -19,3 +19,10 @@ def get_cobra_vad():
 
     return CobraVAD
 
+
+def get_ten_vad():
+    """Get TenVAD class (requires ten_vad and libc++ on Linux)."""
+    from .ten_vad import TenVAD
+
+    return TenVAD
+
