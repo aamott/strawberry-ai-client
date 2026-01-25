@@ -14,7 +14,7 @@ voice_core:
   tts:
     order: google,pocket,orca
   vad:
-    order: silero
+    order: cobra,silero
   wakeword:
     order: porcupine
     phrase: hey barista
