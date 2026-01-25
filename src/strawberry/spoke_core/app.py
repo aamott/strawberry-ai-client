@@ -124,6 +124,18 @@ class SpokeCore:
                 order=10,
             )
 
+        # Register MCP namespace so MCP settings appear automatically in UIs.
+        # Import lazily to avoid introducing import cycles during app startup.
+        if not self._settings_manager.is_registered("mcp"):
+            from ..mcp.settings_schema import MCP_SETTINGS_SCHEMA
+
+            self._settings_manager.register(
+                namespace="mcp",
+                display_name="MCP",
+                schema=MCP_SETTINGS_SCHEMA,
+                order=35,
+            )
+
         # Register options providers
         self._settings_manager.register_options_provider(
             "get_available_models",

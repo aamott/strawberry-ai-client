@@ -1,12 +1,18 @@
 """Skill service for managing skill lifecycle and LLM integration."""
 
+from __future__ import annotations
+
 import ast
 import asyncio
 import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from ..mcp.config import MCPServerConfig
+    from ..mcp.registry import MCPRegistry
 
 from ..hub import HubClient
 from .loader import SkillInfo, SkillLoader
@@ -138,11 +144,17 @@ class SkillService:
         self._sandbox: Optional[SandboxExecutor] = None
         self._sandbox_config = sandbox_config or SandboxConfig(enabled=use_sandbox)
 
+        # MCP integration (types imported lazily to avoid circular imports)
+        self._mcp_registry: Optional["MCPRegistry"] = None
+        self._mcp_configs: List["MCPServerConfig"] = []
+
     def load_skills(self) -> List[SkillInfo]:
-        """Load all skills from the skills directory.
+        """Load all skills from the skills directory (sync, no MCP).
+
+        For MCP support, use load_skills_async() instead.
 
         Returns:
-            List of loaded skills
+            List of loaded skills (Python skills only)
         """
         skills = self._loader.load_all()
         self._skills_loaded = True
@@ -150,7 +162,7 @@ class SkillService:
 
         # Initialize sandbox components
         if self.use_sandbox:
-            self._gatekeeper = Gatekeeper(self._loader)
+            self._gatekeeper = Gatekeeper(self._loader, self._mcp_registry)
             self._proxy_gen = ProxyGenerator(skills)
             self._sandbox = SandboxExecutor(
                 gatekeeper=self._gatekeeper,
@@ -162,6 +174,83 @@ class SkillService:
         self._configure_runtime_mode()
 
         return skills
+
+    async def load_skills_async(self) -> List[SkillInfo]:
+        """Load all skills including MCP servers (async).
+
+        This method loads Python skills and starts configured MCP servers.
+
+        Returns:
+            List of all loaded skills (Python + MCP)
+        """
+        # Lazy imports to avoid circular dependency
+        from ..mcp.registry import MCPRegistry
+        from ..mcp.settings import load_mcp_configs_from_settings
+
+        # Load Python skills first
+        python_skills = self._loader.load_all()
+        logger.info(f"Loaded {len(python_skills)} Python skills from {self.skills_path}")
+
+        # Load MCP configs from settings
+        self._mcp_configs = load_mcp_configs_from_settings()
+
+        # Start MCP servers
+        mcp_skills: List[SkillInfo] = []
+        if self._mcp_configs:
+            self._mcp_registry = MCPRegistry(self._mcp_configs)
+            results = await self._mcp_registry.start_all()
+
+            started = sum(1 for v in results.values() if v)
+            logger.info(f"Started {started}/{len(self._mcp_configs)} MCP servers")
+
+            mcp_skills = self._mcp_registry.get_all_skills()
+
+        # Combine all skills
+        all_skills = python_skills + mcp_skills
+        self._skills_loaded = True
+
+        # Check for name collisions
+        seen_names: Dict[str, str] = {}
+        for skill in all_skills:
+            if skill.name in seen_names:
+                logger.error(
+                    f"Skill name collision: '{skill.name}' from MCP conflicts with "
+                    f"existing skill. MCP skill will be skipped."
+                )
+            else:
+                seen_names[skill.name] = "python" if skill in python_skills else "mcp"
+
+        # Initialize sandbox components with all skills
+        if self.use_sandbox:
+            self._gatekeeper = Gatekeeper(self._loader, self._mcp_registry)
+            self._proxy_gen = ProxyGenerator(all_skills)
+            self._sandbox = SandboxExecutor(
+                gatekeeper=self._gatekeeper,
+                proxy_generator=self._proxy_gen,
+                config=self._sandbox_config,
+            )
+            logger.info("Sandbox executor initialized with MCP support")
+
+        self._configure_runtime_mode()
+
+        return all_skills
+
+    def get_all_skills(self) -> List[SkillInfo]:
+        """Get all loaded skills including MCP skills.
+
+        Returns:
+            List of all SkillInfo objects.
+        """
+        self._ensure_skills_loaded()
+        python_skills = self._loader.get_all_skills()
+        mcp_skills = self._mcp_registry.get_all_skills() if self._mcp_registry else []
+        return python_skills + mcp_skills
+
+    async def stop_mcp_servers(self) -> None:
+        """Stop all running MCP servers."""
+        if self._mcp_registry:
+            await self._mcp_registry.stop_all()
+            logger.info("Stopped all MCP servers")
 
     def _ensure_skills_loaded(self) -> None:
         """Ensure skills are loaded before access.
@@ -296,7 +385,8 @@ class SkillService:
         """
         self._ensure_skills_loaded()
 
-        skills = self._loader.get_all_skills()
+        # Use get_all_skills() to include both Python and MCP skills
+        skills = self.get_all_skills()
 
         if not skills:
             return "You are Strawberry, a helpful AI assistant."
@@ -611,17 +701,22 @@ class SkillService:
         return clean_response, tool_calls
 
     def get_skill(self, name: str) -> Optional[SkillInfo]:
-        """Get a skill by class name."""
-        return self._loader.get_skill(name)
-
-    def get_all_skills(self) -> List[SkillInfo]:
-        """Get all loaded skills."""
-        self._ensure_skills_loaded()
-        return self._loader.get_all_skills()
+        """Get a skill by class name (Python or MCP)."""
+        # Check Python skills first
+        skill = self._loader.get_skill(name)
+        if skill:
+            return skill
+        # Check MCP skills
+        if self._mcp_registry:
+            return self._mcp_registry.get_skill(name)
+        return None
 
     async def shutdown(self):
-        """Shutdown the skill service and sandbox."""
+        """Shutdown the skill service, MCP servers, and sandbox."""
         await self.stop_heartbeat()
+
+        # Stop MCP servers
+        await self.stop_mcp_servers()
 
         if self._sandbox:
             await self._sandbox.shutdown()
