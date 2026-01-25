@@ -1,44 +1,16 @@
-"""Entry point for Strawberry AI Spoke."""
+"""Entry point for Strawberry AI Spoke.
 
-import argparse
+Delegates to the CLI UI main function.
+"""
+
 import sys
-from pathlib import Path
 
-from .terminal import TerminalApp
+from .ui.cli import main as cli_main
 
 
 def main() -> int:
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Strawberry AI Spoke - Voice Assistant",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=Path(__file__).resolve().parents[2] / "src" / "config" / "config.yaml",
-        help="Path to config file (default: src/config/config.yaml)",
-    )
-    parser.add_argument(
-        "--voice",
-        action="store_true",
-        help="Enable voice mode (requires API keys)",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug output",
-    )
-
-    args = parser.parse_args()
-
-    app = TerminalApp(
-        config_path=args.config,
-        voice_mode=args.voice,
-        debug=args.debug,
-    )
-
-    return app.run()
+    """Main entry point - runs CLI interface."""
+    return cli_main()
 
 
 if __name__ == "__main__":

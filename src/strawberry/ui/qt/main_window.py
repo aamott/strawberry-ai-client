@@ -8,14 +8,12 @@ import platform
 import shutil
 import traceback
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from PySide6.QtCore import QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
 
-from ...config import Settings
-from ...config.persistence import persist_settings_and_env
 from ...hub.client import HubError
 from ...llm import OfflineModeTracker, TensorZeroClient
 from ...models import ChatMessage
@@ -81,17 +79,18 @@ class MainWindow(QMainWindow):
 
     def __init__(
         self,
-        settings: Settings,
         settings_manager: Optional["SettingsManager"] = None,
         voice_core: Optional["VoiceCore"] = None,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
 
-        self.settings = settings
         self._settings_manager = settings_manager
         self._voice_core = voice_core
-        self._theme = THEMES.get(settings.ui.theme, DARK_THEME)
+
+        # Get theme from settings
+        theme_name = self._get_setting("ui.theme", "dark")
+        self._theme = THEMES.get(theme_name, DARK_THEME)
 
         # Create SpokeCore with SettingsManager if available
         self._core = SpokeCore(settings_manager=settings_manager)
@@ -125,7 +124,25 @@ class MainWindow(QMainWindow):
         # Connect offline mode listener
         self._offline_tracker.add_listener(self._on_offline_mode_changed)
 
-        # Set up VoiceCore event listener if available
+        # Set up voice signals
+        self._init_voice_signals()
+
+    def _get_setting(self, key: str, default: Any = None) -> Any:
+        """Get a setting from SettingsManager.
+
+        Args:
+            key: Setting key (e.g., "hub.url", "device.name")
+            default: Default value if not found
+
+        Returns:
+            Setting value or default.
+        """
+        if self._settings_manager:
+            return self._settings_manager.get("spoke_core", key, default)
+        return default
+
+    def _init_voice_signals(self) -> None:
+        """Set up VoiceCore event listener if available."""
         # Voice events come from worker threads, so we use Qt signals
         # to safely marshal them to the main UI thread
         if self._voice_core:
@@ -542,7 +559,8 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
         # Device name
-        device_label = QLabel(self.settings.device.name)
+        device_name = self._get_setting("device.name", "Strawberry Spoke")
+        device_label = QLabel(device_name)
         device_label.setProperty("muted", True)
         layout.addWidget(device_label)
 
@@ -583,12 +601,12 @@ class MainWindow(QMainWindow):
 
     def _init_local_storage(self):
         """Initialize local session storage and sync manager."""
-        db_path = Path(self.settings.storage.db_path)
+        db_path = Path(self._get_setting("storage.db_path", "./storage/sessions.db"))
         self._sessions = SessionController(db_path)
 
     def _init_tensorzero(self):
         """Initialize TensorZero client for LLM routing."""
-        if self.settings.tensorzero.enabled:
+        if self._get_setting("tensorzero.enabled", True):
             # Embedded gateway uses config file, no URL/timeout needed
             self._tensorzero_client = TensorZeroClient()
 
@@ -600,12 +618,13 @@ class MainWindow(QMainWindow):
         """
         if is_offline:
             pending_count = self._sessions.get_pending_count() if self._sessions else 0
+            local_model = self._get_setting("local_llm.model", "llama3.2:3b")
             self._offline_banner.set_offline(
-                model_name=self.settings.local_llm.model,
+                model_name=local_model,
                 pending_count=pending_count,
             )
             self._status_bar.set_status(
-                self._offline_tracker.get_status_text(self.settings.local_llm.model)
+                self._offline_tracker.get_status_text(local_model)
             )
 
             if self._core.skill_service:
@@ -620,7 +639,8 @@ class MainWindow(QMainWindow):
             )
         else:
             self._offline_banner.set_online()
-            self._status_bar.set_connected(True, self.settings.hub.url)
+            hub_url = self._get_setting("hub.url", "http://localhost:8000")
+            self._status_bar.set_connected(True, hub_url)
 
             if self._core.skill_service:
                 from strawberry.skills.sandbox.proxy_gen import SkillMode
@@ -672,7 +692,8 @@ class MainWindow(QMainWindow):
         self._status_text.setText("Online" if connected else "Offline")
 
         # Update status bar
-        self._status_bar.set_connected(connected, self.settings.hub.url if connected else None)
+        hub_url = self._get_setting("hub.url", "") if connected else None
+        self._status_bar.set_connected(connected, hub_url)
 
         # Refresh sessions when connected
         if connected:
@@ -765,7 +786,7 @@ class MainWindow(QMainWindow):
                 # Get response from LLM
                 response = await self._core.hub_client.chat(
                     messages=messages_to_send,
-                    temperature=self.settings.llm.temperature,
+                    temperature=self._get_setting("llm.temperature", 0.7),
                 )
 
                 print(f"[Agent] LLM response: {response.content[:200]}...")
@@ -917,7 +938,7 @@ class MainWindow(QMainWindow):
             print("[Hub Agent] Sending message to Hub with tools enabled")
             response = await self._core.hub_client.chat(
                 messages=hub_messages,
-                temperature=self.settings.llm.temperature,
+                temperature=self._get_setting("llm.temperature", 0.7),
                 enable_tools=True,
             )
 
@@ -1012,7 +1033,7 @@ class MainWindow(QMainWindow):
                     response = await self._tensorzero_client.chat(
                         messages=tz_messages,
                         system_prompt=system_prompt,
-                        temperature=self.settings.llm.temperature,
+                        temperature=self._get_setting("llm.temperature", 0.7),
                     )
                 else:
                     # Continue with tool results
@@ -1020,7 +1041,7 @@ class MainWindow(QMainWindow):
                         messages=tz_messages,
                         tool_results=tool_results,
                         system_prompt=system_prompt,
-                        temperature=self.settings.llm.temperature,
+                        temperature=self._get_setting("llm.temperature", 0.7),
                     )
 
                 # Track offline mode based on response
@@ -1328,7 +1349,7 @@ class MainWindow(QMainWindow):
 
         Keeps the most recent messages up to the configured max_history limit.
         """
-        max_history = self.settings.conversation.max_history
+        max_history = self._get_setting("conversation.max_history", 20)
         if len(self._conversation_history) > max_history:
             self._conversation_history = self._conversation_history[-max_history:]
 
@@ -1462,128 +1483,88 @@ class MainWindow(QMainWindow):
 
     def _on_settings(self):
         """Open settings dialog."""
-        # Use new schema-driven dialog if SettingsManager is available
-        if self._settings_manager:
-            from .widgets.settings import SettingsDialog as NewSettingsDialog
+        from .widgets.settings import SettingsDialog
 
-            dialog = NewSettingsDialog(
-                settings_manager=self._settings_manager,
-                parent=self,
-            )
-            dialog.exec()
-        else:
-            # Fall back to legacy dialog
-            from .settings_dialog import SettingsDialog
-
-            dialog = SettingsDialog(
-                settings=self.settings,
-                theme=self._theme,
-                parent=self,
-            )
-            dialog.settings_changed.connect(self._apply_settings_changes)
-            dialog.exec()
+        dialog = SettingsDialog(
+            settings_manager=self._settings_manager,
+            parent=self,
+        )
+        dialog.exec()
 
     def open_settings_dialog(self) -> None:
         """Open the settings dialog."""
         self._on_settings()
 
     def _apply_settings_changes(self, changes: dict):
-        """Apply settings changes from dialog."""
-        project_root = Path(__file__).resolve().parents[3]
+        """Apply settings changes from dialog.
 
-        # Persist changes first (best effort). Non-secrets go to config/config.yaml.
-        # Secrets (tokens/API keys) go to .env and are applied immediately.
-        yaml_updates = {}
-        env_updates = {}
+        Converts dialog changes dict to flat key-value updates and uses
+        SettingsManager to persist and broadcast changes.
+        """
+        if not self._settings_manager:
+            self._chat_area.add_system_message("Settings manager not available")
+            return
+
+        # Convert nested changes dict to flat SettingsManager format
+        updates = {}
+        old_hub_url = self._get_setting("hub.url", "")
+        old_hub_token = self._get_setting("hub.token", "")
 
         if "device" in changes:
-            yaml_updates["device.name"] = changes["device"].get("name", self.settings.device.name)
+            if "name" in changes["device"]:
+                updates["device.name"] = changes["device"]["name"]
 
         if "hub" in changes:
-            yaml_updates["hub.url"] = changes["hub"].get("url", self.settings.hub.url)
+            if "url" in changes["hub"]:
+                updates["hub.url"] = changes["hub"]["url"]
+            if "token" in changes["hub"]:
+                updates["hub.token"] = changes["hub"]["token"]
+                # Also set legacy env vars for Hub client
+                token = changes["hub"]["token"]
+                if token:
+                    os.environ["HUB_DEVICE_TOKEN"] = token
+                    os.environ["HUB_TOKEN"] = token
 
         if "skills" in changes:
-            yaml_updates["skills.path"] = changes["skills"].get("path", self.settings.skills.path)
+            if "path" in changes["skills"]:
+                updates["skills.path"] = changes["skills"]["path"]
 
         if "ui" in changes:
-            yaml_updates["ui.theme"] = changes["ui"].get("theme", self.settings.ui.theme)
-            yaml_updates["ui.start_minimized"] = changes["ui"].get(
-                "start_minimized", self.settings.ui.start_minimized
-            )
-            yaml_updates["ui.show_waveform"] = changes["ui"].get(
-                "show_waveform", self.settings.ui.show_waveform
-            )
+            if "theme" in changes["ui"]:
+                updates["ui.theme"] = changes["ui"]["theme"]
+            if "start_minimized" in changes["ui"]:
+                updates["ui.start_minimized"] = changes["ui"]["start_minimized"]
+            if "show_waveform" in changes["ui"]:
+                updates["ui.show_waveform"] = changes["ui"]["show_waveform"]
 
-        if "env" in changes:
-            env_updates.update(changes["env"] or {})
+        # Apply updates via SettingsManager
+        if updates:
+            try:
+                errors = self._settings_manager.update("spoke_core", updates)
+                if errors:
+                    self._chat_area.add_system_message(f"Settings errors: {errors}")
+                else:
+                    self._chat_area.add_system_message("Settings saved")
+            except Exception as e:
+                self._chat_area.add_system_message(f"Failed to save settings: {e}")
 
-        # Ensure Hub token is stored as HUB_DEVICE_TOKEN (TensorZero + Hub auth)
-        # and also as HUB_TOKEN for backward compatibility with config.yaml's ${HUB_TOKEN} pattern
-        if "hub" in changes and "token" in changes["hub"]:
-            token = changes["hub"].get("token")
-            env_updates["HUB_DEVICE_TOKEN"] = token
-            env_updates["HUB_TOKEN"] = token
-
-            # Eagerly apply in-memory so reconnect works even if file persistence fails.
-            if token:
-                os.environ["HUB_DEVICE_TOKEN"] = token
-                os.environ["HUB_TOKEN"] = token
-
-        try:
-            result = persist_settings_and_env(
-                config_path=project_root / "config" / "config.yaml",
-                env_path=project_root / ".env",
-                yaml_updates=yaml_updates,
-                env_updates=env_updates,
-            )
-            if result.wrote_config or result.wrote_env:
-                self._chat_area.add_system_message("Settings saved")
-        except Exception as e:
-            self._chat_area.add_system_message(f"Failed to save settings: {e}")
-
-        # Update in-memory settings
-        if "device" in changes:
-            self.settings.device.name = changes["device"].get("name", self.settings.device.name)
-
-        if "hub" in changes:
-            old_url = self.settings.hub.url
-            old_token = self.settings.hub.token
-
-            self.settings.hub.url = changes["hub"].get("url", self.settings.hub.url)
-            # Hub token is sourced from env; prefer HUB_DEVICE_TOKEN
-            self.settings.hub.token = (
-                os.environ.get("HUB_DEVICE_TOKEN")
-                or os.environ.get("HUB_TOKEN")
-                or changes["hub"].get("token", self.settings.hub.token)
-            )
-
-            # Reconnect if Hub settings changed
-            if (self.settings.hub.url != old_url or
-                self.settings.hub.token != old_token):
-                self._reconnect_hub()
-
-        if "ui" in changes:
-            new_theme = changes["ui"].get("theme", self._theme.name)
+        # Handle theme change
+        if "ui" in changes and "theme" in changes["ui"]:
+            new_theme = changes["ui"]["theme"]
             if new_theme != self._theme.name:
                 self._set_theme(new_theme)
 
-            self.settings.ui.start_minimized = changes["ui"].get(
-                "start_minimized", self.settings.ui.start_minimized
-            )
+        # Handle hub reconnection if hub settings changed
+        new_hub_url = self._get_setting("hub.url", "")
+        new_hub_token = self._get_setting("hub.token", "")
+        if new_hub_url != old_hub_url or new_hub_token != old_hub_token:
+            self._reconnect_hub()
 
-            self.settings.ui.show_waveform = changes["ui"].get(
-                "show_waveform", self.settings.ui.show_waveform
+        # Handle skills path change
+        if "skills" in changes and "path" in changes["skills"]:
+            self._chat_area.add_system_message(
+                "Skills path changed. Restart to load skills from new location."
             )
-
-        if "skills" in changes:
-            old_skills_path = self.settings.skills.path
-            self.settings.skills.path = changes["skills"].get("path", self.settings.skills.path)
-            if self.settings.skills.path != old_skills_path:
-                # Skills path changed - would need restart to take effect
-                # SpokeCore manages skills now, dynamic reload not yet supported
-                self._chat_area.add_system_message(
-                    "Skills path changed. Restart to load skills from new location."
-                )
 
         self._chat_area.add_system_message("Settings updated")
 

@@ -56,6 +56,7 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         secret=True,
         description="Authentication token for Hub connection",
         group="hub",
+        env_key="HUB_DEVICE_TOKEN",  # Legacy env var name for TensorZero compat
     ),
     SettingField(
         key="hub.connect",
@@ -93,6 +94,81 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         default=False,
         description="Allow skills to run code directly outside the sandbox (security risk)",
         group="skills",
+    ),
+    SettingField(
+        key="skills.path",
+        label="Skills Directory",
+        type=FieldType.TEXT,
+        default="skills",
+        description="Path to directory containing user skills",
+        group="skills",
+    ),
+
+    # Storage
+    SettingField(
+        key="storage.db_path",
+        label="Database Path",
+        type=FieldType.TEXT,
+        default="data/sessions.db",
+        description="Path to local session storage database",
+        group="storage",
+    ),
+
+    # TensorZero
+    SettingField(
+        key="tensorzero.enabled",
+        label="Enable TensorZero",
+        type=FieldType.CHECKBOX,
+        default=True,
+        description="Use TensorZero for LLM routing and fallback",
+        group="tensorzero",
+    ),
+
+    # LLM Settings
+    SettingField(
+        key="llm.temperature",
+        label="Temperature",
+        type=FieldType.NUMBER,
+        default=0.7,
+        description="LLM temperature (0.0-2.0, higher = more creative)",
+        group="llm",
+    ),
+
+    # Conversation
+    SettingField(
+        key="conversation.max_history",
+        label="Max History",
+        type=FieldType.NUMBER,
+        default=20,
+        description="Maximum conversation messages to keep in memory",
+        group="conversation",
+    ),
+
+    # UI Settings
+    SettingField(
+        key="ui.theme",
+        label="Theme",
+        type=FieldType.SELECT,
+        options=["dark", "light"],
+        default="dark",
+        description="Application color theme",
+        group="ui",
+    ),
+    SettingField(
+        key="ui.start_minimized",
+        label="Start Minimized",
+        type=FieldType.CHECKBOX,
+        default=False,
+        description="Start application minimized to system tray",
+        group="ui",
+    ),
+    SettingField(
+        key="ui.show_waveform",
+        label="Show Waveform",
+        type=FieldType.CHECKBOX,
+        default=True,
+        description="Display audio waveform during voice input",
+        group="ui",
     ),
 ]
 

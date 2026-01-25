@@ -3,14 +3,12 @@
 import asyncio
 import logging
 import sys
-from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from ...config import Settings, load_config
 from ...shared.settings import SettingsManager
 from ...utils.paths import get_project_root
 from ...voice import VoiceConfig, VoiceCore
@@ -67,18 +65,19 @@ class StrawberryApp:
 
     def __init__(
         self,
-        config_path: Optional[Path] = None,
         start_minimized: bool = False,
     ):
-        self.config_path = config_path
         self.start_minimized = start_minimized
 
         self._app: Optional[QApplication] = None
         self._window: Optional[MainWindow] = None
         self._tray: Optional[QSystemTrayIcon] = None
-        self._settings: Optional[Settings] = None
         self._settings_manager: Optional[SettingsManager] = None
         self._voice_core: Optional[VoiceCore] = None
+
+    def _get_setting(self, key: str, default: Any = None) -> Any:
+        """Get a setting from SettingsManager."""
+        return self._settings_manager.get("spoke_core", key, default)
 
     def run(self) -> int:
         """Run the application.
@@ -91,9 +90,6 @@ class StrawberryApp:
         self._app.setApplicationName("Strawberry AI")
         self._app.setOrganizationName("Strawberry")
         self._app.setQuitOnLastWindowClosed(False)  # Keep running in tray
-
-        # Load legacy configuration (for backward compatibility)
-        self._settings = load_config(self.config_path)
 
         # Create centralized SettingsManager
         # Config directory is at ai-pc-spoke/config/ for settings.yaml
@@ -113,9 +109,8 @@ class StrawberryApp:
             settings_manager=self._settings_manager,
         )
 
-        # Create main window with both old settings and new manager
+        # Create main window with SettingsManager only
         self._window = MainWindow(
-            settings=self._settings,
             settings_manager=self._settings_manager,
             voice_core=self._voice_core,
         )
@@ -126,7 +121,8 @@ class StrawberryApp:
         self._setup_tray()
 
         # Show window (unless start minimized)
-        if self.start_minimized or self._settings.ui.start_minimized:
+        start_min = self._get_setting("ui.start_minimized", False)
+        if self.start_minimized or start_min:
             self._tray.showMessage(
                 "Strawberry AI",
                 "Running in background. Click tray icon to open.",
@@ -271,12 +267,6 @@ def main():
 
     parser = argparse.ArgumentParser(description="Strawberry AI Desktop")
     parser.add_argument(
-        "-c", "--config",
-        type=Path,
-        default=get_project_root() / "src" / "config" / "config.yaml",
-        help="Path to configuration file",
-    )
-    parser.add_argument(
         "--minimized",
         action="store_true",
         help="Start minimized to system tray",
@@ -285,7 +275,6 @@ def main():
     args = parser.parse_args()
 
     app = StrawberryApp(
-        config_path=args.config,
         start_minimized=args.minimized,
     )
 
