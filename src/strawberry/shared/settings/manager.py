@@ -142,10 +142,17 @@ class SettingsManager:
         if namespace not in self._values:
             self._values[namespace] = {}
 
-        # Apply defaults for missing values
+        # Apply defaults for missing values and load secrets from env
+        import os
         for field in schema:
             if field.key not in self._values[namespace]:
                 self._values[namespace][field.key] = field.default
+
+            # Load secrets with custom env_key from environment
+            if field.secret and field.env_key:
+                env_value = os.environ.get(field.env_key)
+                if env_value:
+                    self._values[namespace][field.key] = env_value
 
         logger.debug(f"Registered settings namespace: {namespace}")
 
@@ -367,6 +374,23 @@ class SettingsManager:
         field = self.get_field(namespace, key)
         return field.secret if field else False
 
+    def _get_env_key(self, namespace: str, key: str) -> str:
+        """Get the environment variable key for a secret field.
+
+        Uses field.env_key if specified, otherwise generates from namespace.
+
+        Args:
+            namespace: The namespace.
+            key: The field key.
+
+        Returns:
+            Environment variable name.
+        """
+        field = self.get_field(namespace, key)
+        if field and field.env_key:
+            return field.env_key
+        return namespace_to_env_key(namespace, key)
+
     # ─────────────────────────────────────────────────────────────────
     # Dynamic Options
     # ─────────────────────────────────────────────────────────────────
@@ -529,7 +553,7 @@ class SettingsManager:
             value: The value to save.
         """
         if self.is_secret(namespace, key):
-            env_key = namespace_to_env_key(namespace, key)
+            env_key = self._get_env_key(namespace, key)
             self._env_storage.set(env_key, value)
         else:
             self._yaml_storage.set(namespace, key, value)
@@ -547,7 +571,7 @@ class SettingsManager:
             yaml_values[namespace] = {}
             for key, value in ns_values.items():
                 if self.is_secret(namespace, key):
-                    env_key = namespace_to_env_key(namespace, key)
+                    env_key = self._get_env_key(namespace, key)
                     env_values[env_key] = str(value) if value else ""
                 else:
                     yaml_values[namespace][key] = value

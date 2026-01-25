@@ -6,8 +6,6 @@ import logging
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
-from ..config import get_settings
-from ..config.loader import load_config, reset_settings
 from ..hub import HubClient, HubConfig, HubError
 from ..llm.tensorzero_client import TensorZeroClient
 from ..shared.settings import ActionResult, SettingsManager
@@ -56,19 +54,24 @@ class SpokeCore:
 
     def __init__(
         self,
-        settings_path: Optional[str] = None,
         settings_manager: Optional[SettingsManager] = None,
     ) -> None:
         """Initialize SpokeCore.
 
         Args:
-            settings_path: Optional path to a config.yaml to load instead of the
-                default project config.
             settings_manager: Optional SettingsManager instance for shared settings.
-                If provided, SpokeCore will register its namespace and use the
-                manager for settings. If not provided, uses legacy settings loading.
+                If not provided, creates one with default config directory.
         """
-        self._settings = self._load_settings(settings_path)
+        # Create SettingsManager if not provided
+        if settings_manager is None:
+            from ..utils.paths import get_project_root
+
+            config_dir = get_project_root() / "config"
+            settings_manager = SettingsManager(
+                config_dir=config_dir,
+                env_filename="../.env",
+            )
+
         self._settings_manager = settings_manager
         self._llm: Optional[TensorZeroClient] = None
         self._skills: Optional[SkillService] = None
@@ -82,18 +85,30 @@ class SpokeCore:
         self._last_online_state: Optional[bool] = None
         self._pending_mode_notice: Optional[str] = None
 
-        # Register with SettingsManager if provided
-        if self._settings_manager:
-            self._register_with_settings_manager()
+        # Register with SettingsManager
+        self._register_with_settings_manager()
 
-        # Paths from settings
-        skills_path = Path(self._settings.skills.path)
+        # Get skills path from settings
+        skills_path_str = self._get_setting("skills.path", "skills")
+        skills_path = Path(skills_path_str)
         if not skills_path.is_absolute():
-            # Relative to ai-pc-spoke root
             from ..utils.paths import get_project_root
+
             skills_path = get_project_root() / skills_path
 
         self._skills_path = skills_path
+
+    def _get_setting(self, key: str, default: Any = None) -> Any:
+        """Get a setting from SettingsManager.
+
+        Args:
+            key: Setting key (e.g., "hub.url", "device.name")
+            default: Default value if not found
+
+        Returns:
+            Setting value or default.
+        """
+        return self._settings_manager.get("spoke_core", key, default)
 
     def _register_with_settings_manager(self) -> None:
         """Register SpokeCore's namespace with the SettingsManager."""
@@ -125,79 +140,40 @@ class SpokeCore:
         # Listen for settings changes
         self._settings_manager.on_change(self._on_settings_changed)
 
-        # Sync current pydantic settings to manager
-        self._sync_settings_to_manager()
-
-    def _sync_settings_to_manager(self) -> None:
-        """Sync current Pydantic settings to the SettingsManager."""
-        if not self._settings_manager:
-            return
-
-        # Sync key settings
-        self._settings_manager.set(
-            "spoke_core", "device.name", self._settings.device.name, skip_validation=True
-        )
-        self._settings_manager.set(
-            "spoke_core", "hub.url", self._settings.hub.url, skip_validation=True
-        )
-        if self._settings.hub.token:
-            self._settings_manager.set(
-                "spoke_core", "hub.token", self._settings.hub.token, skip_validation=True
-            )
-        self._settings_manager.set(
-            "spoke_core", "local_llm.model", self._settings.local_llm.model, skip_validation=True
-        )
-        self._settings_manager.set(
-            "spoke_core", "local_llm.enabled",
-            self._settings.local_llm.enabled, skip_validation=True
-        )
-        self._settings_manager.set(
-            "spoke_core", "skills.allow_unsafe_exec",
-            self._settings.skills.allow_unsafe_exec, skip_validation=True
-        )
-
     def _on_settings_changed(self, namespace: str, key: str, value: Any) -> None:
         """Handle settings changes from the SettingsManager."""
         if namespace != "spoke_core":
             return
 
-        # Update the Pydantic settings object
-        try:
-            parts = key.split(".")
-            if len(parts) == 2:
-                section, field = parts
-                section_obj = getattr(self._settings, section, None)
-                if section_obj and hasattr(section_obj, field):
-                    setattr(section_obj, field, value)
-                    logger.debug(f"Updated setting {key} = {value}")
+        logger.debug(f"Setting changed: {key} = {value}")
 
-                    # Special handling for hub token - set and persist legacy env vars
-                    # The hub client reads from HUB_DEVICE_TOKEN/HUB_TOKEN, not the
-                    # namespaced SPOKE_CORE__HUB__TOKEN that SettingsManager uses.
-                    if section == "hub" and field == "token" and value:
-                        import os
-                        str_value = str(value)
-                        os.environ["HUB_DEVICE_TOKEN"] = str_value
-                        os.environ["HUB_TOKEN"] = str_value
-                        logger.debug("Updated HUB_DEVICE_TOKEN and HUB_TOKEN env vars")
+        # Special handling for hub token - set legacy env vars
+        # The hub client reads from HUB_DEVICE_TOKEN/HUB_TOKEN
+        parts = key.split(".")
+        if len(parts) == 2:
+            section, field = parts
 
-                        # Also persist to .env file with legacy names
-                        if self._settings_manager:
-                            try:
-                                env_storage = self._settings_manager._env_storage
-                                env_storage.set("HUB_DEVICE_TOKEN", str_value)
-                                env_storage.set("HUB_TOKEN", str_value)
-                                logger.debug("Persisted HUB_DEVICE_TOKEN to .env")
-                            except Exception as e:
-                                logger.warning(f"Failed to persist hub token: {e}")
+            if section == "hub" and field == "token" and value:
+                import os
 
-                    # Trigger hub reconnection when hub settings change
-                    if section == "hub" and field in ("url", "token"):
-                        logger.info(f"Hub setting changed ({field}), triggering reconnection")
-                        self._schedule_hub_reconnection()
+                str_value = str(value)
+                os.environ["HUB_DEVICE_TOKEN"] = str_value
+                os.environ["HUB_TOKEN"] = str_value
+                logger.debug("Updated HUB_DEVICE_TOKEN and HUB_TOKEN env vars")
 
-        except Exception as e:
-            logger.warning(f"Failed to sync setting {key}: {e}")
+                # Also persist to .env file with legacy names
+                try:
+                    env_storage = self._settings_manager._env_storage
+                    env_storage.set("HUB_DEVICE_TOKEN", str_value)
+                    env_storage.set("HUB_TOKEN", str_value)
+                    logger.debug("Persisted HUB_DEVICE_TOKEN to .env")
+                except Exception as e:
+                    logger.warning(f"Failed to persist hub token: {e}")
+
+            # Trigger hub reconnection when hub settings change
+            if section == "hub" and field in ("url", "token"):
+                logger.info(f"Hub setting changed ({field}), triggering reconnection")
+                self._schedule_hub_reconnection()
 
     def _schedule_hub_reconnection(self) -> None:
         """Schedule hub reconnection after settings change.
@@ -233,7 +209,10 @@ class SpokeCore:
         """Get available Ollama models for dynamic options."""
         try:
             import httpx
-            url = self._settings.local_llm.url.replace("/v1", "")
+
+            # Default local LLM URL
+            url = self._get_setting("local_llm.url", "http://localhost:11434/v1")
+            url = url.replace("/v1", "")
             response = httpx.get(f"{url}/api/tags", timeout=5.0)
             if response.status_code == 200:
                 models = response.json().get("models", [])
@@ -246,9 +225,10 @@ class SpokeCore:
 
     def _hub_oauth_action(self) -> ActionResult:
         """Execute Hub OAuth action."""
+        hub_url = self._get_setting("hub.url", "http://localhost:8000")
         return ActionResult(
             type="open_browser",
-            url=f"{self._settings.hub.url}/auth/device",
+            url=f"{hub_url}/auth/device",
             message="Opening browser to connect to Hub...",
             pending=True,
         )
@@ -263,28 +243,6 @@ class SpokeCore:
         """Get the SkillService if core has been started."""
         return self._skills
 
-    def _load_settings(self, settings_path: Optional[str]) -> Any:
-        """Load settings with optional config path override.
-
-        Args:
-            settings_path: Optional path to a config.yaml to load.
-
-        Returns:
-            Loaded Settings instance.
-        """
-        if not settings_path:
-            # _internal=True suppresses deprecation warning for internal usage
-            return get_settings(_internal=True)
-
-        config_path = Path(settings_path)
-        if not config_path.is_absolute():
-            from ..utils.paths import get_project_root
-            config_path = get_project_root() / config_path
-
-        reset_settings()
-        logger.info("Loading settings override from %s", config_path)
-        return load_config(config_path=config_path)
-
     async def start(self) -> None:
         """Initialize core services."""
         if self._started:
@@ -296,11 +254,15 @@ class SpokeCore:
             await self._llm._get_gateway()
 
             # Initialize skills
+            use_sandbox = self._get_setting("skills.sandbox.enabled", True)
+            device_name = self._get_setting("device.name", "Strawberry Spoke")
+            allow_unsafe = self._get_setting("skills.allow_unsafe_exec", False)
+
             self._skills = SkillService(
                 skills_path=self._skills_path,
-                use_sandbox=self._settings.skills.sandbox.enabled,
-                device_name=self._settings.device.name,
-                allow_unsafe_exec=self._settings.skills.allow_unsafe_exec,
+                use_sandbox=use_sandbox,
+                device_name=device_name,
+                allow_unsafe_exec=allow_unsafe,
             )
             self._skills.load_skills()
 
@@ -844,8 +806,11 @@ class SpokeCore:
         Returns:
             True if connection succeeded, False otherwise.
         """
-        hub_settings = self._settings.hub
-        if not hub_settings.token:
+        hub_url = self._get_setting("hub.url", "http://localhost:8000")
+        hub_token = self._get_setting("hub.token", "")
+        hub_timeout = self._get_setting("hub.timeout_seconds", 30)
+
+        if not hub_token:
             logger.warning("Hub token not configured - skipping hub connection")
             await self._emit(ConnectionChanged(
                 connected=False,
@@ -855,21 +820,21 @@ class SpokeCore:
 
         try:
             config = HubConfig(
-                url=hub_settings.url,
-                token=hub_settings.token,
-                timeout=hub_settings.timeout_seconds,
+                url=hub_url,
+                token=hub_token,
+                timeout=hub_timeout,
             )
             self._hub_client = HubClient(config)
 
             # Check health
             healthy = await asyncio.wait_for(
                 self._hub_client.health(),
-                timeout=hub_settings.timeout_seconds,
+                timeout=hub_timeout,
             )
             if not healthy:
                 await self._emit(ConnectionChanged(
                     connected=False,
-                    url=hub_settings.url,
+                    url=hub_url,
                     error="Hub is not responding",
                 ))
                 return False
@@ -878,12 +843,12 @@ class SpokeCore:
             try:
                 await asyncio.wait_for(
                     self._hub_client.get_device_info(),
-                    timeout=hub_settings.timeout_seconds,
+                    timeout=hub_timeout,
                 )
             except HubError as e:
                 await self._emit(ConnectionChanged(
                     connected=False,
-                    url=hub_settings.url,
+                    url=hub_url,
                     error=f"Hub authentication failed: {e}",
                 ))
                 return False
@@ -891,9 +856,9 @@ class SpokeCore:
             self._hub_connected = True
             await self._emit(ConnectionChanged(
                 connected=True,
-                url=hub_settings.url,
+                url=hub_url,
             ))
-            logger.info(f"Connected to Hub at {hub_settings.url}")
+            logger.info(f"Connected to Hub at {hub_url}")
 
             # Register skills with hub
             await self._register_skills_with_hub()
@@ -913,7 +878,7 @@ class SpokeCore:
             logger.warning("Hub connection timed out")
             await self._emit(ConnectionChanged(
                 connected=False,
-                url=hub_settings.url,
+                url=hub_url,
                 error="Connection timed out",
             ))
             return False
@@ -985,7 +950,9 @@ class SpokeCore:
 
     def get_model_info(self) -> str:
         """Get current model name."""
-        return self._settings.local_llm.model if self._settings.local_llm.enabled else "hub"
+        if self._get_setting("local_llm.enabled", True):
+            return self._get_setting("local_llm.model", "llama3.2:3b")
+        return "hub"
 
     # Event system
     async def _emit(self, event: CoreEvent) -> None:
@@ -1046,29 +1013,7 @@ class SpokeCore:
             Dictionary mapping dot-separated keys to values.
             Example: {"device.name": "My PC", "hub.url": "http://..."}
         """
-        # Use SettingsManager if available
-        if self._settings_manager and self._settings_manager.is_registered("spoke_core"):
-            return self._settings_manager.get_all("spoke_core")
-
-        # Fallback to Pydantic model
-        settings = self._settings
-        result = {}
-
-        # Flatten Pydantic model to dot-separated keys
-        result["device.name"] = settings.device.name
-        result["device.id"] = settings.device.id
-        result["hub.url"] = settings.hub.url
-        result["hub.token"] = settings.hub.token or ""
-        result["hub.timeout_seconds"] = settings.hub.timeout_seconds
-        result["local_llm.enabled"] = settings.local_llm.enabled
-        result["local_llm.model"] = settings.local_llm.model
-        result["local_llm.url"] = settings.local_llm.url
-        result["stt.backend"] = settings.stt.backend
-        result["tts.backend"] = settings.tts.backend
-        result["voice.audio_feedback_enabled"] = settings.voice.audio_feedback_enabled
-        result["ui.theme"] = settings.ui.theme
-
-        return result
+        return self._settings_manager.get_all("spoke_core")
 
     async def update_settings(self, patch: Dict[str, Any]) -> None:
         """Update settings with a partial update.
@@ -1080,40 +1025,14 @@ class SpokeCore:
         Raises:
             ValueError: If a key is not recognized
         """
-        # Use SettingsManager if available
-        if self._settings_manager and self._settings_manager.is_registered("spoke_core"):
-            errors = self._settings_manager.update("spoke_core", patch)
-            if errors:
-                raise ValueError(f"Validation errors: {errors}")
-            # Emit settings changed event
-            from .events import SettingsChanged
-            await self._emit(SettingsChanged(changed_keys=list(patch.keys())))
-            logger.info(f"Settings updated via manager: {list(patch.keys())}")
-            return
-
-        # Fallback to legacy behavior
-        from ..config.persistence import save_settings
-
-        # Apply patch to settings object
-        for key, value in patch.items():
-            parts = key.split(".")
-            if len(parts) == 2:
-                section, field = parts
-                section_obj = getattr(self._settings, section, None)
-                if section_obj and hasattr(section_obj, field):
-                    setattr(section_obj, field, value)
-                else:
-                    raise ValueError(f"Unknown setting: {key}")
-            else:
-                raise ValueError(f"Invalid key format: {key}")
-
-        # Persist to disk
-        await asyncio.to_thread(save_settings, self._settings)
+        errors = self._settings_manager.update("spoke_core", patch)
+        if errors:
+            raise ValueError(f"Validation errors: {errors}")
 
         # Emit settings changed event
         from .events import SettingsChanged
-        await self._emit(SettingsChanged(changed_keys=list(patch.keys())))
 
+        await self._emit(SettingsChanged(changed_keys=list(patch.keys())))
         logger.info(f"Settings updated: {list(patch.keys())}")
 
     def get_settings_options(self, provider: str) -> List[str]:
@@ -1145,14 +1064,15 @@ class SpokeCore:
 
         Returns:
             ActionResult with instructions for the UI
+
+        Raises:
+            ValueError: If action is unknown.
         """
-        # Use SettingsManager if available
-        if self._settings_manager:
-            return await self._settings_manager.execute_action("spoke_core", action)
+        result = await self._settings_manager.execute_action("spoke_core", action)
 
-        # Fallback to direct handling
-        if action == "hub_oauth":
-            return self._hub_oauth_action()
+        # Convert error results to ValueError for backward compatibility
+        if result.type == "error":
+            raise ValueError(f"Unknown action: {action}")
 
-        raise ValueError(f"Unknown action: {action}")
+        return result
 

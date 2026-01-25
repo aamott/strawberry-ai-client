@@ -72,6 +72,7 @@ class SettingField:
     min_value: Optional[float] = None
     max_value: Optional[float] = None
     placeholder: Optional[str] = None
+    env_key: Optional[str] = None  # Explicit env var name for secrets
 
     def __post_init__(self):
         """Validate field configuration."""

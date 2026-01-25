@@ -16,7 +16,6 @@ import os
 import signal
 from typing import TYPE_CHECKING, Optional
 
-from ...config import get_settings
 from ...spoke_core import SpokeCore
 from ...voice import (
     VoiceConfig,
@@ -75,16 +74,15 @@ class VoiceInterface:
         self._printed_offline_notice = False
 
     def _build_voice_config(self) -> VoiceConfig:
-        """Build VoiceConfig from SettingsManager or legacy settings.
+        """Build VoiceConfig from SettingsManager.
 
         Returns:
             Configured VoiceConfig instance.
         """
-        # Try SettingsManager first
-        if self._settings_manager and self._settings_manager.is_registered("voice_core"):
+        if self._settings_manager:
             mgr = self._settings_manager
             wake_phrase = mgr.get("voice_core", "wakeword.phrase", "strawberry")
-            wake_words = [w.strip() for w in wake_phrase.split(",") if w.strip()]
+            wake_words = [w.strip() for w in str(wake_phrase).split(",") if w.strip()]
             return VoiceConfig(
                 wake_words=wake_words or ["strawberry"],
                 sensitivity=float(mgr.get("voice_core", "wakeword.sensitivity", 0.5)),
@@ -95,17 +93,8 @@ class VoiceInterface:
                 wake_backend=mgr.get("voice_core", "wakeword.order", "porcupine"),
             )
 
-        # Fall back to legacy settings (suppress deprecation for internal use)
-        settings = get_settings(_internal=True)
-        return VoiceConfig(
-            wake_words=settings.wake_word.keywords or ["strawberry"],
-            sensitivity=getattr(settings.wake_word, "sensitivity", 0.5),
-            sample_rate=16000,
-            stt_backend=settings.stt.backend,
-            tts_backend=settings.tts.backend,
-            vad_backend=settings.vad.backend,
-            wake_backend=settings.wake_word.backend,
-        )
+        # Return defaults if no SettingsManager
+        return VoiceConfig()
 
     async def start(self) -> bool:
         """Start the voice interface.
