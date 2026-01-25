@@ -48,6 +48,10 @@ def load_config(
 ) -> Settings:
     """Load configuration from YAML file and environment.
 
+    .. deprecated::
+        Use SettingsManager instead for new code. This function is maintained
+        for backward compatibility.
+
     Args:
         config_path: Path to config.yaml (default: config/config.yaml)
         env_path: Path to .env file (default: .env)
@@ -56,6 +60,13 @@ def load_config(
         Loaded Settings instance
     """
     global _settings
+
+    warnings.warn(
+        "load_config() is deprecated. Use SettingsManager instead: "
+        "from strawberry.shared.settings import SettingsManager",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     # Load .env file if it exists
     if env_path is None:
