@@ -2,6 +2,7 @@
 
 import pytest
 
+from strawberry.shared.settings import SettingsManager
 from strawberry.voice import (
     VoiceConfig,
     VoiceController,
@@ -245,6 +246,47 @@ class TestVoiceConfig:
         assert config.wake_words == ["hey computer"]
         assert config.sensitivity == 0.8
         assert config.sample_rate == 44100
+
+
+@pytest.mark.asyncio
+class TestVoiceCoreSettingsReload:
+    """Tests for VoiceCore runtime settings reload behavior."""
+
+    async def test_tts_fallback_order_updates_without_restart(self, tmp_path):
+        """Updating voice_core.tts.order should apply while running.
+
+        This is the regression for the CLI case where the user saves settings
+        and expects the new fallback order to be used immediately.
+        """
+        settings_manager = SettingsManager(config_dir=tmp_path, env_filename=".env")
+        core = VoiceCore(
+            make_test_voice_config(),
+            settings_manager=settings_manager,
+        )
+
+        # VoiceCore syncs its backend order from SettingsManager (voice_core.*.order).
+        # Override defaults to keep the test dependency-free and deterministic.
+        settings_manager.set("voice_core", "stt.order", "mock")
+        settings_manager.set("voice_core", "tts.order", "mock")
+        settings_manager.set("voice_core", "vad.order", "mock")
+        settings_manager.set("voice_core", "wakeword.order", "mock")
+
+        await core.start()
+
+        # Ensure the initial order reflects the settings override.
+        assert core._tts_backend_names == ["mock"]  # noqa: SLF001
+
+        # Change fallback order while running; VoiceCore should pick it up without a restart.
+        settings_manager.set("voice_core", "tts.order", "mock,orca")
+
+        # The change callback runs synchronously; backend name list should update immediately.
+        assert core._tts_backend_names == ["mock", "orca"]  # noqa: SLF001
+
+        # Give the async reinit task a moment to run (should be safe: mock stays first).
+        await core.reinitialize_pending_backends()
+        assert core._active_tts_backend == "mock"  # noqa: SLF001
+
+        await core.stop()
 
 
 class TestNoSpeechEvent:

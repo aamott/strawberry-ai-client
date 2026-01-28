@@ -13,6 +13,7 @@ frame loss between components.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import queue
 import re
@@ -410,15 +411,21 @@ class VoiceCore:
                 if key == "stt.order":
                     self._reinit_pending.add("stt")
                     logger.info("STT backend order changed - re-init pending")
+                    self._stt_backend_names = self._parse_backend_names(self._config.stt_backend)
                 elif key == "tts.order":
                     self._reinit_pending.add("tts")
                     logger.info("TTS backend order changed - re-init pending")
+                    self._tts_backend_names = self._parse_backend_names(self._config.tts_backend)
                 elif key == "vad.order":
                     self._reinit_pending.add("vad")
                     logger.info("VAD backend order changed - re-init pending")
                 elif key == "wakeword.order":
                     self._reinit_pending.add("wakeword")
                     logger.info("WakeWord backend order changed - re-init pending")
+
+                # If we're already idle, apply changes immediately.
+                if self._state == VoiceState.IDLE and self.has_pending_reinit():
+                    self._trigger_pending_reinit()
 
         # If a backend's specific settings changed, mark for re-init
         elif namespace.startswith("voice.stt.") and self._state != VoiceState.STOPPED:
@@ -871,6 +878,44 @@ class VoiceCore:
             logger.debug(f"Voice state: {old_state.name} → {new_state.name}")
 
         self._emit(VoiceStateChanged(old_state=old_state, new_state=new_state))
+
+        # Apply any pending backend reinitializations when we reach a safe state.
+        if new_state == VoiceState.IDLE and self.has_pending_reinit():
+            self._trigger_pending_reinit()
+
+    def _trigger_pending_reinit(self) -> None:
+        """Trigger reinitialization of pending backends.
+
+        This schedules reinitialize_pending_backends() on the VoiceCore event loop
+        so changes (like TTS fallback order) take effect without needing a restart.
+        """
+        if not self._event_loop or not self._event_loop.is_running():
+            return
+
+        async def _apply() -> None:
+            try:
+                await self.reinitialize_pending_backends()
+            except Exception as e:
+                logger.error(f"Failed to apply pending voice backend changes: {e}")
+
+        try:
+            # If we're already on the event loop thread, create a task.
+            asyncio.get_running_loop()
+            asyncio.create_task(_apply())
+        except RuntimeError:
+            # Called from a worker thread.
+            future: concurrent.futures.Future[None] = asyncio.run_coroutine_threadsafe(
+                _apply(),
+                self._event_loop,
+            )
+
+            def _done(f: concurrent.futures.Future[None]) -> None:
+                try:
+                    f.result()
+                except Exception as e:
+                    logger.error(f"Pending voice backend changes task failed: {e}")
+
+            future.add_done_callback(_done)
 
     # -------------------------------------------------------------------------
     # Internal: Component Management
