@@ -66,12 +66,60 @@ def parse_mcp_settings(settings: Dict[str, Any]) -> List[MCPServerConfig]:
     """
     mcp_settings = settings.get("mcp", {})
 
+    # Legacy migration: earlier schema used keys like mcp.mcp.servers
+    if isinstance(mcp_settings, dict) and "mcp" in mcp_settings and "servers" not in mcp_settings:
+        nested = mcp_settings.get("mcp")
+        if isinstance(nested, dict):
+            mcp_settings = nested
+
     # Check if MCP is enabled
     if not mcp_settings.get("enabled", True):
         logger.info("MCP is disabled in settings")
         return []
 
     servers_data = mcp_settings.get("servers", [])
+
+    # Accept dict format (common in MCP ecosystem) and normalize to list.
+    # Example: {"mcpServers": {"context7": {...}, "firebase": {...}}}
+    if isinstance(servers_data, dict):
+        if "mcpServers" in servers_data and isinstance(servers_data["mcpServers"], dict):
+            normalized: List[Dict[str, Any]] = []
+            for name, cfg in servers_data["mcpServers"].items():
+                if not isinstance(cfg, dict):
+                    continue
+
+                enabled = not bool(cfg.get("disabled", False))
+                env = cfg.get("env") or {}
+                if not isinstance(env, dict):
+                    env = {}
+
+                server_dict: Dict[str, Any] = {
+                    "name": name,
+                    "enabled": enabled,
+                }
+
+                # stdio-style
+                if "command" in cfg:
+                    server_dict["command"] = cfg.get("command") or ""
+                    server_dict["args"] = cfg.get("args") or []
+                    server_dict["env"] = env
+                    server_dict["transport"] = "stdio"
+
+                # SSE-style (common keys: serverUrl)
+                elif "serverUrl" in cfg:
+                    server_dict["command"] = ""
+                    server_dict["args"] = []
+                    server_dict["env"] = env
+                    server_dict["transport"] = "sse"
+                    server_dict["url"] = cfg.get("serverUrl")
+
+                normalized.append(server_dict)
+
+            servers_data = normalized
+        else:
+            # Unknown dict shape
+            logger.warning("MCP servers dict format unrecognized; ignoring")
+            servers_data = []
 
     # Handle JSON string format (from UI multiline input)
     if isinstance(servers_data, str):
@@ -96,7 +144,7 @@ def parse_mcp_settings(settings: Dict[str, Any]) -> List[MCPServerConfig]:
             configs.append(config)
             logger.debug(f"Loaded MCP server config: {config.name}")
         except Exception as e:
-            logger.error(f"Failed to parse MCP server config: {e}")
+            logger.error(f"Failed to parse MCP server config (skipping): {e}")
             continue
 
     logger.info(f"Loaded {len(configs)} MCP server configurations")

@@ -5,7 +5,7 @@ from strawberry.shared.settings.schema import FieldType, SettingField
 # MCP settings schema for the Settings UI
 MCP_SETTINGS_SCHEMA = [
     SettingField(
-        key="mcp.enabled",
+        key="enabled",
         label="Enable MCP",
         type=FieldType.CHECKBOX,
         default=True,
@@ -13,10 +13,10 @@ MCP_SETTINGS_SCHEMA = [
         group="general",
     ),
     SettingField(
-        key="mcp.servers",
+        key="servers",
         label="MCP Servers",
         type=FieldType.MULTILINE,
-        default="[]",
+        default=[],
         description=(
             "JSON array of MCP server configurations. Each server should have: "
             "name, command, args (list), env (dict), enabled (bool). "

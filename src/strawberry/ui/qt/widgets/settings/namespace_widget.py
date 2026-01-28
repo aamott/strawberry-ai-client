@@ -80,19 +80,29 @@ class NamespaceSettingsWidget(QWidget):
             group_layout = QFormLayout(group_box)
 
             for field in filtered_fields:
-                widget = SchemaFieldWidget(
-                    field=field,
-                    value=section.values.get(field.key),
-                    options_provider=self._view_model.get_options,
-                )
-                widget.value_changed.connect(
-                    lambda k, v, ns=self._namespace: self._on_field_change(ns, k, v)
-                )
-                widget.action_triggered.connect(
-                    lambda a, ns=self._namespace: self.action_triggered.emit(ns, a)
-                )
+                if self._namespace == "mcp" and field.key == "servers":
+                    from .mcp_servers_widget import MCPServersWidget
 
-                self._field_widgets[field.key] = widget
+                    widget = MCPServersWidget(
+                        key=field.key,
+                        value=section.values.get(field.key),
+                    )
+                    widget.value_changed.connect(
+                        lambda k, v, ns=self._namespace: self._on_field_change(ns, k, v)
+                    )
+                else:
+                    widget = SchemaFieldWidget(
+                        field=field,
+                        value=section.values.get(field.key),
+                        options_provider=self._view_model.get_options,
+                    )
+                    widget.value_changed.connect(
+                        lambda k, v, ns=self._namespace: self._on_field_change(ns, k, v)
+                    )
+                    widget.action_triggered.connect(
+                        lambda a, ns=self._namespace: self.action_triggered.emit(ns, a)
+                    )
+                    self._field_widgets[field.key] = widget
 
                 label = QLabel(field.label + ":")
                 if field.description:

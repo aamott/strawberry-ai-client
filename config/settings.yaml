@@ -14,7 +14,7 @@ voice_core:
   stt:
     order: leopard
   tts:
-    order: google,pocket,orca
+    order: sopro,soprano,pocket,orca,google
   vad:
     order: cobra,silero
   wakeword:
@@ -25,3 +25,14 @@ voice_core:
   audio:
     sample_rate: '48000'
     feedback_enabled: true
+mcp:
+  servers:
+  - name: context7
+    command: ''
+    args: []
+    env:
+      headers: '{''CONTEXT7_API_KEY'': ''ctx7sk-fc3c6a16-1f3d-4b85-89cf-0976819d9379''}'
+    enabled: true
+    transport: sse
+    url: https://mcp.context7.com/mcp
+    timeout: 30.0
