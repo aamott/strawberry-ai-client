@@ -70,7 +70,8 @@ audio:
         config_path = Path(f.name)
 
     try:
-        settings = load_config(config_path=config_path)
+        with pytest.warns(DeprecationWarning, match=r"load_config\(\) is deprecated"):
+            settings = load_config(config_path=config_path)
 
         assert settings.device.name == "Test Device"
         assert settings.audio.sample_rate == 44100
@@ -100,7 +101,8 @@ hub:
         config_path = Path(f.name)
 
     try:
-        settings = load_config(config_path=config_path)
+        with pytest.warns(DeprecationWarning, match=r"load_config\(\) is deprecated"):
+            settings = load_config(config_path=config_path)
 
         assert settings.hub.token == "secret123"
         assert settings.hub.url == "http://testhost:8000"

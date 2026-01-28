@@ -11,6 +11,15 @@ import numpy as np
 
 from ..base import AudioChunk, TTSEngine
 
+# Check for pvorca availability at module load time
+_ORCA_AVAILABLE = False
+_ORCA_IMPORT_ERROR: str | None = None
+try:
+    import pvorca  # noqa: F401
+    _ORCA_AVAILABLE = True
+except ImportError as e:
+    _ORCA_IMPORT_ERROR = f"pvorca not installed. Install with: pip install pvorca. ({e})"
+
 
 class OrcaTTS(TTSEngine):
     """Text-to-Speech using Picovoice Orca.
@@ -35,6 +44,24 @@ class OrcaTTS(TTSEngine):
     description = "On-device text-to-speech using Picovoice Orca. Requires license key."
 
     @classmethod
+    def is_healthy(cls) -> bool:
+        """Check if Orca TTS is available.
+
+        Returns:
+            True if pvorca package is installed, False otherwise.
+        """
+        return _ORCA_AVAILABLE
+
+    @classmethod
+    def health_check_error(cls) -> str | None:
+        """Return the error message if Orca is not available.
+
+        Returns:
+            Error message if pvorca is not installed, None otherwise.
+        """
+        return _ORCA_IMPORT_ERROR
+
+    @classmethod
     def get_settings_schema(cls) -> List:
         """Return settings schema for Orca TTS configuration."""
         from strawberry.shared.settings import FieldType, SettingField
@@ -45,6 +72,7 @@ class OrcaTTS(TTSEngine):
                 label="Picovoice Access Key",
                 type=FieldType.PASSWORD,
                 secret=True,
+                env_key="PICOVOICE_API_KEY",
                 description="API key from Picovoice Console",
             ),
             SettingField(
@@ -73,7 +101,7 @@ class OrcaTTS(TTSEngine):
             ImportError: If pvorca is not installed
             ValueError: If access_key is not provided
         """
-        if access_key is None:
+        if not access_key:
             access_key = os.environ.get("PICOVOICE_API_KEY")
 
         if not access_key:
@@ -155,4 +183,35 @@ class OrcaTTS(TTSEngine):
         if self._orca is not None:
             self._orca.delete()
             self._orca = None
+
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+
+    from strawberry.utils.paths import get_project_root
+    from strawberry.voice.audio.playback import AudioPlayer
+
+    load_dotenv(get_project_root() / ".env", override=True)
+
+    cls = OrcaTTS
+    print("backend=orca", "healthy=", cls.is_healthy())
+    if not cls.is_healthy():
+        print("health_error=", cls.health_check_error())
+        raise SystemExit(1)
+
+    try:
+        tts = cls()
+    except Exception as e:
+        raise SystemExit(f"Failed to init OrcaTTS: {e}")
+
+    text = "Hello from Orca. If you hear this, Orca playback works."
+    chunk = tts.synthesize(text)
+    print("samples=", len(chunk.audio), "sample_rate=", chunk.sample_rate)
+    if len(chunk.audio) == 0:
+        raise SystemExit("Orca produced empty audio")
+    AudioPlayer(sample_rate=chunk.sample_rate).play(
+        chunk.audio,
+        sample_rate=chunk.sample_rate,
+        blocking=True,
+    )
 

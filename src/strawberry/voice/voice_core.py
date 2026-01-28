@@ -214,6 +214,7 @@ class VoiceCore:
 
         # Backend fallback bookkeeping
         self._stt_backend_names: list[str] = []
+        self._tts_backend_names: list[str] = []
         self._active_stt_backend: Optional[str] = None
 
         # Cached module discovery (to avoid re-scanning on every speech)
@@ -1012,11 +1013,20 @@ class VoiceCore:
 
         # Initialize TTS
         tts_init_errors: list[str] = []
+        self._tts_backend_names = tts_backend_names  # Store for runtime fallback
         for name in tts_backend_names:
             tts_cls = tts_modules.get(name)
             if not tts_cls:
                 tts_init_errors.append(f"TTS backend '{name}' not found")
                 continue
+
+            # Check health before attempting initialization
+            if not tts_cls.is_healthy():
+                msg = tts_cls.health_check_error() or f"TTS backend '{name}' is unhealthy"
+                logger.warning(f"Skipping TTS backend '{name}': {msg}")
+                tts_init_errors.append(msg)
+                continue
+
             try:
                 # Get backend-specific settings from SettingsManager
                 backend_settings = self._get_backend_settings("tts", name)
@@ -1294,7 +1304,11 @@ class VoiceCore:
             self._transition_to(VoiceState.IDLE)
 
     def _speak_response(self, text: str) -> None:
-        """Speak response text using TTS."""
+        """Speak response text using TTS.
+
+        If the current TTS backend fails, attempts to fall back to the next
+        available backend in the configured fallback order.
+        """
         if not self._tts or not self._audio_player:
             logger.warning("No TTS engine available")
             if self._state != VoiceState.IDLE:
@@ -1322,15 +1336,7 @@ class VoiceCore:
             self._transition_to(VoiceState.SPEAKING)
             self._emit(VoiceSpeaking(text=speakable_text))
 
-            for chunk in self._tts.synthesize_stream(speakable_text):
-                if self._state != VoiceState.SPEAKING:
-                    self._audio_player.stop()
-                    break
-                self._audio_player.play(
-                    chunk.audio,
-                    sample_rate=chunk.sample_rate,
-                    blocking=True,
-                )
+            self._synthesize_with_fallback(speakable_text)
 
             logger.info("TTS playback complete")
 
@@ -1341,6 +1347,74 @@ class VoiceCore:
         finally:
             if self._state == VoiceState.SPEAKING:
                 self._transition_to(VoiceState.IDLE)
+
+    def _synthesize_with_fallback(self, text: str) -> None:
+        """Synthesize and play text, falling back to next TTS if current fails.
+
+        Args:
+            text: Text to synthesize and play.
+
+        Raises:
+            RuntimeError: If all TTS backends fail.
+        """
+        tts_modules = self._tts_modules
+        backend_names = getattr(self, "_tts_backend_names", None) or (
+            [] if self._active_tts_backend is None else [self._active_tts_backend]
+        )
+        tried: list[str] = []
+        last_error: Exception | None = None
+
+        for name in backend_names:
+            if name in tried:
+                continue
+            tried.append(name)
+
+            # If we need to switch backends, initialize the new one
+            if self._active_tts_backend != name or self._tts is None:
+                tts_cls = tts_modules.get(name)
+                if not tts_cls:
+                    continue
+
+                # Check health before trying to init
+                if not tts_cls.is_healthy():
+                    msg = tts_cls.health_check_error() or f"TTS '{name}' unhealthy"
+                    logger.warning(f"Skipping TTS fallback '{name}': {msg}")
+                    continue
+
+                try:
+                    backend_settings = self._get_backend_settings("tts", name)
+                    self._tts = tts_cls(**backend_settings)
+                    self._audio_player = AudioPlayer(sample_rate=self._tts.sample_rate)
+                    self._active_tts_backend = name
+                    logger.info(f"TTS fallback to: {name}")
+                except Exception as e:
+                    last_error = e
+                    logger.warning(f"TTS fallback '{name}' init failed: {e}")
+                    self._tts = None
+                    continue
+
+            # Attempt synthesis with current backend
+            try:
+                for chunk in self._tts.synthesize_stream(text):
+                    if self._state != VoiceState.SPEAKING:
+                        self._audio_player.stop()
+                        return
+                    self._audio_player.play(
+                        chunk.audio,
+                        sample_rate=chunk.sample_rate,
+                        blocking=True,
+                    )
+                return  # Success
+            except Exception as e:
+                last_error = e
+                logger.error(f"TTS backend '{name}' synthesis failed: {e}")
+                self._emit(VoiceError(error=str(e), exception=e))
+                self._tts = None  # Force re-init on next attempt
+
+        # All backends failed
+        raise RuntimeError(
+            f"All TTS backends failed. Tried: {tried}. Last error: {last_error}"
+        )
 
     def _watchdog_loop(self) -> None:
         """Watchdog thread: detect and recover from stuck LISTENING state.

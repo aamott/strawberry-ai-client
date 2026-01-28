@@ -25,6 +25,22 @@ from ..base import AudioChunk, TTSEngine
 
 logger = logging.getLogger(__name__)
 
+# Check for soprano-tts availability at module load time
+_SOPRANO_AVAILABLE = False
+_SOPRANO_IMPORT_ERROR: str | None = None
+try:
+    from soprano import SopranoTTS as _SopranoModel  # noqa: F401
+    _SOPRANO_AVAILABLE = True
+except ImportError as e:
+    _SOPRANO_IMPORT_ERROR = (
+        f"soprano-tts not installed. Install with:\n"
+        f"  pip install soprano-tts\n"
+        f"  pip uninstall -y torch\n"
+        f"  pip install torch==2.8.0 --index-url "
+        f"https://download.pytorch.org/whl/cu126\n"
+        f"({e})"
+    )
+
 
 class SopranoTTS(TTSEngine):
     """Text-to-Speech using Soprano TTS.
@@ -56,6 +72,24 @@ class SopranoTTS(TTSEngine):
 
     # Soprano outputs at 32 kHz
     SAMPLE_RATE: ClassVar[int] = 32000
+
+    @classmethod
+    def is_healthy(cls) -> bool:
+        """Check if Soprano TTS is available.
+
+        Returns:
+            True if soprano-tts package is installed, False otherwise.
+        """
+        return _SOPRANO_AVAILABLE
+
+    @classmethod
+    def health_check_error(cls) -> str | None:
+        """Return the error message if Soprano is not available.
+
+        Returns:
+            Error message if soprano-tts is not installed, None otherwise.
+        """
+        return _SOPRANO_IMPORT_ERROR
 
     @classmethod
     def get_settings_schema(cls) -> List:
@@ -254,3 +288,30 @@ class SopranoTTS(TTSEngine):
                     torch.cuda.empty_cache()
             except ImportError:
                 pass
+
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+
+    from strawberry.utils.paths import get_project_root
+    from strawberry.voice.audio.playback import AudioPlayer
+
+    load_dotenv(get_project_root() / ".env", override=True)
+
+    cls = SopranoTTS
+    print("backend=soprano", "healthy=", cls.is_healthy())
+    if not cls.is_healthy():
+        print("health_error=", cls.health_check_error())
+        raise SystemExit(1)
+
+    tts = cls()
+    text = "Hello from Soprano TTS. If you hear this, Soprano playback works."
+    chunk = tts.synthesize(text)
+    print("samples=", len(chunk.audio), "sample_rate=", chunk.sample_rate)
+    if len(chunk.audio) == 0:
+        raise SystemExit("Soprano produced empty audio")
+    AudioPlayer(sample_rate=chunk.sample_rate).play(
+        chunk.audio,
+        sample_rate=chunk.sample_rate,
+        blocking=True,
+    )

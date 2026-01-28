@@ -1,4 +1,7 @@
-"""Mock TTS engine for testing."""
+"""Mock TTS backend for testing.
+
+Generates synthetic audio instead of using a real TTS model.
+"""
 
 from typing import Callable, Iterator, List, Optional
 
@@ -134,4 +137,25 @@ def generate_tone_audio(
         return wave.astype(np.int16)
 
     return generator
+
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+
+    from strawberry.utils.paths import get_project_root
+    from strawberry.voice.audio.playback import AudioPlayer
+
+    load_dotenv(get_project_root() / ".env", override=True)
+
+    tts = MockTTS()
+    text = "Hello from Mock TTS. If you hear a tone, Mock playback works."
+    chunk = tts.synthesize(text)
+    print("backend=mock", "samples=", len(chunk.audio), "sample_rate=", chunk.sample_rate)
+    if len(chunk.audio) == 0:
+        raise SystemExit("Mock produced empty audio")
+    AudioPlayer(sample_rate=chunk.sample_rate).play(
+        chunk.audio,
+        sample_rate=chunk.sample_rate,
+        blocking=True,
+    )
 
