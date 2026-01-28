@@ -35,15 +35,27 @@ class AIStudioTTS(TTSEngine):
     description: ClassVar[str] = "Cloud TTS via Gemini speech-generation models (requires API key)."
 
     SAMPLE_RATE: ClassVar[int] = 24000
+    DEFAULT_MODEL: ClassVar[str] = "gemini-2.5-flash-preview-tts"
+    DEFAULT_VOICE: ClassVar[str] = "Kore"
 
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "gemini-2.5-flash-preview-tts",
-        voice: str = "Kore",
+        model: str = DEFAULT_MODEL,
+        voice: str = DEFAULT_VOICE,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("GOOGLE_AI_STUDIO_API_KEY")
+
+        # CLI/UI may save empty strings; treat them as unset.
+        if api_key is not None and not str(api_key).strip():
+            api_key = None
+
+        if not str(model).strip():
+            model = self.DEFAULT_MODEL
+
+        if not str(voice).strip():
+            voice = self.DEFAULT_VOICE
 
         if not api_key:
             raise ValueError(
@@ -112,20 +124,51 @@ class AIStudioTTS(TTSEngine):
 
         assert types is not None
 
-        response = self._client.models.generate_content(
-            model=self._model,
-            contents=text,
-            config=types.GenerateContentConfig(
-                response_modalities=["AUDIO"],
-                speech_config=types.SpeechConfig(
-                    voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name=self._voice,
-                        )
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=text,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["AUDIO"],
+                        speech_config=types.SpeechConfig(
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                    voice_name=self._voice,
+                                )
+                            )
+                        ),
+                    ),
+                )
+                last_error = None
+                break
+            except Exception as e:
+                last_error = e
+                msg = str(e)
+                retryable = " 500 " in msg or "INTERNAL" in msg
+                if retryable and attempt < 3:
+                    logger.warning(
+                        "AIStudioTTS request failed with transient error; retrying "
+                        "(attempt=%s/3, model=%s, voice=%s): %s",
+                        attempt,
+                        self._model,
+                        self._voice,
+                        msg,
                     )
-                ),
-            ),
-        )
+                    continue
+
+                logger.error(
+                    "AIStudioTTS request failed (attempt=%s/3, model=%s, voice=%s): %s",
+                    attempt,
+                    self._model,
+                    self._voice,
+                    msg,
+                )
+                raise
+
+        if last_error is not None:
+            raise last_error
 
         data = response.candidates[0].content.parts[0].inline_data.data
         pcm = np.frombuffer(data, dtype=np.int16)

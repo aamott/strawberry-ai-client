@@ -286,3 +286,27 @@ class TestTTSBackendHealthStatus:
             error = GoogleTTS.health_check_error()
             assert error is not None
             assert "google" in error.lower()
+
+
+class TestAIStudioTTSSettingsNormalization:
+    """Tests for AIStudioTTS settings normalization.
+
+    The CLI settings UI can save empty strings for text fields. AIStudioTTS
+    should treat blank model/voice values as unset and fall back to defaults.
+    """
+
+    def test_ai_studio_normalizes_blank_model_and_voice(self, monkeypatch):
+        """Blank model/voice should normalize to defaults."""
+        from strawberry.voice.tts.backends.ai_studio import (
+            _AI_STUDIO_AVAILABLE,
+            AIStudioTTS,
+        )
+
+        if not _AI_STUDIO_AVAILABLE:
+            pytest.skip("google-genai not installed")
+
+        monkeypatch.setenv("GOOGLE_AI_STUDIO_API_KEY", "test-key")
+
+        tts = AIStudioTTS(api_key="test-key", model="", voice="")
+        assert tts._model == AIStudioTTS.DEFAULT_MODEL  # noqa: SLF001
+        assert tts._voice == AIStudioTTS.DEFAULT_VOICE  # noqa: SLF001
