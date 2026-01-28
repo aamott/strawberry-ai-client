@@ -7,10 +7,18 @@ import numpy as np
 
 from ..base import AudioChunk, TTSEngine
 
+# Check for google-cloud-texttospeech availability at module load time
+_GOOGLE_TTS_AVAILABLE = False
+_GOOGLE_TTS_IMPORT_ERROR: str | None = None
 try:
     from google.cloud import texttospeech
-except ImportError:
+    _GOOGLE_TTS_AVAILABLE = True
+except ImportError as e:
     texttospeech = None
+    _GOOGLE_TTS_IMPORT_ERROR = (
+        f"google-cloud-texttospeech not installed. "
+        f"Install with: pip install google-cloud-texttospeech. ({e})"
+    )
 
 
 class GoogleTTS(TTSEngine):
@@ -23,6 +31,24 @@ class GoogleTTS(TTSEngine):
 
     name: ClassVar[str] = "Google Cloud TTS"
     description: ClassVar[str] = "Online speech synthesis using Google Cloud API"
+
+    @classmethod
+    def is_healthy(cls) -> bool:
+        """Check if Google Cloud TTS is available.
+
+        Returns:
+            True if google-cloud-texttospeech package is installed, False otherwise.
+        """
+        return _GOOGLE_TTS_AVAILABLE
+
+    @classmethod
+    def health_check_error(cls) -> str | None:
+        """Return the error message if Google Cloud TTS is not available.
+
+        Returns:
+            Error message if google-cloud-texttospeech is not installed, None otherwise.
+        """
+        return _GOOGLE_TTS_IMPORT_ERROR
 
     def __init__(self):
         """Initialize Google TTS client."""
@@ -109,3 +135,34 @@ class GoogleTTS(TTSEngine):
     def get_settings_schema(cls) -> List[Any]:
          # No runtime settings for now
         return []
+
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+
+    from strawberry.utils.paths import get_project_root
+    from strawberry.voice.audio.playback import AudioPlayer
+
+    load_dotenv(get_project_root() / ".env", override=True)
+
+    cls = GoogleTTS
+    print("backend=google", "healthy=", cls.is_healthy())
+    if not cls.is_healthy():
+        print("health_error=", cls.health_check_error())
+        raise SystemExit(1)
+
+    try:
+        tts = cls()
+    except Exception as e:
+        raise SystemExit(f"Failed to init GoogleTTS: {e}")
+
+    text = "Hello from Google Cloud TTS. If you hear this, Google playback works."
+    chunk = tts.synthesize(text)
+    print("samples=", len(chunk.audio), "sample_rate=", chunk.sample_rate)
+    if len(chunk.audio) == 0:
+        raise SystemExit("Google produced empty audio (credentials/permissions?)")
+    AudioPlayer(sample_rate=chunk.sample_rate).play(
+        chunk.audio,
+        sample_rate=chunk.sample_rate,
+        blocking=True,
+    )

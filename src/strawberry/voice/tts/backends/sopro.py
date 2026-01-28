@@ -24,6 +24,15 @@ from ..base import AudioChunk, TTSEngine
 
 logger = logging.getLogger(__name__)
 
+# Check for sopro availability at module load time
+_SOPRO_AVAILABLE = False
+_SOPRO_IMPORT_ERROR: str | None = None
+try:
+    import sopro  # noqa: F401
+    _SOPRO_AVAILABLE = True
+except ImportError as e:
+    _SOPRO_IMPORT_ERROR = f"sopro not installed. Install with: pip install sopro. ({e})"
+
 
 class SoproTTS(TTSEngine):
     """Text-to-Speech using Sopro with zero-shot voice cloning.
@@ -56,6 +65,24 @@ class SoproTTS(TTSEngine):
 
     # Sopro uses Mimi codec, outputs 24kHz
     SAMPLE_RATE: ClassVar[int] = 24000
+
+    @classmethod
+    def is_healthy(cls) -> bool:
+        """Check if Sopro TTS is available.
+
+        Returns:
+            True if sopro package is installed, False otherwise.
+        """
+        return _SOPRO_AVAILABLE
+
+    @classmethod
+    def health_check_error(cls) -> str | None:
+        """Return the error message if Sopro is not available.
+
+        Returns:
+            Error message if sopro is not installed, None otherwise.
+        """
+        return _SOPRO_IMPORT_ERROR
 
     @classmethod
     def get_settings_schema(cls) -> List:
@@ -285,3 +312,45 @@ class SoproTTS(TTSEngine):
                     pass
             except ImportError:
                 pass
+
+
+if __name__ == "__main__":
+    import os
+    from pathlib import Path
+
+    from dotenv import load_dotenv
+
+    from strawberry.utils.paths import get_project_root
+    from strawberry.voice.audio.playback import AudioPlayer
+
+    load_dotenv(get_project_root() / ".env", override=True)
+
+    cls = SoproTTS
+    print("backend=sopro", "healthy=", cls.is_healthy())
+    if not cls.is_healthy():
+        print("health_error=", cls.health_check_error())
+        raise SystemExit(1)
+
+    ref = os.environ.get("SOPRO_REF_AUDIO")
+    if ref:
+        ref_path = Path(ref)
+    else:
+        ref_path = Path("tests") / "assets" / "myvoice.wav"
+
+    if not ref_path.exists():
+        raise SystemExit(
+            "Sopro requires reference audio. Provide tests/assets/myvoice.wav "
+            "or set SOPRO_REF_AUDIO=/path/to/ref.wav"
+        )
+
+    tts = cls(ref_audio_path=str(ref_path))
+    text = "Hello from Sopro TTS. If you hear this, Sopro playback works."
+    chunk = tts.synthesize(text)
+    print("samples=", len(chunk.audio), "sample_rate=", chunk.sample_rate)
+    if len(chunk.audio) == 0:
+        raise SystemExit("Sopro produced empty audio")
+    AudioPlayer(sample_rate=chunk.sample_rate).play(
+        chunk.audio,
+        sample_rate=chunk.sample_rate,
+        blocking=True,
+    )

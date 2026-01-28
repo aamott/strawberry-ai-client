@@ -73,6 +73,31 @@ class TTSEngine(ABC):
         return []
 
     @classmethod
+    def is_healthy(cls) -> bool:
+        """Check if this TTS backend can be used.
+
+        Override this in subclasses to check for required dependencies,
+        API keys, or other prerequisites. VoiceCore uses this to skip
+        unhealthy backends during initialization.
+
+        Returns:
+            True if the backend is ready to use, False otherwise.
+        """
+        return True
+
+    @classmethod
+    def health_check_error(cls) -> str | None:
+        """Return the error message if this backend is unhealthy.
+
+        Override this in subclasses to provide a helpful error message
+        when is_healthy() returns False.
+
+        Returns:
+            Error message string, or None if healthy.
+        """
+        return None
+
+    @classmethod
     def get_default_settings(cls) -> Dict[str, Any]:
         """Return default values for all settings.
 

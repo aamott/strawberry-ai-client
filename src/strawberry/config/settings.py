@@ -61,7 +61,7 @@ class STTSettings(BaseModel):
 
 class TTSSettings(BaseModel):
     """Text-to-Speech settings."""
-    backend: Literal["orca", "google", "pocket", "mock"] = "pocket"
+    backend: Literal["orca", "google", "ai_studio", "pocket", "soprano", "sopro", "mock"] = "pocket"
     voice: Optional[str] = None  # Backend-specific voice ID
 
 

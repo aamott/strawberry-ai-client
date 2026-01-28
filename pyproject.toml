@@ -79,5 +79,14 @@ asyncio_mode = "auto"
 testpaths = ["tests", "src/strawberry/ui/cli/tests"]
 markers = [
     "timeout: marks tests with a timeout (deferred to pytest-timeout if installed)",
+    "slow: marks slow tests that run real TTS models (skipped by default)",
+]
+
+# Keep test output clean: some optional/third-party deps (e.g. SWIG bindings)
+# emit DeprecationWarnings that are not actionable in this repo.
+filterwarnings = [
+    "ignore:.*SwigPyPacked.*:DeprecationWarning",
+    "ignore:.*SwigPyObject.*:DeprecationWarning",
+    "ignore:.*swigvarlink.*:DeprecationWarning",
 ]
 

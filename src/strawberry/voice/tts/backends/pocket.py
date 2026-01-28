@@ -12,6 +12,15 @@ import numpy as np
 
 from ..base import AudioChunk, TTSEngine
 
+# Check for pocket-tts availability at module load time
+_POCKET_AVAILABLE = False
+_POCKET_IMPORT_ERROR: str | None = None
+try:
+    from pocket_tts import TTSModel  # noqa: F401
+    _POCKET_AVAILABLE = True
+except ImportError as e:
+    _POCKET_IMPORT_ERROR = f"pocket-tts not installed. Install with: pip install pocket-tts. ({e})"
+
 
 class PocketTTS(TTSEngine):
     """Text-to-Speech using Kyutai Labs Pocket-TTS.
@@ -42,6 +51,24 @@ class PocketTTS(TTSEngine):
     _cached_model = None
     _cached_voice_state = None
     _cached_voice_prompt_path = None
+
+    @classmethod
+    def is_healthy(cls) -> bool:
+        """Check if Pocket-TTS is available.
+
+        Returns:
+            True if pocket-tts package is installed, False otherwise.
+        """
+        return _POCKET_AVAILABLE
+
+    @classmethod
+    def health_check_error(cls) -> str | None:
+        """Return the error message if Pocket-TTS is not available.
+
+        Returns:
+            Error message if pocket-tts is not installed, None otherwise.
+        """
+        return _POCKET_IMPORT_ERROR
 
     @classmethod
     def get_settings_schema(cls) -> List:
@@ -170,3 +197,30 @@ class PocketTTS(TTSEngine):
         so we don't actually clean them up here.
         """
         pass
+
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+
+    from strawberry.utils.paths import get_project_root
+    from strawberry.voice.audio.playback import AudioPlayer
+
+    load_dotenv(get_project_root() / ".env", override=True)
+
+    cls = PocketTTS
+    print("backend=pocket", "healthy=", cls.is_healthy())
+    if not cls.is_healthy():
+        print("health_error=", cls.health_check_error())
+        raise SystemExit(1)
+
+    tts = cls()
+    text = "Hello from Pocket TTS. If you hear this, Pocket playback works."
+    chunk = tts.synthesize(text)
+    print("samples=", len(chunk.audio), "sample_rate=", chunk.sample_rate)
+    if len(chunk.audio) == 0:
+        raise SystemExit("Pocket produced empty audio")
+    AudioPlayer(sample_rate=chunk.sample_rate).play(
+        chunk.audio,
+        sample_rate=chunk.sample_rate,
+        blocking=True,
+    )
