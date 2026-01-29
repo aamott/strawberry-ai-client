@@ -13,6 +13,10 @@ data/
 *.db
 *.log
 settings.json
+*/settings.yaml
+config/settings.yaml
+
+
 
 # Editor
 .vscode/

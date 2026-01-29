@@ -1,29 +1,34 @@
-"""Settings schema for MCP configuration."""
+"""Settings schema definitions for MCP integration.
 
-from strawberry.shared.settings.schema import FieldType, SettingField
+This module defines the MCP_SETTINGS_SCHEMA for MCP server settings.
+Currently a placeholder - MCP configs are stored in config/mcp.json.
 
-# MCP settings schema for the Settings UI
-MCP_SETTINGS_SCHEMA = [
+When the SettingsManager is upgraded to support dynamic lists, MCP server
+configurations will be moved here.
+"""
+
+from typing import List
+
+from strawberry.shared.settings import FieldType, SettingField
+
+# MCP settings schema
+# For now, MCP uses a separate config file (config/mcp.json).
+# This schema provides a placeholder with info about where to configure MCP.
+MCP_SETTINGS_SCHEMA: List[SettingField] = [
     SettingField(
         key="enabled",
         label="Enable MCP",
         type=FieldType.CHECKBOX,
         default=True,
-        description="Enable Model Context Protocol server integration",
+        description="Enable MCP (Model Context Protocol) server integration",
         group="general",
     ),
     SettingField(
-        key="servers",
-        label="MCP Servers",
-        type=FieldType.MULTILINE,
-        default=[],
-        description=(
-            "JSON array of MCP server configurations. Each server should have: "
-            "name, command, args (list), env (dict), enabled (bool). "
-            "Example: [{\"name\": \"filesystem\", \"command\": \"npx\", "
-            "\"args\": [\"-y\", \"@anthropic/mcp-filesystem\", \"/tmp\"], "
-            "\"enabled\": true}]"
-        ),
-        group="servers",
+        key="config_path",
+        label="Config File",
+        type=FieldType.TEXT,
+        default="config/mcp.json",
+        description="Path to MCP server configuration file (relative to project root)",
+        group="general",
     ),
 ]

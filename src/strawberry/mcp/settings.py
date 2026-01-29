@@ -1,199 +1,274 @@
-"""Settings loader for MCP configuration."""
+"""MCP configuration loading.
+
+This module handles loading MCP server configurations from the config file.
+Currently uses config/mcp.json, but designed to integrate with the
+SettingsManager once it supports dynamic lists.
+
+Configuration file format (config/mcp.json):
+{
+  "mcpServers": {
+    "server_name": {
+      "command": "npx",
+      "args": ["-y", "@some/mcp-server"],
+      "env": {"API_KEY": "${API_KEY}"},
+      "enabled": true
+    }
+  }
+}
+"""
+
+from __future__ import annotations
 
 import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
-
-from strawberry.mcp.config import MCPServerConfig
+from .config import MCPServerConfig
 
 logger = logging.getLogger(__name__)
 
+# Default config file location (relative to project root)
+DEFAULT_MCP_CONFIG_FILENAME = "config/mcp.json"
 
-def load_mcp_configs_from_settings(
-    settings_path: Optional[Path] = None,
-) -> List[MCPServerConfig]:
-    """Load MCP server configurations from settings.yaml.
+
+def _resolve_config_path_from_settings(project_root: Path) -> Path:
+    """Resolve the MCP config path based on the saved settings.
+
+    The value is stored in the SettingsManager under namespace `mcp`, key
+    `config_path`. If the SettingsManager is not initialized or the setting
+    is missing, falls back to DEFAULT_MCP_CONFIG_FILENAME.
 
     Args:
-        settings_path: Path to settings.yaml. If None, uses default location.
+        project_root: Project root directory.
 
     Returns:
-        List of MCPServerConfig objects.
-
-    The settings.yaml should have an 'mcp' section like:
-        mcp:
-          enabled: true
-          servers:
-            - name: brave-search
-              command: npx
-              args: ["-y", "@anthropic/mcp-brave-search"]
-              env:
-                BRAVE_API_KEY: "${BRAVE_API_KEY}"
-              enabled: true
-
-    Alternatively, servers can be a JSON string for simpler UI editing.
+        A resolved Path (absolute).
     """
-    if settings_path is None:
-        # Default to config/settings.yaml relative to spoke root
-        spoke_root = Path(__file__).parent.parent.parent.parent.parent
-        settings_path = spoke_root / "config" / "settings.yaml"
+    from ..shared.settings import get_settings_manager
 
-    if not settings_path.exists():
-        logger.debug(f"Settings file not found: {settings_path}")
+    settings = get_settings_manager()
+    config_path_str = None
+    if settings is not None:
+        config_path_str = settings.get("mcp", "config_path", None)
+
+    if not config_path_str:
+        config_path_str = DEFAULT_MCP_CONFIG_FILENAME
+
+    config_path = Path(str(config_path_str))
+    if not config_path.is_absolute():
+        config_path = project_root / config_path
+
+    return config_path
+
+
+def _ensure_config_file_exists(config_path: Path) -> None:
+    """Ensure the MCP config file exists, without overwriting existing files.
+
+    If the file doesn't exist, creates its parent directory and writes an
+    empty config structure.
+
+    Args:
+        config_path: Path to the MCP config file.
+    """
+    if config_path.exists():
+        return
+
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        data = {"mcpServers": {}}
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        logger.info(f"Created MCP config file at {config_path}")
+    except OSError as e:
+        logger.error(f"Failed to create MCP config file at {config_path}: {e}")
+
+
+def ensure_mcp_config_file_at_path(config_path: Path) -> None:
+    """Ensure an MCP config file exists at the given path.
+
+    This is intended for UI flows: when the user changes the MCP config path
+    in Settings and clicks Save, we create the file immediately so the user
+    can visually confirm the path is correct.
+
+    The file is created only if it does not already exist.
+
+    Args:
+        config_path: Path where the MCP config file should exist.
+    """
+    _ensure_config_file_exists(Path(config_path))
+
+
+def _get_config_path() -> Path:
+    """Get the path to the MCP config file.
+
+    Returns:
+        Path to the configured MCP config file.
+    """
+    # Import here to avoid circular imports
+    from ..utils.paths import get_project_root
+
+    project_root = get_project_root()
+    config_path = _resolve_config_path_from_settings(project_root)
+    _ensure_config_file_exists(config_path)
+    return config_path
+
+
+def load_mcp_configs_from_settings() -> List[MCPServerConfig]:
+    """Load MCP server configurations from the config file.
+
+    Reads config/mcp.json and converts each server entry into an
+    MCPServerConfig. Returns an empty list if the file doesn't exist
+    or is invalid.
+
+    Returns:
+        List of MCPServerConfig objects for enabled servers.
+    """
+    config_path = _get_config_path()
+
+    if not config_path.exists():
+        logger.debug(f"MCP config file not found: {config_path}")
         return []
 
     try:
-        with open(settings_path) as f:
-            settings = yaml.safe_load(f) or {}
-    except Exception as e:
-        logger.error(f"Failed to load settings: {e}")
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in MCP config: {e}")
+        return []
+    except OSError as e:
+        logger.error(f"Failed to read MCP config: {e}")
         return []
 
-    return parse_mcp_settings(settings)
+    return parse_mcp_config(data)
 
 
-def parse_mcp_settings(settings: Dict[str, Any]) -> List[MCPServerConfig]:
-    """Parse MCP settings from a settings dictionary.
+def parse_mcp_config(data: Dict[str, Any]) -> List[MCPServerConfig]:
+    """Parse MCP configuration data into MCPServerConfig objects.
 
     Args:
-        settings: Full settings dictionary.
+        data: Parsed JSON data from the config file.
 
     Returns:
         List of MCPServerConfig objects.
     """
-    mcp_settings = settings.get("mcp", {})
+    configs: List[MCPServerConfig] = []
 
-    # Legacy migration: earlier schema used keys like mcp.mcp.servers
-    if isinstance(mcp_settings, dict) and "mcp" in mcp_settings and "servers" not in mcp_settings:
-        nested = mcp_settings.get("mcp")
-        if isinstance(nested, dict):
-            mcp_settings = nested
-
-    # Check if MCP is enabled
-    if not mcp_settings.get("enabled", True):
-        logger.info("MCP is disabled in settings")
+    # Get the mcpServers section
+    servers = data.get("mcpServers", {})
+    if not isinstance(servers, dict):
+        logger.error("Invalid mcpServers format in config (expected object)")
         return []
 
-    servers_data = mcp_settings.get("servers", [])
-
-    # Accept dict format (common in MCP ecosystem) and normalize to list.
-    # Example: {"mcpServers": {"context7": {...}, "firebase": {...}}}
-    if isinstance(servers_data, dict):
-        if "mcpServers" in servers_data and isinstance(servers_data["mcpServers"], dict):
-            normalized: List[Dict[str, Any]] = []
-            for name, cfg in servers_data["mcpServers"].items():
-                if not isinstance(cfg, dict):
-                    continue
-
-                enabled = not bool(cfg.get("disabled", False))
-                env = cfg.get("env") or {}
-                if not isinstance(env, dict):
-                    env = {}
-
-                server_dict: Dict[str, Any] = {
-                    "name": name,
-                    "enabled": enabled,
-                }
-
-                # stdio-style
-                if "command" in cfg:
-                    server_dict["command"] = cfg.get("command") or ""
-                    server_dict["args"] = cfg.get("args") or []
-                    server_dict["env"] = env
-                    server_dict["transport"] = "stdio"
-
-                # SSE-style (common keys: serverUrl)
-                elif "serverUrl" in cfg:
-                    server_dict["command"] = ""
-                    server_dict["args"] = []
-                    server_dict["env"] = env
-                    server_dict["transport"] = "sse"
-                    server_dict["url"] = cfg.get("serverUrl")
-
-                normalized.append(server_dict)
-
-            servers_data = normalized
-        else:
-            # Unknown dict shape
-            logger.warning("MCP servers dict format unrecognized; ignoring")
-            servers_data = []
-
-    # Handle JSON string format (from UI multiline input)
-    if isinstance(servers_data, str):
-        try:
-            servers_data = json.loads(servers_data) if servers_data.strip() else []
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse MCP servers JSON: {e}")
-            return []
-
-    if not isinstance(servers_data, list):
-        logger.error(f"MCP servers must be a list, got: {type(servers_data)}")
-        return []
-
-    configs = []
-    for server_data in servers_data:
-        if not isinstance(server_data, dict):
-            logger.warning(f"Invalid server config (not a dict): {server_data}")
-            continue
-
-        try:
-            config = MCPServerConfig.from_dict(server_data)
+    for name, server_data in servers.items():
+        config = _parse_server_config(name, server_data)
+        if config is not None:
             configs.append(config)
-            logger.debug(f"Loaded MCP server config: {config.name}")
-        except Exception as e:
-            logger.error(f"Failed to parse MCP server config (skipping): {e}")
-            continue
+
+    if not configs and servers:
+        logger.info(
+            "No MCP server configurations were loaded. "
+            "Check per-server flags (enabled/disabled) and required fields (command)."
+        )
 
     logger.info(f"Loaded {len(configs)} MCP server configurations")
     return configs
 
 
-def save_mcp_configs_to_settings(
-    configs: List[MCPServerConfig],
-    settings_path: Optional[Path] = None,
-    enabled: bool = True,
-) -> bool:
-    """Save MCP server configurations to settings.yaml.
+def _parse_server_config(
+    name: str, data: Dict[str, Any]
+) -> Optional[MCPServerConfig]:
+    """Parse a single server configuration.
+
+    Args:
+        name: The server name (key in mcpServers).
+        data: The server configuration object.
+
+    Returns:
+        MCPServerConfig if valid, None otherwise.
+    """
+    if not isinstance(data, dict):
+        logger.warning(f"Invalid config for MCP server '{name}' (expected object)")
+        return None
+
+    # Command is required
+    command = data.get("command")
+    if not command or not isinstance(command, str):
+        logger.warning(f"MCP server '{name}' missing required 'command' field")
+        return None
+
+    # Args is optional (default to empty list)
+    args = data.get("args", [])
+    if not isinstance(args, list):
+        logger.warning(f"MCP server '{name}' has invalid 'args' (expected array)")
+        args = []
+
+    # Env is optional (default to empty dict)
+    env = data.get("env", {})
+    if not isinstance(env, dict):
+        logger.warning(f"MCP server '{name}' has invalid 'env' (expected object)")
+        env = {}
+
+    # Enabled/disabled flags
+    #
+    # Many MCP configs use `disabled: true` (e.g., Claude Desktop style). Our
+    # internal representation uses `enabled: bool`.
+    enabled_value = data.get("enabled", None)
+    disabled_value = data.get("disabled", None)
+
+    enabled: bool
+    if isinstance(enabled_value, bool):
+        enabled = enabled_value
+    elif isinstance(disabled_value, bool):
+        enabled = not disabled_value
+    else:
+        enabled = True
+
+    return MCPServerConfig(
+        name=name,
+        command=command,
+        args=args,
+        env=env,
+        enabled=enabled,
+    )
+
+
+def save_mcp_configs(configs: List[MCPServerConfig]) -> bool:
+    """Save MCP server configurations to the config file.
+
+    This creates or overwrites the configured MCP config file with the provided
+    configs.
 
     Args:
         configs: List of MCPServerConfig objects to save.
-        settings_path: Path to settings.yaml.
-        enabled: Whether MCP is enabled overall.
 
     Returns:
-        True if successful.
+        True if save succeeded, False otherwise.
     """
-    if settings_path is None:
-        spoke_root = Path(__file__).parent.parent.parent.parent.parent
-        settings_path = spoke_root / "config" / "settings.yaml"
+    config_path = _get_config_path()
 
-    # Load existing settings
-    if settings_path.exists():
-        try:
-            with open(settings_path) as f:
-                settings = yaml.safe_load(f) or {}
-        except Exception as e:
-            logger.error(f"Failed to load existing settings: {e}")
-            settings = {}
-    else:
-        settings = {}
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
+    # Build the config structure
+    servers: Dict[str, Any] = {}
+    for config in configs:
+        servers[config.name] = {
+            "command": config.command,
+            "args": config.args,
+            "env": config.env,
+            "enabled": config.enabled,
+        }
 
-    # Update MCP section
-    settings["mcp"] = {
-        "enabled": enabled,
-        "servers": [config.to_dict() for config in configs],
-    }
+    data = {"mcpServers": servers}
 
-    # Write back
     try:
-        with open(settings_path, "w") as f:
-            yaml.dump(settings, f, default_flow_style=False, sort_keys=False)
-        logger.info(f"Saved {len(configs)} MCP server configs to {settings_path}")
+        # Ensure directory exists
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+        logger.info(f"Saved {len(configs)} MCP server configs to {config_path}")
         return True
-    except Exception as e:
-        logger.error(f"Failed to save settings: {e}")
+
+    except OSError as e:
+        logger.error(f"Failed to save MCP config: {e}")
         return False

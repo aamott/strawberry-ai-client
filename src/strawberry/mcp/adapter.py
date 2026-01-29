@@ -1,246 +1,277 @@
-"""Adapter to convert MCP tools to SkillInfo format."""
+"""MCP to Skill adapter.
+
+This module converts MCP tools into the SkillInfo/SkillMethod format used
+by the rest of the Strawberry skill system. This is the MODULARITY POINT:
+if we switch from Python skill signatures to TypeScript, we only need to
+change this adapter.
+
+The adapter:
+1. Takes an MCPClient with its list of Tools
+2. Produces a SkillInfo that looks like a Python skill class
+3. Creates SkillMethod objects for each tool with proper signatures
+"""
 
 from __future__ import annotations
 
 import logging
-import re
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 if TYPE_CHECKING:
-    from strawberry.skills.loader import SkillInfo, SkillMethod
+    from mcp.types import Tool
 
-from strawberry.mcp.client import MCPTool
+    from .client import MCPClient
+
+# Import SkillInfo and SkillMethod from the skills module
+from ..skills.loader import SkillInfo, SkillMethod
 
 logger = logging.getLogger(__name__)
 
-# JSON Schema type to Python type hint mapping
-JSON_TYPE_MAP = {
-    "string": "str",
-    "number": "float",
-    "integer": "int",
-    "boolean": "bool",
-    "array": "list",
-    "object": "dict",
-    "null": "None",
-}
-
 
 class MCPSkillAdapter:
-    """Converts MCP tools to SkillInfo format for unified skill discovery.
+    """Converts MCP servers/tools to SkillInfo/SkillMethod format.
 
-    This adapter makes MCP servers appear as regular skills to the rest of
-    the system, enabling:
-    - Unified search via search_skills()
-    - Consistent calling pattern: device.<ServerName>MCP.<tool>()
-    - Documentation in system prompts
+    This adapter is the bridge between MCP's tool definitions and Strawberry's
+    skill system. It allows MCP tools to be presented to the LLM exactly like
+    Python skill classes.
+
+    The adapter generates:
+    - A SkillInfo for each MCP server (the "class")
+    - A SkillMethod for each MCP tool (the "method")
 
     Example:
-        adapter = MCPSkillAdapter()
-        skill_info = adapter.as_skill_info("brave-search", tools)
-        # skill_info.name == "BraveSearchMCP"
-        # skill_info.methods contains SkillMethod objects for each tool
+        >>> adapter = MCPSkillAdapter()
+        >>> skill_info = adapter.adapt_server(mcp_client)
+        >>> # skill_info.name = "HomeAssistantMCP"
+        >>> # skill_info.methods = [SkillMethod(name="turn_on_light", ...), ...]
     """
 
-    def as_skill_info(
-        self,
-        server_name: str,
-        tools: List[MCPTool],
-        description: Optional[str] = None,
-    ) -> "SkillInfo":
-        """Convert MCP tools to a SkillInfo object.
+    def adapt_server(self, client: "MCPClient") -> SkillInfo:
+        """Convert an MCP server into a SkillInfo.
+
+        Creates a SkillInfo that represents the MCP server as a skill class.
+        Each tool becomes a method on this "class".
 
         Args:
-            server_name: MCP server name (e.g., "brave-search").
-            tools: List of MCPTool objects from the server.
-            description: Optional description for the skill class.
+            client: The MCPClient with loaded tools.
 
         Returns:
-            SkillInfo with methods derived from MCP tools.
+            A SkillInfo representing the MCP server.
         """
-        # Lazy import to avoid circular dependency
-        from strawberry.skills.loader import SkillInfo
+        skill_name = client.skill_class_name
 
-        skill_name = self._to_skill_name(server_name)
+        # Convert each MCP tool to a SkillMethod
+        methods: List[SkillMethod] = []
+        for tool in client.tools:
+            method = self.adapt_tool(tool, client)
+            methods.append(method)
 
-        methods = []
-        for tool in tools:
-            method = self._tool_to_method(tool)
-            if method:
-                methods.append(method)
+        # Create a dummy class object for compatibility with SkillInfo
+        # This class is never instantiated - calls go through MCPClient
+        mcp_class = self._create_mcp_class(skill_name, client)
 
-        # Create a dummy class for documentation purposes
-        class_doc = description or f"MCP server: {server_name}"
-
-        # We can't create a real class, but SkillInfo needs class_obj
-        # Create a simple placeholder class with the docstring
-        placeholder_class = type(
-            skill_name,
-            (),
-            {"__doc__": class_doc},
-        )
-
-        return SkillInfo(
+        skill_info = SkillInfo(
             name=skill_name,
-            class_obj=placeholder_class,
+            class_obj=mcp_class,
             methods=methods,
-            module_path=None,
-            instance=None,  # No instance - calls go through MCPRegistry
+            module_path=None,  # MCP servers don't have a file path
+            instance=None,  # No instance - calls route to MCPClient
         )
 
-    def _tool_to_method(self, tool: MCPTool) -> Optional["SkillMethod"]:
-        """Convert an MCP tool to a SkillMethod.
+        logger.debug(
+            f"Adapted MCP server '{client.name}' as skill '{skill_name}' "
+            f"with {len(methods)} methods"
+        )
+
+        return skill_info
+
+    def adapt_tool(self, tool: "Tool", client: "MCPClient") -> SkillMethod:
+        """Convert an MCP tool into a SkillMethod.
+
+        Creates a SkillMethod with:
+        - Name: The tool's name
+        - Signature: Generated from the tool's input schema
+        - Docstring: The tool's description
+        - Callable: A wrapper that calls MCPClient.call_tool
 
         Args:
-            tool: MCPTool to convert.
+            tool: The MCP Tool object.
+            client: The MCPClient for creating the callable wrapper.
 
         Returns:
-            SkillMethod or None if conversion fails.
+            A SkillMethod representing the tool.
         """
-        # Lazy import to avoid circular dependency
-        from strawberry.skills.loader import SkillMethod
+        # Generate a Python-style signature from the JSON schema
+        signature = self._schema_to_signature(tool.name, tool.inputSchema)
 
-        try:
-            signature = self._schema_to_signature(tool.name, tool.input_schema)
-            docstring = tool.description or f"MCP tool: {tool.name}"
+        # Get docstring from tool description
+        docstring = tool.description or f"MCP tool: {tool.name}"
 
-            return SkillMethod(
-                name=tool.name,
-                signature=signature,
-                docstring=docstring,
-                callable=None,  # Not a real Python callable
-            )
-        except Exception as e:
-            logger.warning(f"Failed to convert tool '{tool.name}': {e}")
-            return None
+        # Create a callable that wraps MCPClient.call_tool
+        # This is used by the Gatekeeper when routing calls
+        callable_wrapper = self._create_tool_callable(tool.name, client)
 
-    def _schema_to_signature(self, name: str, schema: Dict[str, Any]) -> str:
-        """Convert JSON Schema to Python-like signature.
+        return SkillMethod(
+            name=tool.name,
+            signature=signature,
+            docstring=docstring,
+            callable=callable_wrapper,
+        )
+
+    def _schema_to_signature(
+        self, tool_name: str, input_schema: Optional[Dict[str, Any]]
+    ) -> str:
+        """Convert a JSON schema to a Python function signature.
+
+        This is the key conversion that makes MCP tools look like Python methods.
+        We generate signatures like:
+            turn_on_light(entity_id: str, brightness: int = 100) -> Any
 
         Args:
-            name: Tool name.
-            schema: JSON Schema for the tool's input.
+            tool_name: The tool/method name.
+            input_schema: The JSON schema for the tool's input.
 
         Returns:
-            Python function signature string.
-
-        Example:
-            schema = {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "count": {"type": "integer", "default": 10}
-                },
-                "required": ["query"]
-            }
-            -> "search(query: str, count: int = 10)"
+            A Python-style signature string.
         """
-        if not schema or schema.get("type") != "object":
-            return f"{name}(**kwargs)"
+        if not input_schema:
+            return f"{tool_name}() -> Any"
 
-        properties = schema.get("properties", {})
-        required = set(schema.get("required", []))
+        # Extract properties and required fields from schema
+        properties = input_schema.get("properties", {})
+        required = set(input_schema.get("required", []))
 
-        params = []
-        # Process required parameters first
-        for prop_name in sorted(properties.keys(), key=lambda x: x not in required):
-            prop_schema = properties[prop_name]
-            py_type = self._json_type_to_python(prop_schema)
+        # Build parameter list
+        params: List[str] = []
+        for param_name, param_info in properties.items():
+            param_type = self._json_type_to_python(param_info.get("type", "any"))
+            is_required = param_name in required
 
-            if prop_name in required:
-                params.append(f"{prop_name}: {py_type}")
+            if is_required:
+                params.append(f"{param_name}: {param_type}")
             else:
-                default = prop_schema.get("default")
-                default_repr = self._format_default(default)
-                params.append(f"{prop_name}: {py_type} = {default_repr}")
+                # Include default value hint for optional params
+                default = param_info.get("default", "...")
+                if isinstance(default, str):
+                    default = f'"{default}"'
+                params.append(f"{param_name}: {param_type} = {default}")
 
-        return f"{name}({', '.join(params)})"
+        params_str = ", ".join(params)
+        return f"{tool_name}({params_str}) -> Any"
 
-    def _json_type_to_python(self, prop_schema: Dict[str, Any]) -> str:
-        """Convert JSON Schema type to Python type hint.
+    def _json_type_to_python(self, json_type: str) -> str:
+        """Convert JSON schema type to Python type hint.
 
         Args:
-            prop_schema: JSON Schema property definition.
+            json_type: JSON schema type (string, number, etc.).
 
         Returns:
             Python type hint string.
         """
-        json_type = prop_schema.get("type", "any")
+        type_map = {
+            "string": "str",
+            "number": "float",
+            "integer": "int",
+            "boolean": "bool",
+            "array": "List",
+            "object": "Dict",
+            "null": "None",
+        }
+        return type_map.get(json_type, "Any")
 
-        # Handle array with items
-        if json_type == "array":
-            items = prop_schema.get("items", {})
-            item_type = self._json_type_to_python(items)
-            return f"List[{item_type}]"
+    def _create_mcp_class(self, class_name: str, client: "MCPClient") -> type:
+        """Create a dummy class type for the MCP server.
 
-        # Handle oneOf/anyOf (union types)
-        if "oneOf" in prop_schema or "anyOf" in prop_schema:
-            types = prop_schema.get("oneOf") or prop_schema.get("anyOf", [])
-            py_types = [self._json_type_to_python(t) for t in types]
-            # Remove duplicates and None
-            unique_types = list(dict.fromkeys(t for t in py_types if t != "None"))
-            if len(unique_types) == 1:
-                return unique_types[0]
-            return f"Union[{', '.join(unique_types)}]"
-
-        # Handle enum
-        if "enum" in prop_schema:
-            return "str"  # Simplify to str for LLM
-
-        return JSON_TYPE_MAP.get(json_type, "Any")
-
-    def _format_default(self, default: Any) -> str:
-        """Format a default value for signature display.
+        The class is only used for type compatibility with SkillInfo.
+        The actual method calls are routed through MCPClient.
 
         Args:
-            default: Default value from schema.
+            class_name: The skill class name (e.g., "HomeAssistantMCP").
+            client: The MCPClient this class represents.
 
         Returns:
-            String representation for signature.
+            A dynamically created class type.
         """
-        if default is None:
-            return "None"
-        elif isinstance(default, str):
-            return repr(default)
-        elif isinstance(default, bool):
-            return str(default)
-        elif isinstance(default, (int, float)):
-            return str(default)
-        elif isinstance(default, list):
-            return "[]" if not default else repr(default)
-        elif isinstance(default, dict):
-            return "{}" if not default else repr(default)
-        else:
-            return repr(default)
 
-    def _to_skill_name(self, server_name: str) -> str:
-        """Convert server name to skill name.
+        # Create a class with a docstring describing the MCP server
+        class_dict = {
+            "__doc__": f"MCP server: {client.name}",
+            "__mcp_client__": client,  # Store reference for routing
+        }
+
+        # Add method stubs for each tool (for introspection)
+        for tool in client.tools:
+
+            def make_method(tool_name: str) -> Callable:
+                """Create a method stub that shows it's an MCP tool."""
+
+                async def method_stub(self, **kwargs) -> Any:
+                    """MCP tool - calls are routed through MCPClient."""
+                    raise NotImplementedError(
+                        f"Direct calls not supported. Use MCPClient.call_tool('{tool_name}', ...)"
+                    )
+
+                method_stub.__name__ = tool_name
+                method_stub.__doc__ = tool.description
+                return method_stub
+
+            class_dict[tool.name] = make_method(tool.name)
+
+        # Dynamically create the class
+        return type(class_name, (), class_dict)
+
+    def _create_tool_callable(
+        self, tool_name: str, client: "MCPClient"
+    ) -> Callable[..., Any]:
+        """Create a callable wrapper for an MCP tool.
+
+        This callable is stored in SkillMethod.callable and used by the
+        Gatekeeper to execute the tool. It wraps MCPClient.call_tool.
 
         Args:
-            server_name: MCP server name (e.g., "brave-search").
+            tool_name: The tool name.
+            client: The MCPClient to call.
 
         Returns:
-            Skill name in PascalCase with MCP suffix (e.g., "BraveSearchMCP").
+            A callable that invokes the MCP tool.
         """
-        # Split by hyphens and underscores
-        parts = re.split(r"[-_]", server_name)
-        # Capitalize each part and join
-        pascal = "".join(part.capitalize() for part in parts)
-        return f"{pascal}MCP"
 
-    def _to_server_name(self, skill_name: str) -> str:
-        """Convert skill name back to server name.
+        async def tool_callable(**kwargs: Any) -> Any:
+            """Execute the MCP tool through the client.
 
-        Args:
-            skill_name: Skill name (e.g., "BraveSearchMCP").
+            Args:
+                **kwargs: Tool arguments.
 
-        Returns:
-            Server name in kebab-case (e.g., "brave-search").
-        """
-        # Remove MCP suffix
-        if skill_name.endswith("MCP"):
-            skill_name = skill_name[:-3]
+            Returns:
+                Tool execution result.
+            """
+            return await client.call_tool(tool_name, kwargs)
 
-        # Convert PascalCase to kebab-case
-        # Insert hyphen before uppercase letters, then lowercase
-        kebab = re.sub(r"(?<!^)(?=[A-Z])", "-", skill_name).lower()
-        return kebab
+        tool_callable.__name__ = tool_name
+        return tool_callable
+
+
+def is_mcp_skill(skill_info: SkillInfo) -> bool:
+    """Check if a SkillInfo represents an MCP server.
+
+    Args:
+        skill_info: The skill info to check.
+
+    Returns:
+        True if this is an MCP skill (name ends with "MCP").
+    """
+    return skill_info.name.endswith("MCP")
+
+
+def get_mcp_client_from_skill(skill_info: SkillInfo) -> Optional["MCPClient"]:
+    """Get the MCPClient from an MCP skill's class object.
+
+    Args:
+        skill_info: An MCP skill info.
+
+    Returns:
+        The MCPClient, or None if not an MCP skill.
+    """
+    if not is_mcp_skill(skill_info):
+        return None
+
+    return getattr(skill_info.class_obj, "__mcp_client__", None)
