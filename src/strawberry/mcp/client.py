@@ -1,345 +1,285 @@
-"""MCP client wrapper for a single server connection."""
+"""MCP client wrapper.
 
-import asyncio
+This module provides a thin wrapper around the MCP Python SDK for managing
+a single MCP server connection. It handles:
+- Starting/stopping the server subprocess
+- MCP protocol handshake (initialize)
+- Tool discovery and caching
+- Tool execution
+
+The client uses stdio transport (stdin/stdout) to communicate with the server.
+"""
+
+from __future__ import annotations
+
 import logging
-from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Optional
+import os
+import re
+from typing import Any, Dict, List, Optional
 
-from strawberry.mcp.config import MCPServerConfig
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp.types import CallToolResult, Tool
+
+from .config import MCPServerConfig
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class MCPTool:
-    """Representation of an MCP tool.
+def _expand_env_vars(value: str) -> str:
+    """Expand ${VAR} references in a string using os.environ.
 
-    Attributes:
-        name: Tool name (e.g., "search", "read_file").
-        description: Human-readable description of what the tool does.
-        input_schema: JSON Schema describing the tool's parameters.
+    Args:
+        value: String that may contain ${VAR} placeholders.
+
+    Returns:
+        String with placeholders replaced by environment variable values.
+        If a variable is not set, the placeholder is replaced with empty string.
     """
+    # Pattern matches ${VAR_NAME}
+    pattern = r"\$\{([^}]+)\}"
 
-    name: str
-    description: str = ""
-    input_schema: Dict[str, Any] = field(default_factory=dict)
+    def replacer(match: re.Match) -> str:
+        var_name = match.group(1)
+        return os.environ.get(var_name, "")
 
-
-@dataclass
-class MCPToolResult:
-    """Result from an MCP tool call.
-
-    Attributes:
-        success: Whether the call succeeded.
-        content: Result content (text, data, etc.).
-        error: Error message if the call failed.
-        is_error: Whether the result is an error from the tool itself.
-    """
-
-    success: bool
-    content: Any = None
-    error: Optional[str] = None
-    is_error: bool = False
+    return re.sub(pattern, replacer, value)
 
 
 class MCPClient:
-    """Wrapper around MCP SDK for a single server connection.
+    """Wrapper for a single MCP server connection.
 
-    Handles starting/stopping the server process and communicating via
-    the MCP protocol (JSON-RPC over stdio or SSE).
+    This class manages the lifecycle of an MCP server subprocess and provides
+    methods to interact with its tools. It uses the official MCP Python SDK.
+
+    The client is async-first since MCP communication is inherently async.
+
+    Attributes:
+        config: The server configuration.
+        tools: Cached list of tools from the server (populated after start).
 
     Example:
-        config = MCPServerConfig(
-            name="filesystem",
-            command="npx",
-            args=["-y", "@anthropic/mcp-filesystem", "/tmp"]
-        )
-        client = MCPClient(config)
-        async with client:
-            tools = await client.list_tools()
-            result = await client.call_tool("read_file", {"path": "/tmp/test.txt"})
+        >>> client = MCPClient(config)
+        >>> await client.start()
+        >>> tools = client.tools  # List of Tool objects
+        >>> result = await client.call_tool("turn_on_light", {"entity_id": "light.kitchen"})
+        >>> await client.stop()
     """
 
-    def __init__(self, config: MCPServerConfig):
-        """Initialize MCP client.
+    def __init__(self, config: MCPServerConfig) -> None:
+        """Initialize the MCP client.
 
         Args:
-            config: Server configuration.
+            config: Server configuration specifying command, args, and env.
         """
         self.config = config
-        self._session: Any = None  # mcp.ClientSession
-        self._read_stream: Any = None
-        self._write_stream: Any = None
-        self._process: Optional[asyncio.subprocess.Process] = None
-        self._connected = False
-        self._tools: List[MCPTool] = []
+        self.tools: List[Tool] = []
+
+        # Internal state
+        self._session: Optional[ClientSession] = None
+        self._started = False
+
+        # Context managers for cleanup
+        self._stdio_cm: Optional[Any] = None
+        self._session_cm: Optional[Any] = None
+        self._read_stream: Optional[Any] = None
+        self._write_stream: Optional[Any] = None
 
     @property
-    def connected(self) -> bool:
-        """Check if the client is connected."""
-        return self._connected
+    def name(self) -> str:
+        """Get the server name."""
+        return self.config.name
 
     @property
-    def tools(self) -> List[MCPTool]:
-        """Get cached list of tools."""
-        return self._tools
+    def skill_class_name(self) -> str:
+        """Get the skill class name (e.g., HomeAssistantMCP)."""
+        return self.config.get_skill_class_name()
 
-    async def start(self) -> None:
+    @property
+    def is_started(self) -> bool:
+        """Check if the server is started and connected."""
+        return self._started and self._session is not None
+
+    async def start(self) -> bool:
         """Start the MCP server and establish connection.
 
-        Raises:
-            RuntimeError: If the server fails to start.
-            ImportError: If the mcp package is not installed.
-        """
-        if self._connected:
-            logger.warning(f"MCP client '{self.config.name}' already connected")
-            return
-
-        try:
-            from mcp import ClientSession, StdioServerParameters
-            from mcp.client.stdio import stdio_client
-        except ImportError as e:
-            raise ImportError(
-                "MCP package not installed. Install with: pip install mcp"
-            ) from e
-
-        if self.config.transport == "stdio":
-            await self._start_stdio(ClientSession, StdioServerParameters, stdio_client)
-        else:
-            await self._start_sse()
-
-    async def _start_stdio(
-        self,
-        ClientSession: type,
-        StdioServerParameters: type,
-        stdio_client: Any,
-    ) -> None:
-        """Start stdio transport connection."""
-        server_params = StdioServerParameters(
-            command=self.config.command,
-            args=self.config.args,
-            env=self.config.get_resolved_env() or None,
-        )
-
-        logger.info(
-            f"Starting MCP server '{self.config.name}': "
-            f"{self.config.command} {' '.join(self.config.args)}"
-        )
-
-        # Create the stdio client context
-        self._stdio_context = stdio_client(server_params)
-        self._read_stream, self._write_stream = await self._stdio_context.__aenter__()
-
-        # Create and initialize session
-        self._session = ClientSession(self._read_stream, self._write_stream)
-        self._session_context = self._session.__aenter__()
-        await self._session_context
-
-        # Initialize the connection
-        await self._session.initialize()
-        self._connected = True
-
-        # Cache tools
-        await self._refresh_tools()
-
-        logger.info(
-            f"MCP server '{self.config.name}' connected with {len(self._tools)} tools"
-        )
-
-    async def _start_sse(self) -> None:
-        """Start SSE transport connection."""
-        try:
-            from mcp import ClientSession
-            from mcp.client.sse import sse_client
-        except ImportError as e:
-            raise ImportError(
-                "MCP SSE client not available. Ensure mcp[sse] is installed."
-            ) from e
-
-        if not self.config.url:
-            raise ValueError(f"MCP server '{self.config.name}': URL required for SSE")
-
-        logger.info(f"Connecting to MCP server '{self.config.name}' at {self.config.url}")
-
-        self._sse_context = sse_client(self.config.url)
-        self._read_stream, self._write_stream = await self._sse_context.__aenter__()
-
-        self._session = ClientSession(self._read_stream, self._write_stream)
-        self._session_context = self._session.__aenter__()
-        await self._session_context
-
-        await self._session.initialize()
-        self._connected = True
-
-        await self._refresh_tools()
-
-        logger.info(
-            f"MCP server '{self.config.name}' connected via SSE with {len(self._tools)} tools"
-        )
-
-    async def stop(self) -> None:
-        """Stop the MCP server connection."""
-        if not self._connected:
-            return
-
-        logger.info(f"Stopping MCP server '{self.config.name}'")
-
-        try:
-            # Close session
-            if self._session:
-                try:
-                    await self._session.__aexit__(None, None, None)
-                except Exception as e:
-                    logger.debug(f"Error closing session: {e}")
-                self._session = None
-
-            # Close transport
-            if self.config.transport == "stdio" and hasattr(self, "_stdio_context"):
-                try:
-                    await self._stdio_context.__aexit__(None, None, None)
-                except Exception as e:
-                    logger.debug(f"Error closing stdio: {e}")
-            elif self.config.transport == "sse" and hasattr(self, "_sse_context"):
-                try:
-                    await self._sse_context.__aexit__(None, None, None)
-                except Exception as e:
-                    logger.debug(f"Error closing SSE: {e}")
-
-        except Exception as e:
-            logger.error(f"Error stopping MCP server '{self.config.name}': {e}")
-        finally:
-            self._connected = False
-            self._tools = []
-
-    async def _refresh_tools(self) -> None:
-        """Refresh the cached list of tools from the server."""
-        if not self._session:
-            return
-
-        result = await self._session.list_tools()
-        self._tools = [
-            MCPTool(
-                name=tool.name,
-                description=tool.description or "",
-                input_schema=tool.inputSchema if hasattr(tool, "inputSchema") else {},
-            )
-            for tool in result.tools
-        ]
-
-    async def list_tools(self) -> List[MCPTool]:
-        """List available tools from the server.
+        This method:
+        1. Starts the server subprocess with configured command/args/env
+        2. Performs the MCP initialize handshake
+        3. Fetches and caches available tools
 
         Returns:
-            List of MCPTool objects.
-
-        Raises:
-            RuntimeError: If not connected.
+            True if server started successfully, False otherwise.
         """
-        if not self._connected:
-            raise RuntimeError(f"MCP client '{self.config.name}' not connected")
+        if self._started:
+            logger.warning(f"MCP server '{self.name}' already started")
+            return True
 
-        await self._refresh_tools()
-        return self._tools
+        try:
+            # Expand environment variables in the config
+            env = {k: _expand_env_vars(v) for k, v in self.config.env.items()}
+
+            # Create server parameters for stdio transport
+            server_params = StdioServerParameters(
+                command=self.config.command,
+                args=self.config.args,
+                env=env if env else None,
+            )
+
+            logger.info(f"Starting MCP server '{self.name}': {self.config.command}")
+
+            # Start the stdio client (this spawns the subprocess)
+            self._stdio_cm = stdio_client(server_params)
+            self._read_stream, self._write_stream = await self._stdio_cm.__aenter__()
+
+            # Create and initialize the MCP session
+            self._session_cm = ClientSession(self._read_stream, self._write_stream)
+            self._session = await self._session_cm.__aenter__()
+
+            # Perform MCP handshake
+            await self._session.initialize()
+
+            # Fetch available tools
+            tools_response = await self._session.list_tools()
+            self.tools = tools_response.tools
+
+            self._started = True
+            logger.info(
+                f"MCP server '{self.name}' started with {len(self.tools)} tools"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to start MCP server '{self.name}': {e}")
+            # Clean up on failure
+            await self._cleanup()
+            return False
+
+    async def stop(self) -> None:
+        """Stop the MCP server and clean up resources.
+
+        This gracefully closes the MCP session and terminates the subprocess.
+        Safe to call multiple times.
+        """
+        if not self._started:
+            return
+
+        logger.info(f"Stopping MCP server '{self.name}'")
+        await self._cleanup()
+        self._started = False
+
+    async def _cleanup(self) -> None:
+        """Clean up session and stdio context managers."""
+        # Close session first
+        if self._session_cm is not None:
+            try:
+                await self._session_cm.__aexit__(None, None, None)
+            except Exception as e:
+                logger.debug(f"Error closing session for '{self.name}': {e}")
+            self._session_cm = None
+            self._session = None
+
+        # Then close stdio (terminates subprocess)
+        if self._stdio_cm is not None:
+            try:
+                await self._stdio_cm.__aexit__(None, None, None)
+            except Exception as e:
+                logger.debug(f"Error closing stdio for '{self.name}': {e}")
+            self._stdio_cm = None
+            self._read_stream = None
+            self._write_stream = None
+
+        self.tools = []
 
     async def call_tool(
-        self,
-        tool_name: str,
-        arguments: Optional[Dict[str, Any]] = None,
-    ) -> MCPToolResult:
-        """Call a tool on the server.
+        self, tool_name: str, arguments: Optional[Dict[str, Any]] = None
+    ) -> Any:
+        """Execute a tool on the MCP server.
 
         Args:
             tool_name: Name of the tool to call.
-            arguments: Arguments to pass to the tool.
+            arguments: Dictionary of arguments to pass to the tool.
 
         Returns:
-            MCPToolResult with the result or error.
+            The tool's result. Format depends on the tool implementation.
 
         Raises:
-            RuntimeError: If not connected.
+            RuntimeError: If the server is not started.
+            ValueError: If the tool is not found.
+            Exception: If the tool execution fails.
         """
-        if not self._connected or not self._session:
-            raise RuntimeError(f"MCP client '{self.config.name}' not connected")
+        if not self.is_started or self._session is None:
+            raise RuntimeError(f"MCP server '{self.name}' is not started")
+
+        # Validate tool exists
+        tool_names = [t.name for t in self.tools]
+        if tool_name not in tool_names:
+            raise ValueError(
+                f"Tool '{tool_name}' not found on server '{self.name}'. "
+                f"Available: {tool_names}"
+            )
+
+        logger.debug(f"Calling MCP tool '{self.name}.{tool_name}' with {arguments}")
 
         try:
-            result = await asyncio.wait_for(
-                self._session.call_tool(tool_name, arguments or {}),
-                timeout=self.config.timeout,
+            result: CallToolResult = await self._session.call_tool(
+                tool_name, arguments or {}
             )
 
-            # Extract content from result
-            content = self._extract_content(result)
+            # Extract content from the result
+            # MCP tools return a list of content blocks (text, image, etc.)
+            return self._extract_result(result)
 
-            return MCPToolResult(
-                success=not result.isError if hasattr(result, "isError") else True,
-                content=content,
-                is_error=result.isError if hasattr(result, "isError") else False,
-            )
-
-        except asyncio.TimeoutError:
-            return MCPToolResult(
-                success=False,
-                error=f"Tool call timed out after {self.config.timeout}s",
-            )
         except Exception as e:
-            logger.error(f"Error calling tool '{tool_name}': {e}")
-            return MCPToolResult(
-                success=False,
-                error=str(e),
-            )
+            logger.error(f"MCP tool call failed: {self.name}.{tool_name}: {e}")
+            raise
 
-    def _extract_content(self, result: Any) -> Any:
-        """Extract content from MCP result.
+    def _extract_result(self, result: CallToolResult) -> Any:
+        """Extract a usable result from CallToolResult.
 
-        Handles various content types (text, blob, etc.).
+        MCP tool results contain a list of content blocks. This method
+        extracts the content in a format suitable for returning to the LLM.
+
+        Args:
+            result: The raw CallToolResult from the MCP SDK.
+
+        Returns:
+            Extracted content. If single text block, returns the string.
+            If multiple blocks, returns a list of content items.
         """
-        if not hasattr(result, "content") or not result.content:
+        if not result.content:
             return None
 
-        # If single content item, extract it
+        # If there's only one text content block, return just the text
         if len(result.content) == 1:
-            item = result.content[0]
-            if hasattr(item, "text"):
-                return item.text
-            elif hasattr(item, "data"):
-                return item.data
-            return str(item)
+            block = result.content[0]
+            if hasattr(block, "text"):
+                return block.text
+            elif hasattr(block, "data"):
+                # Binary content (image, etc.)
+                return {"type": "binary", "mimeType": getattr(block, "mimeType", None)}
 
-        # Multiple content items - return as list
+        # Multiple content blocks - return structured data
         contents = []
-        for item in result.content:
-            if hasattr(item, "text"):
-                contents.append(item.text)
-            elif hasattr(item, "data"):
-                contents.append(item.data)
-            else:
-                contents.append(str(item))
+        for block in result.content:
+            if hasattr(block, "text"):
+                contents.append({"type": "text", "text": block.text})
+            elif hasattr(block, "data"):
+                contents.append(
+                    {"type": "binary", "mimeType": getattr(block, "mimeType", None)}
+                )
         return contents
 
-    async def __aenter__(self) -> "MCPClient":
-        """Async context manager entry."""
-        await self.start()
-        return self
+    def get_tool(self, name: str) -> Optional[Tool]:
+        """Get a specific tool by name.
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Async context manager exit."""
-        await self.stop()
+        Args:
+            name: The tool name.
 
-
-@asynccontextmanager
-async def create_mcp_client(config: MCPServerConfig) -> AsyncIterator[MCPClient]:
-    """Create and manage an MCP client lifecycle.
-
-    Args:
-        config: Server configuration.
-
-    Yields:
-        Connected MCPClient instance.
-    """
-    client = MCPClient(config)
-    try:
-        await client.start()
-        yield client
-    finally:
-        await client.stop()
+        Returns:
+            The Tool object, or None if not found.
+        """
+        for tool in self.tools:
+            if tool.name == name:
+                return tool
+        return None
