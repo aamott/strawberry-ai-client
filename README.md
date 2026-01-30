@@ -24,7 +24,7 @@ pip install -e "ai-pc-spoke[all]"       # Everything
    ```
    Then edit `.env` with your actual API keys and settings.
 
-2. **Device configuration**: Edit `config/config.yaml` for device-specific settings (device name, skills path, etc.) and `config/tensorzero.toml` for LLM configuration.
+2. **Device configuration**: Edit `config/settings.yaml` for device-specific settings (device name, skills path, etc.) and `config/tensorzero.toml` for LLM configuration.
 
 ## Running
 
@@ -85,7 +85,7 @@ ai-pc-spoke/
 │   ├── config/             # Config management and schemas
 │   ├── skills/             # Skill loading and sandbox execution
 │   └── hub/                # Hub client for remote ops
-├── config/                 # Config files (config.yaml, tensorzero.toml)
+├── config/                 # Config files (settings.yaml, tensorzero.toml)
 ├── skills/                 # User skill files
 └── tests/                  # Test suite
 ```

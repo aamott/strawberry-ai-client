@@ -237,11 +237,6 @@ class SettingsViewModel:
     ) -> List[ProviderSection]:
         """Find fields that select providers with sub-settings.
 
-        Looks for patterns like:
-        - Field "stt.order" contains "whisper,leopard,google"
-        - Namespace "voice.stt.whisper" exists
-        - This is a provider pattern
-
         Args:
             namespace: The parent namespace.
             schema: The schema for the namespace.
@@ -252,8 +247,46 @@ class SettingsViewModel:
         """
         patterns = []
 
-        # Check for fallback order fields (e.g., "stt.order", "tts.order")
         for setting_field in schema:
+            # Check for explicit PROVIDER_SELECT type
+            if setting_field.type == FieldType.PROVIDER_SELECT:
+                if not setting_field.provider_type:
+                    continue
+
+                provider_type = setting_field.provider_type
+                
+                # Determine currently selected provider
+                # Logic handles both "order" (comma-separated list) and simple selection
+                raw_value = values.get(setting_field.key, setting_field.default) or ""
+                
+                # If value is a list (like "order"), take the first one
+                if "," in str(raw_value):
+                    parts = [p.strip() for p in str(raw_value).split(",") if p.strip()]
+                    selected = parts[0] if parts else ""
+                else:
+                    selected = str(raw_value)
+
+                available = self._get_available_providers(provider_type)
+                
+                # If using explicit provider selection, namespace is strictly defined
+                provider_ns = f"voice.{provider_type}.{selected}"
+                display_name = provider_type.upper()
+
+                patterns.append(
+                    ProviderSection(
+                        parent_namespace=namespace,
+                        provider_field=setting_field,
+                        provider_key=setting_field.key,
+                        available_providers=available,
+                        selected_provider=selected,
+                        provider_settings_namespace=provider_ns,
+                        provider_display_name=display_name,
+                    )
+                )
+                continue
+
+            # FALLBACK: Keep backward compatibility with existing implicit patterns for now
+            # (or remove if we decide to fully migrate immediately, but safer to keep)
             if setting_field.key.endswith(".order"):
                 # Extract provider type (e.g., "stt" from "stt.order")
                 provider_type = setting_field.key.rsplit(".", 1)[0]
@@ -271,8 +304,6 @@ class SettingsViewModel:
                 # The "selected" provider is the first in the order
                 selected = providers[0] if providers else ""
                 provider_ns = f"voice.{provider_type}.{selected}"
-
-                # Get display name
                 display_name = provider_type.upper()
 
                 patterns.append(
@@ -287,7 +318,6 @@ class SettingsViewModel:
                     )
                 )
 
-            # Also check for direct backend selection fields
             elif setting_field.key.endswith(".backend"):
                 provider_type = setting_field.key.rsplit(".", 1)[0]
                 selected = values.get(setting_field.key, setting_field.default) or ""

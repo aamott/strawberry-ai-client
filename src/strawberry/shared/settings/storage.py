@@ -327,8 +327,12 @@ def env_key_to_namespace(
     Returns:
         Tuple of (namespace, key) or (None, "") if can't parse.
     """
-    # Try to match against known namespaces
-    for namespace in known_namespaces:
+    # Sort by length descending to match most specific namespace first
+    # This prevents ambiguities when one namespace is a prefix of another
+    # e.g., "voice" vs "voice.stt.whisper"
+    sorted_namespaces = sorted(known_namespaces, key=len, reverse=True)
+
+    for namespace in sorted_namespaces:
         prefix = namespace.upper().replace(".", "_") + "__"
         if env_key.startswith(prefix):
             key = env_key[len(prefix) :].lower().replace("__", ".")

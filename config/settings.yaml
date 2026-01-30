@@ -14,12 +14,12 @@ voice_core:
   stt:
     order: leopard
   tts:
-    order: sopro,soprano,pocket,orca,google
+    order: pocket,ai_studio,orca
   vad:
     order: cobra,silero
   wakeword:
     order: porcupine
-    phrase: hey barista
+    phrase: jarvis
     sensitivity: 0.5
     enabled: true
   audio:
@@ -36,3 +36,6 @@ mcp:
     transport: sse
     url: https://mcp.context7.com/mcp
     timeout: 30.0
+  mcp:
+    enabled: true
+  config_path: config/mcp_config.json

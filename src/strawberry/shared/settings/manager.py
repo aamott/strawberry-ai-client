@@ -143,16 +143,28 @@ class SettingsManager:
             self._values[namespace] = {}
 
         # Apply defaults for missing values and load secrets from env
-        import os
+        # Apply Defaults
         for field in schema:
             if field.key not in self._values[namespace]:
                 self._values[namespace][field.key] = field.default
 
-            # Load secrets with custom env_key from environment
+            # Load secrets with custom env_key from environment variables (os.environ)
+            # This handles explicit overrides defined in schema (e.g. API keys)
             if field.secret and field.env_key:
-                env_value = os.environ.get(field.env_key)
+                env_value = self._env_storage.get(field.env_key)
                 if env_value:
                     self._values[namespace][field.key] = env_value
+                    logger.debug(f"Loaded secret '{field.key}' from env var '{field.env_key}'")
+
+        # Apply Env Overrides from .env file
+        # This handles standard NAMESPACE__KEY variables for this namespace
+        env_data = self._env_storage.load()
+        for env_key, value in env_data.items():
+            # Check if this env var belongs to THIS namespace
+            ns, k = env_key_to_namespace(env_key, [namespace])
+            if ns == namespace:
+                self._values[namespace][k] = value
+                logger.debug(f"Loaded override '{k}' from env var '{env_key}'")
 
         logger.debug(f"Registered settings namespace: {namespace}")
 
@@ -194,16 +206,16 @@ class SettingsManager:
             The setting value or default.
         """
         ns_values = self._values.get(namespace, {})
-        value = ns_values.get(key)
 
-        if value is None:
+        # Check if key exists (not just if value is truthy) to allow None as valid value
+        if key not in ns_values:
             # Try to get default from schema
             field = self.get_field(namespace, key)
             if field is not None:
                 return field.default if default is None else default
             return default
 
-        return value
+        return ns_values[key]
 
     def get_all(self, namespace: str) -> Dict[str, Any]:
         """Get all settings for a namespace.
@@ -222,6 +234,7 @@ class SettingsManager:
         key: str,
         value: Any,
         skip_validation: bool = False,
+        save: bool = True,
     ) -> Optional[str]:
         """Set a setting value.
 
@@ -230,6 +243,7 @@ class SettingsManager:
             key: The setting key.
             value: The new value.
             skip_validation: If True, skip field validation.
+            save: If True, persist to storage immediately (if auto-save enabled).
 
         Returns:
             Validation error message if invalid, None if successful.
@@ -250,7 +264,7 @@ class SettingsManager:
         self._values[namespace][key] = value
 
         # Persist if auto-save enabled
-        if self._auto_save:
+        if self._auto_save and save:
             self._save_key(namespace, key, value)
 
         # Notify listeners if value changed
@@ -276,10 +290,20 @@ class SettingsManager:
             Dict of key -> error message for failed validations.
         """
         errors = {}
+        changed = False
+
         for key, value in values.items():
-            error = self.set(namespace, key, value, skip_validation)
+            # Pass save=False to avoid writing to disk for each key
+            error = self.set(namespace, key, value, skip_validation, save=False)
             if error:
                 errors[key] = error
+            else:
+                changed = True
+        
+        # Save once if needed
+        if self._auto_save and changed:
+            self.save()
+            
         return errors
 
     def reset_to_default(self, namespace: str, key: str) -> None:
@@ -472,7 +496,8 @@ class SettingsManager:
         try:
             result = handler()
             # If handler is async, await it
-            if hasattr(result, "__await__"):
+            import inspect
+            if inspect.isawaitable(result):
                 result = await result
 
             if isinstance(result, ActionResult):
@@ -524,23 +549,12 @@ class SettingsManager:
     # ─────────────────────────────────────────────────────────────────
 
     def _load(self) -> None:
-        """Load all values from storage."""
+        """Load values from YAML storage."""
         # Load YAML values
         yaml_data = self._yaml_storage.load()
         for namespace, ns_values in yaml_data.items():
             if isinstance(ns_values, dict):
                 self._values[namespace] = ns_values
-
-        # Load env values (overlay secrets)
-        env_data = self._env_storage.load()
-        for env_key, value in env_data.items():
-            namespace, key = env_key_to_namespace(
-                env_key, list(self._namespaces.keys())
-            )
-            if namespace:
-                if namespace not in self._values:
-                    self._values[namespace] = {}
-                self._values[namespace][key] = value
 
         logger.debug(f"Loaded settings from {self._config_dir}")
 
