@@ -87,3 +87,13 @@ def test_external_validation(settings_manager):
     # Test invalid
     error = settings_manager.set("validation_test", "age", -5)
     assert error == "Age cannot be negative"
+
+def test_metadata_field():
+    """Verify that metadata is correctly stored in SettingField."""
+    field = SettingField(
+        "test_key",
+        "Test Label",
+        FieldType.TEXT,
+        metadata={"help_text": "Some help"}
+    )
+    assert field.metadata == {"help_text": "Some help"}

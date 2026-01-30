@@ -204,6 +204,12 @@ class CLISettingsMenu:
         if field.description:
             print(f"  {field.description}")
 
+        if field.metadata and "help_text" in field.metadata:
+            print()
+            print("  [Help]")
+            for line in field.metadata["help_text"].split("\n"):
+                print(f"  {line}")
+
         try:
             if field_type == FieldType.CHECKBOX:
                 new_value = self._edit_checkbox(current, label)

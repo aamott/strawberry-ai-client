@@ -164,7 +164,8 @@ class YamlStorage:
             parts = key.split(".")
             current = result
             for part in parts[:-1]:
-                if part not in current:
+                # If path doesn't exist or is not a dict (e.g. was None), create it
+                if part not in current or not isinstance(current[part], dict):
                     current[part] = {}
                 current = current[part]
             current[parts[-1]] = value

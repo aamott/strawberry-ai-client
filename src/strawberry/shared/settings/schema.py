@@ -78,6 +78,8 @@ class SettingField:
     provider_type: Optional[str] = None  # Type of provider (stt, tts) for PROVIDER_SELECT
     # Template for provider namespace (e.g. "voice.{provider_type}.{value}")
     provider_namespace_template: Optional[str] = None
+    # Arbitrary metadata for UI hints (e.g., {"input_format": "json"})
+    metadata: Optional[dict[str, Any]] = None
 
     def __post_init__(self):
         """Validate field configuration."""
