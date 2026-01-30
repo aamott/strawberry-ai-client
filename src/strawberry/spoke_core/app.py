@@ -78,6 +78,8 @@ class SpokeCore:
         self._hub_client: Optional[HubClient] = None
         self._sessions: Dict[str, ChatSession] = {}
         self._subscribers: List[asyncio.Queue] = []
+        self._hub_websocket_task: Optional[asyncio.Task] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._started = False
         self._hub_connected = False
 
@@ -222,8 +224,6 @@ class SpokeCore:
 
         Uses asyncio to run the reconnection in the background.
         """
-        import asyncio
-
         async def reconnect():
             try:
                 await self.disconnect_hub()
@@ -231,21 +231,14 @@ class SpokeCore:
             except Exception as e:
                 logger.error(f"Hub reconnection failed: {e}")
 
-        # Try to get the running event loop
-        try:
-            loop = asyncio.get_running_loop()
+        loop = self._loop
+        if loop and loop.is_running():
             loop.create_task(reconnect())
-        except RuntimeError:
-            # No running loop - try to schedule via event loop
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.ensure_future(reconnect())
-                else:
-                    # Last resort: run synchronously
-                    loop.run_until_complete(reconnect())
-            except Exception as e:
-                logger.warning(f"Could not schedule hub reconnection: {e}")
+            return
+
+        logger.warning(
+            "No running event loop available for hub reconnection; skipping."
+        )
 
     def _get_available_models(self) -> List[str]:
         """Get available Ollama models for dynamic options."""
@@ -291,6 +284,7 @@ class SpokeCore:
             return
 
         try:
+            self._loop = asyncio.get_running_loop()
             # Initialize LLM client
             self._llm = TensorZeroClient()
             await self._llm._get_gateway()
@@ -319,11 +313,7 @@ class SpokeCore:
 
     async def stop(self) -> None:
         """Shutdown core services."""
-        # Close hub connection
-        if self._hub_client:
-            await self._hub_client.close()
-            self._hub_client = None
-            self._hub_connected = False
+        await self.disconnect_hub()
 
         if self._llm:
             await self._llm.close()
@@ -347,8 +337,16 @@ class SpokeCore:
         """Get session by ID."""
         return self._sessions.get(session_id)
 
-    async def send_message(self, session_id: str, text: str) -> None:
-        """Send a user message and run the agent loop."""
+    async def send_message(self, session_id: str, text: str) -> Optional[str]:
+        """Send a user message and run the agent loop.
+
+        Args:
+            session_id: Session identifier to target.
+            text: User message content.
+
+        Returns:
+            The final assistant response content, if any.
+        """
         session = self._sessions.get(session_id)
         if not session:
             raise ValueError(f"Session not found: {session_id}")
@@ -359,6 +357,7 @@ class SpokeCore:
 
         session.busy = True
 
+        result_content: Optional[str] = None
         try:
             # Add user message
             session.add_message("user", text)
@@ -450,18 +449,23 @@ class SpokeCore:
                                 content=result_text,
                             )
                         )
-                        return
+                        result_content = result_text
+                        return result_content
 
             # Run agent loop
-            await self._agent_loop(session)
+            result_content = await self._agent_loop(session)
+            return result_content
 
         except Exception as e:
             logger.error(f"Agent loop error: {e}")
             await self._emit(CoreError(error=str(e), exception=e))
         finally:
             session.busy = False
+        return result_content
 
-    async def _agent_loop(self, session: ChatSession, max_iterations: int = 5) -> None:
+    async def _agent_loop(
+        self, session: ChatSession, max_iterations: int = 5
+    ) -> Optional[str]:
         """Run the agent loop with tool execution.
 
         When online (connected to Hub), routes chat through Hub with enable_tools=True
@@ -471,7 +475,7 @@ class SpokeCore:
         """
         if not self._skills:
             await self._emit(CoreError(error="Core not started"))
-            return
+            return None
 
         # Check if online state changed and update mode notice
         current_online = self.is_online()
@@ -492,11 +496,10 @@ class SpokeCore:
 
         # Route based on online/offline mode
         if current_online and self._hub_client:
-            await self._agent_loop_hub(session)
-        else:
-            await self._agent_loop_local(session, max_iterations)
+            return await self._agent_loop_hub(session)
+        return await self._agent_loop_local(session, max_iterations)
 
-    async def _agent_loop_hub(self, session: ChatSession) -> None:
+    async def _agent_loop_hub(self, session: ChatSession) -> Optional[str]:
         """Run agent loop via Hub (Hub executes tools on registered devices)."""
         from ..models import ChatMessage
 
@@ -583,14 +586,17 @@ class SpokeCore:
         except HubError as e:
             logger.error(f"Hub chat failed: {e}")
             await self._emit(CoreError(error=f"Hub error: {e}"))
+            return None
+
+        return final_content
 
     async def _agent_loop_local(
         self, session: ChatSession, max_iterations: int = 5
-    ) -> None:
+    ) -> Optional[str]:
         """Run agent loop locally (for offline mode)."""
         if not self._llm:
             await self._emit(CoreError(error="Local LLM not available"))
-            return
+            return None
 
         function_name = "chat_local"
         try:
@@ -616,6 +622,7 @@ class SpokeCore:
 
         seen_tool_calls: set[str] = set()
 
+        final_content: Optional[str] = None
         for iteration in range(max_iterations):
             # Build messages for LLM (skip system messages, use system_prompt param)
             messages = []
@@ -763,6 +770,7 @@ class SpokeCore:
                         content=response.content,
                     )
                 )
+                final_content = response.content
             break
 
         if (
@@ -780,6 +788,9 @@ class SpokeCore:
                     content=error,
                 )
             )
+            final_content = error
+
+        return final_content
 
     def _extract_legacy_code_blocks(self, content: str) -> List[str]:
         """Extract executable code blocks from LLM response.
@@ -906,7 +917,9 @@ class SpokeCore:
             await self._register_skills_with_hub()
 
             # Connect WebSocket for skill execution requests
-            asyncio.create_task(self._hub_client.connect_websocket())
+            self._hub_websocket_task = asyncio.create_task(
+                self._hub_client.connect_websocket()
+            )
 
             # Emit mode change
             await self._emit(ModeChanged(
@@ -934,6 +947,14 @@ class SpokeCore:
 
     async def disconnect_hub(self) -> None:
         """Disconnect from the Hub."""
+        if self._hub_websocket_task:
+            self._hub_websocket_task.cancel()
+            try:
+                await self._hub_websocket_task
+            except asyncio.CancelledError:
+                pass
+            self._hub_websocket_task = None
+
         if self._hub_client:
             await self._hub_client.close()
             self._hub_client = None
@@ -999,7 +1020,7 @@ class SpokeCore:
     # Event system
     async def _emit(self, event: CoreEvent) -> None:
         """Emit an event to all subscribers."""
-        for queue in self._subscribers:
+        for queue in list(self._subscribers):
             await queue.put(event)
 
     def subscribe(self, handler: Callable[[CoreEvent], Any]) -> Subscription:
@@ -1035,7 +1056,8 @@ class SpokeCore:
                 event = await queue.get()
                 yield event
         finally:
-            self._subscribers.remove(queue)
+            if queue in self._subscribers:
+                self._subscribers.remove(queue)
 
     # Settings API
     def get_settings_schema(self) -> List[Any]:
