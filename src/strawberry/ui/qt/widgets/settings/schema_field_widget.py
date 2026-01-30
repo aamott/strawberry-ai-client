@@ -65,6 +65,15 @@ class SchemaFieldWidget(QWidget):
         if self._inner_widget:
             layout.addWidget(self._inner_widget)
 
+        # specific metadata help?
+        if self._field.metadata and "help_text" in self._field.metadata:
+            help_btn = QPushButton("?")
+            help_btn.setFixedWidth(24)
+            help_btn.setToolTip(self._field.metadata["help_text"])
+            # Optional: styled to look less like a primary action
+            help_btn.setStyleSheet("font-weight: bold; color: #888;")
+            layout.addWidget(help_btn)
+
     def _create_widget(self) -> Optional[QWidget]:
         """Create the appropriate widget for the field type.
 

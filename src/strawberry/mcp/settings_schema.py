@@ -29,6 +29,21 @@ MCP_SETTINGS_SCHEMA: List[SettingField] = [
         type=FieldType.TEXT,
         default="config/mcp.json",
         description="Path to MCP server configuration file (relative to project root)",
+        metadata={
+            "help_text": (
+                "For now, MCP servers are configured in a JSON file here.\n"
+                "Example format:\n"
+                "{\n"
+                '  "mcpServers": {\n'
+                '    "filesystem": {\n'
+                '      "command": "npx",\n'
+                '      "args": ["-y", "@modelcontextprotocol/server-filesystem",\n'
+                '               "/path/to/files"]\n'
+                "    }\n"
+                "  }\n"
+                "}"
+            )
+        },
         group="general",
     ),
 ]
