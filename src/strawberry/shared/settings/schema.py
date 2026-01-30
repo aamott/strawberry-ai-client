@@ -31,6 +31,7 @@ class FieldType(Enum):
     DYNAMIC_SELECT = "dynamic_select"
     ACTION = "action"
     MULTILINE = "multiline"
+    PROVIDER_SELECT = "provider_select"
 
 
 @dataclass
@@ -73,6 +74,7 @@ class SettingField:
     max_value: Optional[float] = None
     placeholder: Optional[str] = None
     env_key: Optional[str] = None  # Explicit env var name for secrets
+    provider_type: Optional[str] = None  # Type of provider (stt, tts) for PROVIDER_SELECT
 
     def __post_init__(self):
         """Validate field configuration."""
