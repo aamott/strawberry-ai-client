@@ -10,6 +10,7 @@ from ..hub import HubClient, HubConfig, HubError
 from ..llm.tensorzero_client import TensorZeroClient
 from ..shared.settings import ActionResult, SettingsManager
 from ..skills.service import SkillService
+from .event_bus import EventBus, Subscription
 from .events import (
     ConnectionChanged,
     CoreError,
@@ -24,22 +25,6 @@ from .session import ChatSession
 from .settings_schema import SPOKE_CORE_SCHEMA
 
 logger = logging.getLogger(__name__)
-
-
-class Subscription:
-    """Handle for an event subscription."""
-
-    def __init__(self, cancel_fn: Callable[[], None]) -> None:
-        self._cancel = cancel_fn
-
-    def cancel(self) -> None:
-        self._cancel()
-
-    def __enter__(self) -> "Subscription":
-        return self
-
-    def __exit__(self, *args) -> None:
-        self.cancel()
 
 
 class SpokeCore:
@@ -77,9 +62,8 @@ class SpokeCore:
         self._skills: Optional[SkillService] = None
         self._hub_client: Optional[HubClient] = None
         self._sessions: Dict[str, ChatSession] = {}
-        self._subscribers: List[asyncio.Queue] = []
+        self._event_bus = EventBus()
         self._hub_websocket_task: Optional[asyncio.Task] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._started = False
         self._hub_connected = False
 
@@ -231,7 +215,7 @@ class SpokeCore:
             except Exception as e:
                 logger.error(f"Hub reconnection failed: {e}")
 
-        loop = self._loop
+        loop = self._event_bus.loop
         if loop and loop.is_running():
             loop.create_task(reconnect())
             return
@@ -284,7 +268,7 @@ class SpokeCore:
             return
 
         try:
-            self._loop = asyncio.get_running_loop()
+            self._event_bus.set_loop(asyncio.get_running_loop())
             # Initialize LLM client
             self._llm = TensorZeroClient()
             await self._llm._get_gateway()
@@ -1017,47 +1001,19 @@ class SpokeCore:
             return self._get_setting("local_llm.model", "llama3.2:3b")
         return "hub"
 
-    # Event system
+    # Event system (delegates to EventBus)
     async def _emit(self, event: CoreEvent) -> None:
         """Emit an event to all subscribers."""
-        for queue in list(self._subscribers):
-            await queue.put(event)
+        await self._event_bus.emit(event)
 
     def subscribe(self, handler: Callable[[CoreEvent], Any]) -> Subscription:
         """Subscribe to events with a callback handler."""
-        queue: asyncio.Queue = asyncio.Queue()
-        self._subscribers.append(queue)
-
-        async def reader():
-            while True:
-                try:
-                    event = await queue.get()
-                    result = handler(event)
-                    if asyncio.iscoroutine(result):
-                        await result
-                except asyncio.CancelledError:
-                    break
-
-        task = asyncio.create_task(reader())
-
-        def cancel():
-            task.cancel()
-            if queue in self._subscribers:
-                self._subscribers.remove(queue)
-
-        return Subscription(cancel)
+        return self._event_bus.subscribe(handler)
 
     async def events(self) -> AsyncIterator[CoreEvent]:
         """Async iterator for events."""
-        queue: asyncio.Queue = asyncio.Queue()
-        self._subscribers.append(queue)
-        try:
-            while True:
-                event = await queue.get()
-                yield event
-        finally:
-            if queue in self._subscribers:
-                self._subscribers.remove(queue)
+        async for event in self._event_bus.events():
+            yield event
 
     # Settings API
     def get_settings_schema(self) -> List[Any]:
