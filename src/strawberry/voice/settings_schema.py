@@ -25,6 +25,13 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
             "Ordered list of STT backends. First one is active provider."
         ),
         group="stt",
+        metadata={
+            "help_text": (
+                "The order defines which STT engine to try first.\n"
+                "If the first one fails (e.g. network error), the next one is used.\n"
+                "Example: 'leopard,whisper'"
+            )
+        },
     ),
     SettingField(
         key="stt.enabled",
@@ -49,6 +56,13 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
             "Ordered list of TTS backends. First one is active provider."
         ),
         group="tts",
+        metadata={
+            "help_text": (
+                "The order defines which TTS engine to try first.\n"
+                "If the first one fails, the next one is used.\n"
+                "Example: 'pocket,orca'"
+            )
+        },
     ),
     SettingField(
         key="tts.enabled",
@@ -115,6 +129,13 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         max_value=1.0,
         description="How sensitive the wake word detection is (0.0-1.0)",
         group="wakeword",
+        metadata={
+            "help_text": (
+                "Higher values trigger more easily (more false positives).\n"
+                "Lower values require clearer speech (more false negatives).\n"
+                "0.5 is a balanced default."
+            )
+        },
     ),
     SettingField(
         key="wakeword.order",
@@ -138,6 +159,12 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         default="16000",
         description="Audio sample rate in Hz",
         group="audio",
+        metadata={
+            "help_text": (
+                "16000Hz is standard for speech recognition.\n"
+                "44100Hz/48000Hz provides higher quality for music playback/TTS."
+            )
+        },
     ),
     SettingField(
         key="audio.feedback_enabled",

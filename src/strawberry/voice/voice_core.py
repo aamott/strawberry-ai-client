@@ -247,7 +247,7 @@ class VoiceCore:
         self._watchdog_stop = threading.Event()
 
         # Speaking pipeline queue
-        self._speak_queue: queue.Queue[str] = queue.Queue()
+        self._speak_queue: queue.Queue[str] = queue.Queue(maxsize=10)
         self._speak_thread: Optional[threading.Thread] = None
         self._speak_stop = threading.Event()
 
@@ -797,11 +797,13 @@ class VoiceCore:
 
     def push_to_talk_stop(self) -> None:
         """Stop push-to-talk and process recording."""
-        if not self._ptt_active or self._state != VoiceState.LISTENING:
+        if not self._ptt_active:
             return
 
         self._ptt_active = False
-        self._finish_recording()
+
+        if self._state == VoiceState.LISTENING:
+            self._finish_recording()
 
     # -------------------------------------------------------------------------
     # Public API: Speaking Pipeline Control
@@ -820,7 +822,10 @@ class VoiceCore:
             logger.warning("Cannot speak - VoiceCore is stopped")
             return
 
-        self._speak_queue.put(text)
+        try:
+            self._speak_queue.put_nowait(text)
+        except queue.Full:
+            logger.warning("TTS queue full, dropping speech request")
 
     def stop_speaking(self) -> None:
         """Interrupt current TTS playback."""
@@ -862,28 +867,34 @@ class VoiceCore:
     # -------------------------------------------------------------------------
 
     def _emit(self, event: VoiceEvent) -> None:
-        """Emit event to all listeners."""
+        """Emit event to all listeners.
+
+        Ensures all listeners are invoked on the asyncio event loop thread.
+        If called from a worker thread, marshals the event to the loop.
+        """
+        # Check if we need to marshal to the event loop
+        if self._event_loop and not self._event_loop.is_closed():
+            try:
+                running_loop = asyncio.get_running_loop()
+                if running_loop is not self._event_loop:
+                    # We are on a loop, but not THE voice loop (unlikely but possible)
+                    # or we hit RuntimeError below.
+                    self._event_loop.call_soon_threadsafe(self._emit, event)
+                    return
+            except RuntimeError:
+                # We are not on any asyncio loop (e.g. worker thread)
+                self._event_loop.call_soon_threadsafe(self._emit, event)
+                return
+
+        # We are on the event loop (or no loop is configured), proceed.
         event.session_id = self._session_id
         for listener in self._listeners:
             try:
                 result = listener(event)
                 if asyncio.iscoroutine(result):
-                    if self._event_loop is None or self._event_loop.is_closed():
-                        logger.error(
-                            "Voice event listener returned coroutine but VoiceCore has no running "
-                            "event loop"
-                        )
-                        continue
-
-                    try:
-                        running_loop = asyncio.get_running_loop()
-                    except RuntimeError:
-                        running_loop = None
-
-                    if running_loop is self._event_loop:
-                        self._event_loop.create_task(result)
-                    else:
-                        asyncio.run_coroutine_threadsafe(result, self._event_loop)
+                    # We are already on the loop, so just schedule it
+                    if self._event_loop and not self._event_loop.is_closed():
+                         self._event_loop.create_task(result)
             except Exception as e:
                 logger.error(f"Error in voice event listener: {e}")
 
@@ -909,6 +920,21 @@ class VoiceCore:
         # Apply any pending backend reinitializations when we reach a safe state.
         if new_state == VoiceState.IDLE and self.has_pending_reinit():
             self._trigger_pending_reinit()
+
+    def _safe_transition_to(self, new_state: VoiceState) -> None:
+        """Safely transition to new state, ignoring invalid transition errors.
+
+        This is useful for error handling or cleanup where we want to try to
+        reach a state (usually IDLE or STOPPED) but don't want to crash if
+        we're already there or in an incompatible state.
+
+        Args:
+            new_state: Target state
+        """
+        try:
+            self._transition_to(new_state)
+        except VoiceStateError:
+            pass
 
     def _trigger_pending_reinit(self) -> None:
         """Trigger reinitialization of pending backends.
@@ -1248,7 +1274,7 @@ class VoiceCore:
         """Transition to listening and start recording audio."""
         self._recording_buffer.clear()
         self._recording_start_time = time.time()
-        self._last_frame_time = 0
+        self._last_frame_time = self._recording_start_time
         if self._vad_processor:
             self._vad_processor.reset()
         self._transition_to(VoiceState.LISTENING)
@@ -1308,11 +1334,21 @@ class VoiceCore:
         ).start()
 
     def _process_audio_sync(self, audio: np.ndarray) -> None:
-        """Process audio through STT and get response (sync, runs in thread)."""
+        """Process audio through STT and get response (sync, runs in thread).
+
+        This method orchestrates the full audio-to-action pipeline:
+        1. Transcribes audio using available STT backends (with fallback)
+        2. Emits transcription events
+        3. Calls the response handler (LLM or other logic)
+        4. Speaks the response via TTS
+
+        Args:
+            audio: Raw audio data as numpy array
+        """
         try:
             if not self._stt:
                 logger.warning("No STT engine available")
-                self._transition_to(VoiceState.IDLE)
+                self._safe_transition_to(VoiceState.IDLE)
                 return
 
             # Use cached modules (discovered once at init, not on every speech)
@@ -1356,7 +1392,7 @@ class VoiceCore:
 
             if not text:
                 logger.info("Empty transcription, returning to idle")
-                self._transition_to(VoiceState.IDLE)
+                self._safe_transition_to(VoiceState.IDLE)
                 return
 
             logger.info(f"Transcription: {text}")
@@ -1368,12 +1404,12 @@ class VoiceCore:
                 self._emit(VoiceResponse(text=response))
                 self.speak(response)
             else:
-                self._transition_to(VoiceState.IDLE)
+                self._safe_transition_to(VoiceState.IDLE)
 
         except Exception as e:
             logger.error(f"Error processing audio: {e}")
             self._emit(VoiceError(error=str(e), exception=e))
-            self._transition_to(VoiceState.IDLE)
+            self._safe_transition_to(VoiceState.IDLE)
 
     def _speak_response(self, text: str) -> None:
         """Speak response text using TTS.
@@ -1418,10 +1454,13 @@ class VoiceCore:
 
         finally:
             if self._state == VoiceState.SPEAKING:
-                self._transition_to(VoiceState.IDLE)
+                self._safe_transition_to(VoiceState.IDLE)
 
     def _synthesize_with_fallback(self, text: str) -> None:
         """Synthesize and play text, falling back to next TTS if current fails.
+
+        Iterates through configured TTS backends (e.g. "google,pocket"). If one
+        fails, initializes and tries the next one.
 
         Args:
             text: Text to synthesize and play.
@@ -1519,11 +1558,7 @@ class VoiceCore:
                           "Check microphone connection.",
                 ))
                 # Force transition back to IDLE
-                try:
-                    self._transition_to(VoiceState.IDLE)
-                except VoiceStateError:
-                    with self._state_lock:
-                        self._state = VoiceState.IDLE
+                self._safe_transition_to(VoiceState.IDLE)
                 self._recording_buffer.clear()
                 self._last_frame_time = 0
 
