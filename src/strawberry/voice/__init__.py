@@ -6,11 +6,8 @@ by any UI (CLI, VoiceInterface, etc.).
 VoiceController is kept as an alias for backwards compatibility.
 """
 
-from .state import VoiceState, VoiceStateError, can_transition
-from .voice_core import (
-    VoiceConfig,
-    VoiceController,  # Backwards-compatible alias for VoiceCore
-    VoiceCore,
+from .config import VoiceConfig
+from .events import (
     VoiceError,
     VoiceEvent,
     VoiceListening,
@@ -18,9 +15,14 @@ from .voice_core import (
     VoiceResponse,
     VoiceSpeaking,
     VoiceStateChanged,
-    VoiceStatusChanged,  # Backwards-compatible alias for VoiceStateChanged
     VoiceTranscription,
     VoiceWakeWordDetected,
+)
+from .state import VoiceState, VoiceStateError, can_transition
+from .voice_core import (
+    VoiceController,  # Backwards-compatible alias for VoiceCore
+    VoiceCore,
+    VoiceStatusChanged,  # Backwards-compatible alias for VoiceStateChanged
 )
 
 __all__ = [

@@ -151,8 +151,8 @@ class TestVoiceCoreTTSFallback:
         assert result is True
 
         # Verify mock TTS was selected
-        assert core._active_tts_backend == "mock"
-        assert core._tts is not None
+        assert core.component_manager.active_tts_backend == "mock"
+        assert core.component_manager.components.tts is not None
 
         await core.stop()
 
