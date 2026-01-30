@@ -1,26 +1,25 @@
 """SpokeCore - single entrypoint for all UIs."""
 
 import asyncio
-import json
 import logging
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
-from ..hub import HubClient, HubConfig, HubError
+from ..hub import HubClient
 from ..llm.tensorzero_client import TensorZeroClient
 from ..shared.settings import ActionResult, SettingsManager
 from ..skills.service import SkillService
+from .agent_runner import HubAgentRunner, LocalAgentRunner
 from .event_bus import EventBus, Subscription
 from .events import (
-    ConnectionChanged,
     CoreError,
     CoreEvent,
     CoreReady,
     MessageAdded,
-    ModeChanged,
     ToolCallResult,
     ToolCallStarted,
 )
+from .hub_connection_manager import HubConnectionManager
 from .session import ChatSession
 from .settings_schema import SPOKE_CORE_SCHEMA
 
@@ -60,16 +59,24 @@ class SpokeCore:
         self._settings_manager = settings_manager
         self._llm: Optional[TensorZeroClient] = None
         self._skills: Optional[SkillService] = None
-        self._hub_client: Optional[HubClient] = None
         self._sessions: Dict[str, ChatSession] = {}
         self._event_bus = EventBus()
-        self._hub_websocket_task: Optional[asyncio.Task] = None
         self._started = False
-        self._hub_connected = False
+
+        # Hub connection management (delegate to HubConnectionManager)
+        self._hub_manager = HubConnectionManager(
+            get_setting=self._get_setting,
+            emit=self._emit,
+            get_loop=lambda: self._event_bus.loop,
+        )
 
         # Track mode state for mode notices (like QT UI)
         self._last_online_state: Optional[bool] = None
         self._pending_mode_notice: Optional[str] = None
+
+        # Agent runners (initialized in start())
+        self._hub_runner: Optional[HubAgentRunner] = None
+        self._local_runner: Optional[LocalAgentRunner] = None
 
         # Register with SettingsManager
         self._register_with_settings_manager()
@@ -204,25 +211,8 @@ class SpokeCore:
             logger.warning(f"Failed to handle MCP setting change ({key}): {e}")
 
     def _schedule_hub_reconnection(self) -> None:
-        """Schedule hub reconnection after settings change.
-
-        Uses asyncio to run the reconnection in the background.
-        """
-        async def reconnect():
-            try:
-                await self.disconnect_hub()
-                await self.connect_hub()
-            except Exception as e:
-                logger.error(f"Hub reconnection failed: {e}")
-
-        loop = self._event_bus.loop
-        if loop and loop.is_running():
-            loop.create_task(reconnect())
-            return
-
-        logger.warning(
-            "No running event loop available for hub reconnection; skipping."
-        )
+        """Schedule hub reconnection after settings change."""
+        self._hub_manager.schedule_reconnection()
 
     def _get_available_models(self) -> List[str]:
         """Get available Ollama models for dynamic options."""
@@ -285,6 +275,19 @@ class SpokeCore:
                 allow_unsafe_exec=allow_unsafe,
             )
             self._skills.load_skills()
+
+            # Initialize agent runners
+            self._hub_runner = HubAgentRunner(
+                get_hub_client=lambda: self._hub_manager.client,
+                emit=self._emit,
+            )
+            self._local_runner = LocalAgentRunner(
+                llm=self._llm,
+                skills=self._skills,
+                emit=self._emit,
+                get_mode_notice=lambda: self._pending_mode_notice,
+                clear_mode_notice=lambda: setattr(self, "_pending_mode_notice", None),
+            )
 
             self._started = True
             await self._emit(CoreReady())
@@ -456,6 +459,8 @@ class SpokeCore:
         so the Hub runs the agent loop and executes skills on registered devices.
 
         When offline, runs the agent loop locally using TensorZeroClient.
+
+        Delegates to HubAgentRunner or LocalAgentRunner based on connection state.
         """
         if not self._skills:
             await self._emit(CoreError(error="Core not started"))
@@ -478,349 +483,17 @@ class SpokeCore:
                 )
         self._last_online_state = current_online
 
-        # Route based on online/offline mode
-        if current_online and self._hub_client:
-            return await self._agent_loop_hub(session)
-        return await self._agent_loop_local(session, max_iterations)
+        # Route based on online/offline mode (delegate to agent runners)
+        if current_online and self._hub_runner:
+            # Clear mode notice for hub mode (Hub owns system prompt)
+            self._pending_mode_notice = None
+            return await self._hub_runner.run(session, max_iterations)
 
-    async def _agent_loop_hub(self, session: ChatSession) -> Optional[str]:
-        """Run agent loop via Hub (Hub executes tools on registered devices)."""
-        from ..models import ChatMessage
+        if self._local_runner:
+            return await self._local_runner.run(session, max_iterations)
 
-        # In online mode the Hub owns:
-        # - system prompt construction
-        # - tool call execution
-        #
-        # So the Spoke must not inject a system prompt; it should only forward the
-        # user/assistant conversation state.
-        self._pending_mode_notice = None
-
-        # Build messages for Hub (exclude system messages)
-        messages: list[ChatMessage] = []
-        for msg in session.messages:
-            if msg.role != "system":
-                messages.append(ChatMessage(role=msg.role, content=msg.content))
-
-        # Stream from Hub so tool call events can be emitted incrementally.
-        try:
-            final_content: Optional[str] = None
-
-            async for event in self._hub_client.chat_stream(
-                messages=messages,
-                enable_tools=True,
-            ):
-                event_type = str(event.get("type") or "")
-
-                if event_type == "tool_call_started":
-                    tool_name = str(event.get("tool_name") or "")
-                    arguments = event.get("arguments")
-                    if not isinstance(arguments, dict):
-                        arguments = {}
-                    await self._emit(
-                        ToolCallStarted(
-                            session_id=session.id,
-                            tool_name=tool_name,
-                            arguments=arguments,
-                        )
-                    )
-                    continue
-
-                if event_type == "tool_call_result":
-                    tool_name = str(event.get("tool_name") or "")
-                    success = bool(event.get("success"))
-                    result = event.get("result")
-                    error = event.get("error")
-                    await self._emit(
-                        ToolCallResult(
-                            session_id=session.id,
-                            tool_name=tool_name,
-                            success=success,
-                            result=str(result) if (success and result is not None) else None,
-                            error=str(error) if ((not success) and error is not None) else None,
-                        )
-                    )
-                    continue
-
-                if event_type == "assistant_message":
-                    final_content = str(event.get("content") or "")
-                    continue
-
-                if event_type == "error":
-                    error_msg = str(event.get("error") or "Hub stream error")
-                    await self._emit(CoreError(error=error_msg))
-                    return
-
-                if event_type == "done":
-                    break
-
-            if final_content and final_content.strip():
-                session.add_message("assistant", final_content)
-                await self._emit(
-                    MessageAdded(
-                        session_id=session.id,
-                        role="assistant",
-                        content=final_content,
-                    )
-                )
-            else:
-                error = "Hub returned an empty response. See Hub logs for details."
-                logger.error(error)
-                await self._emit(CoreError(error=error))
-
-        except HubError as e:
-            logger.error(f"Hub chat failed: {e}")
-            await self._emit(CoreError(error=f"Hub error: {e}"))
-            return None
-
-        return final_content
-
-    async def _agent_loop_local(
-        self, session: ChatSession, max_iterations: int = 5
-    ) -> Optional[str]:
-        """Run agent loop locally (for offline mode)."""
-        if not self._llm:
-            await self._emit(CoreError(error="Local LLM not available"))
-            return None
-
-        function_name = "chat_local"
-        try:
-            import os
-
-            import httpx
-
-            ollama_ok = False
-            try:
-                resp = httpx.get("http://localhost:11434/api/tags", timeout=0.5)
-                ollama_ok = resp.status_code == 200
-            except Exception:
-                ollama_ok = False
-
-            if not ollama_ok and os.environ.get("GOOGLE_AI_STUDIO_API_KEY"):
-                function_name = "chat_local_gemini"
-        except Exception:
-            function_name = "chat_local"
-
-        # Build system prompt with mode notice
-        system_prompt = self._skills.get_system_prompt(mode_notice=self._pending_mode_notice)
-        self._pending_mode_notice = None
-
-        seen_tool_calls: set[str] = set()
-
-        final_content: Optional[str] = None
-        for iteration in range(max_iterations):
-            # Build messages for LLM (skip system messages, use system_prompt param)
-            messages = []
-            for msg in session.messages:
-                if msg.role != "system":
-                    messages.append(msg)
-
-            # Get LLM response with system prompt passed explicitly
-            response = await self._llm.chat(
-                messages,
-                system_prompt=system_prompt,
-                function_name=function_name,
-            )
-
-            # Check for native tool calls first
-            if response.tool_calls:
-                if response.content:
-                    session.add_message("assistant", response.content)
-                    await self._emit(
-                        MessageAdded(
-                            session_id=session.id,
-                            role="assistant",
-                            content=response.content,
-                        )
-                    )
-                for tool_call in response.tool_calls:
-                    tool_key = json.dumps(
-                        {
-                            "name": tool_call.name,
-                            "arguments": tool_call.arguments,
-                        },
-                        sort_keys=True,
-                    )
-                    if tool_key in seen_tool_calls:
-                        error = (
-                            "Model attempted to repeat the same tool call. "
-                            "Aborting to prevent an infinite loop."
-                        )
-                        await self._emit(CoreError(error=error))
-                        session.add_message("assistant", error)
-                        await self._emit(
-                            MessageAdded(
-                                session_id=session.id,
-                                role="assistant",
-                                content=error,
-                            )
-                        )
-                        return
-                    seen_tool_calls.add(tool_key)
-
-                    await self._emit(
-                        ToolCallStarted(
-                            session_id=session.id,
-                            tool_name=tool_call.name,
-                            arguments=tool_call.arguments,
-                        )
-                    )
-
-                    # Execute tool
-                    result = await self._skills.execute_tool_async(
-                        tool_call.name, tool_call.arguments
-                    )
-
-                    success = "error" not in result
-                    result_text = result.get("result", result.get("error", ""))
-
-                    await self._emit(
-                        ToolCallResult(
-                            session_id=session.id,
-                            tool_name=tool_call.name,
-                            success=success,
-                            result=result_text if success else None,
-                            error=result_text if not success else None,
-                        )
-                    )
-
-                    # Add tool result to session for next iteration
-                    tool_msg = (
-                        f"[Tool: {tool_call.name}]\n{result_text}\n\n"
-                        "[Now respond naturally to the user based on this result. "
-                        "Do not rerun the same tool call again unless the user asks. ]"
-                    )
-                    session.add_message("user", tool_msg)
-
-                # Continue loop for more tool calls
-                continue
-
-            # Check for legacy code blocks (models that don't use native tool calls)
-            legacy_code_blocks = self._extract_legacy_code_blocks(response.content or "")
-            if legacy_code_blocks:
-                if response.content:
-                    session.add_message("assistant", response.content)
-                    await self._emit(
-                        MessageAdded(
-                            session_id=session.id,
-                            role="assistant",
-                            content=response.content,
-                        )
-                    )
-                for code in legacy_code_blocks:
-                    await self._emit(
-                        ToolCallStarted(
-                            session_id=session.id,
-                            tool_name="python_exec",
-                            arguments={"code": code},
-                        )
-                    )
-
-                    # Execute via python_exec tool
-                    result = await self._skills.execute_tool_async(
-                        "python_exec", {"code": code}
-                    )
-
-                    success = "error" not in result
-                    result_text = result.get("result", result.get("error", ""))
-
-                    await self._emit(
-                        ToolCallResult(
-                            session_id=session.id,
-                            tool_name="python_exec",
-                            success=success,
-                            result=result_text if success else None,
-                            error=result_text if not success else None,
-                        )
-                    )
-
-                    # Add tool result to session for next iteration
-                    tool_msg = (
-                        f"[Tool: python_exec]\n{result_text}\n\n"
-                        "[Now respond naturally to the user based on this result. "
-                        "Do not rerun the same code again unless the user asks. ]"
-                    )
-                    session.add_message("user", tool_msg)
-
-                # Continue loop for more iterations
-                continue
-
-            # No tool calls - final response
-            if response.content:
-                session.add_message("assistant", response.content)
-                await self._emit(
-                    MessageAdded(
-                        session_id=session.id,
-                        role="assistant",
-                        content=response.content,
-                    )
-                )
-                final_content = response.content
-            break
-
-        if (
-            iteration + 1 >= max_iterations
-            and session.messages
-            and session.messages[-1].role != "assistant"
-        ):
-            error = "Agent loop hit max iterations without producing a final response."
-            await self._emit(CoreError(error=error))
-            session.add_message("assistant", error)
-            await self._emit(
-                MessageAdded(
-                    session_id=session.id,
-                    role="assistant",
-                    content=error,
-                )
-            )
-            final_content = error
-
-        return final_content
-
-    def _extract_legacy_code_blocks(self, content: str) -> List[str]:
-        """Extract executable code blocks from LLM response.
-
-        Handles models that return code in fenced blocks instead of
-        using native tool calls. Looks for:
-        - ```tool_code ... ``` blocks
-        - ```python ... ``` blocks containing device.* calls
-        - Bare device.*/devices.* lines
-
-        Args:
-            content: LLM response text
-
-        Returns:
-            List of code strings to execute
-        """
-        import re
-
-        code_blocks = []
-
-        # Extract fenced code blocks
-        # Match ```tool_code, ```python, or just ``` with device calls
-        # Allow optional newline after opening fence
-        pattern = r"```(?:tool_code|python|py)?\s*\n?(.*?)```"
-        matches = re.findall(pattern, content, re.DOTALL | re.IGNORECASE)
-
-        for match in matches:
-            code = match.strip()
-            # Only include if it looks like a skill call
-            if any(prefix in code for prefix in [
-                "device.", "devices.", "device_manager.",
-                "print(device.", "print(devices."
-            ]):
-                code_blocks.append(code)
-
-        # Also check for bare device calls not in code blocks
-        if not code_blocks:
-            for line in content.splitlines():
-                stripped = line.strip()
-                if stripped.startswith((
-                    "device.", "devices.", "device_manager.",
-                    "print(device.", "print(devices.", "print(device_manager."
-                )):
-                    code_blocks.append(stripped)
-
-        return code_blocks
+        await self._emit(CoreError(error="No agent runner available"))
+        return None
 
     def get_system_prompt(self) -> str:
         """Get the current system prompt."""
@@ -830,12 +503,12 @@ class SpokeCore:
 
     def is_online(self) -> bool:
         """Check if connected to Hub."""
-        return self._hub_connected and self._hub_client is not None
+        return self._hub_manager.is_connected
 
     @property
     def hub_client(self) -> Optional[HubClient]:
         """Get the hub client if connected."""
-        return self._hub_client if self._hub_connected else None
+        return self._hub_manager.client
 
     async def connect_hub(self) -> bool:
         """Connect to the Hub using settings.
@@ -843,157 +516,11 @@ class SpokeCore:
         Returns:
             True if connection succeeded, False otherwise.
         """
-        hub_url = self._get_setting("hub.url", "http://localhost:8000")
-        hub_token = self._get_setting("hub.token", "")
-        hub_timeout = self._get_setting("hub.timeout_seconds", 30)
-
-        if not hub_token:
-            logger.warning("Hub token not configured - skipping hub connection")
-            await self._emit(ConnectionChanged(
-                connected=False,
-                error="Hub token not configured",
-            ))
-            return False
-
-        try:
-            config = HubConfig(
-                url=hub_url,
-                token=hub_token,
-                timeout=hub_timeout,
-            )
-            self._hub_client = HubClient(config)
-
-            # Check health
-            healthy = await asyncio.wait_for(
-                self._hub_client.health(),
-                timeout=hub_timeout,
-            )
-            if not healthy:
-                await self._emit(ConnectionChanged(
-                    connected=False,
-                    url=hub_url,
-                    error="Hub is not responding",
-                ))
-                return False
-
-            # Verify auth
-            try:
-                await asyncio.wait_for(
-                    self._hub_client.get_device_info(),
-                    timeout=hub_timeout,
-                )
-            except HubError as e:
-                await self._emit(ConnectionChanged(
-                    connected=False,
-                    url=hub_url,
-                    error=f"Hub authentication failed: {e}",
-                ))
-                return False
-
-            self._hub_connected = True
-            await self._emit(ConnectionChanged(
-                connected=True,
-                url=hub_url,
-            ))
-            logger.info(f"Connected to Hub at {hub_url}")
-
-            # Register skills with hub
-            await self._register_skills_with_hub()
-
-            # Connect WebSocket for skill execution requests
-            self._hub_websocket_task = asyncio.create_task(
-                self._hub_client.connect_websocket()
-            )
-
-            # Emit mode change
-            await self._emit(ModeChanged(
-                online=True,
-                message="Connected to Hub. Remote devices API is available.",
-            ))
-
-            return True
-
-        except asyncio.TimeoutError:
-            logger.warning("Hub connection timed out")
-            await self._emit(ConnectionChanged(
-                connected=False,
-                url=hub_url,
-                error="Connection timed out",
-            ))
-            return False
-        except Exception as e:
-            logger.exception("Failed to connect to Hub")
-            await self._emit(ConnectionChanged(
-                connected=False,
-                error=str(e),
-            ))
-            return False
+        return await self._hub_manager.connect(skill_service=self._skills)
 
     async def disconnect_hub(self) -> None:
         """Disconnect from the Hub."""
-        if self._hub_websocket_task:
-            self._hub_websocket_task.cancel()
-            try:
-                await self._hub_websocket_task
-            except asyncio.CancelledError:
-                pass
-            self._hub_websocket_task = None
-
-        if self._hub_client:
-            await self._hub_client.close()
-            self._hub_client = None
-
-        was_connected = self._hub_connected
-        self._hub_connected = False
-
-        if was_connected:
-            await self._emit(ConnectionChanged(connected=False))
-            await self._emit(ModeChanged(
-                online=False,
-                message="Disconnected from Hub. Running in local mode.",
-            ))
-            logger.info("Disconnected from Hub")
-
-    async def _register_skills_with_hub(self) -> bool:
-        """Register skills with Hub and start heartbeat.
-
-        Returns:
-            True if registration succeeded.
-        """
-        if not self._hub_client or not self._skills:
-            return False
-
-        # Attach hub client to skill service (enables remote device mode)
-        self._skills.set_hub_client(self._hub_client)
-
-        # Set up skill callback for Hub -> Spoke skill execution
-        async def _ws_skill_callback(
-            skill_name: str,
-            method_name: str,
-            args: list,
-            kwargs: dict,
-        ):
-            return await self._skills.execute_skill_by_name(
-                skill_name, method_name, args, kwargs
-            )
-
-        self._hub_client.set_skill_callback(_ws_skill_callback)
-
-        # Register skills
-        try:
-            success = await self._skills.register_with_hub()
-            if success:
-                skills = self._skills.get_all_skills()
-                logger.info(f"Registered {len(skills)} skill(s) with Hub")
-                # Start heartbeat
-                await self._skills.start_heartbeat()
-                return True
-            else:
-                logger.warning("Failed to register skills with Hub")
-                return False
-        except HubError as e:
-            logger.error(f"Failed to register skills with Hub: {e}")
-            return False
+        await self._hub_manager.disconnect()
 
     def get_model_info(self) -> str:
         """Get current model name."""
