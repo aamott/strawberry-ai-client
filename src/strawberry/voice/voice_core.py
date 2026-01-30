@@ -283,8 +283,35 @@ class VoiceCore:
         # Register backend namespaces
         self._register_backend_namespaces()
 
+        # Register validators
+        self._settings_manager.register_validator(
+            "voice_core", "tts.order", self._validate_tts_order
+        )
+
         # Listen for settings changes
         self._settings_manager.on_change(self._on_settings_changed)
+
+    def _validate_tts_order(self, value: Any) -> Optional[str]:
+        """Validate TTS order list."""
+        if not value:
+            return "TTS order cannot be empty"
+
+        # Normalize to list
+        if isinstance(value, str):
+            items = [x.strip() for x in value.split(",") if x.strip()]
+        elif isinstance(value, (list, tuple)):
+            items = list(value)
+        else:
+            return "Invalid format for TTS order"
+
+        # Check for valid backends
+        # Note: We can't strictly validate against discovered modules here
+        # because modules might be installed but not yet discovered/loaded.
+        # But we can check for empty items.
+        if not items:
+            return "TTS order cannot be empty"
+
+        return None
 
     def _sync_config_to_manager(self) -> None:
         """Sync VoiceConfig with SettingsManager.
@@ -462,13 +489,13 @@ class VoiceCore:
         elif key == "audio.feedback_enabled":
             cfg.audio_feedback_enabled = bool(value)
         elif key == "stt.order":
-            cfg.stt_backend = str(value) if value else "leopard"
+            cfg.stt_backend = value if value else "leopard"
         elif key == "tts.order":
-            cfg.tts_backend = str(value) if value else "pocket"
+            cfg.tts_backend = value if value else "pocket"
         elif key == "vad.order":
-            cfg.vad_backend = str(value) if value else "silero"
+            cfg.vad_backend = value if value else "silero"
         elif key == "wakeword.order":
-            cfg.wake_backend = str(value) if value else "porcupine"
+            cfg.wake_backend = value if value else "porcupine"
 
     def _get_backend_settings(self, backend_type: str, backend_name: str) -> dict[str, Any]:
         """Get settings for a specific backend from SettingsManager.

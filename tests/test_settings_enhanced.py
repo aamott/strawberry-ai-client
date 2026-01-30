@@ -41,7 +41,8 @@ def test_decoupled_provider_template(settings_manager, view_model):
     sections = view_model.get_provider_sections("image_core")
 
     assert len(sections) == 1
-    assert sections[0].provider_settings_namespace == "plugins.image.flux" # Default empty value usually maps to nothing, but here we expect logic to handle it or we set value first.
+    # Default empty value usually maps to nothing; expect logic handles it or we set value first.
+    assert sections[0].provider_settings_namespace == "plugins.image.flux"
 
     # Let's set the value to 'flux' to be sure
     settings_manager.set("image_core", "backend", "flux")
