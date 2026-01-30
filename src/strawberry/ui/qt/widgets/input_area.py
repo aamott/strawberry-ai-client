@@ -719,4 +719,3 @@ class InputArea(QWidget):
     def is_voice_mode_active(self) -> bool:
         """Check if voice mode is currently active."""
         return self._voice_mode_active
-

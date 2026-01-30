@@ -38,7 +38,7 @@ class VoiceStateError(Exception):
 # Valid state transitions
 VALID_TRANSITIONS = {
     VoiceState.STOPPED: {VoiceState.IDLE},
-    VoiceState.IDLE: {VoiceState.LISTENING, VoiceState.STOPPED},
+    VoiceState.IDLE: {VoiceState.LISTENING, VoiceState.STOPPED, VoiceState.SPEAKING},
     VoiceState.LISTENING: {VoiceState.PROCESSING, VoiceState.IDLE, VoiceState.STOPPED},
     VoiceState.PROCESSING: {
         VoiceState.SPEAKING,
@@ -46,7 +46,7 @@ VALID_TRANSITIONS = {
         VoiceState.STOPPED,
         VoiceState.ERROR,
     },
-    VoiceState.SPEAKING: {VoiceState.IDLE, VoiceState.STOPPED},
+    VoiceState.SPEAKING: {VoiceState.IDLE, VoiceState.STOPPED, VoiceState.LISTENING},
     VoiceState.ERROR: {VoiceState.STOPPED},
 }
 

@@ -14,7 +14,10 @@ voice_core:
   stt:
     order: leopard
   tts:
-    order: pocket,ai_studio,orca
+    order:
+    - pocket
+    - orca
+    - ai_studio
   vad:
     order: cobra,silero
   wakeword:

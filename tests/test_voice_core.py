@@ -2,6 +2,9 @@
 
 import asyncio
 import threading
+import time
+
+import numpy as np
 import pytest
 
 from strawberry.shared.settings import SettingsManager
@@ -17,6 +20,7 @@ from strawberry.voice import (
     VoiceStatusChanged,
     can_transition,
 )
+from strawberry.voice.speaker_fsm import SpeakerState
 
 
 def make_test_voice_config() -> VoiceConfig:
@@ -66,11 +70,11 @@ class TestVoiceState:
         # Cannot go from STOPPED to LISTENING directly
         assert not can_transition(VoiceState.STOPPED, VoiceState.LISTENING)
 
-        # Cannot go from IDLE to SPEAKING directly
-        assert not can_transition(VoiceState.IDLE, VoiceState.SPEAKING)
+        # CAN go from IDLE to SPEAKING directly (Spontaneous speech)
+        assert can_transition(VoiceState.IDLE, VoiceState.SPEAKING)
 
-        # Cannot go from SPEAKING to LISTENING
-        assert not can_transition(VoiceState.SPEAKING, VoiceState.LISTENING)
+        # CAN go from SPEAKING to LISTENING (Barge-in)
+        assert can_transition(VoiceState.SPEAKING, VoiceState.LISTENING)
 
     def test_stop_from_any_state(self):
         """Should be able to stop from most states."""
@@ -277,17 +281,27 @@ class TestVoiceCoreSettingsReload:
         await core.start()
 
         # Ensure the initial order reflects the settings override.
-        assert core._tts_backend_names == ["mock"]  # noqa: SLF001
+        assert core.component_manager.tts_backend_names == ["mock"]
 
         # Change fallback order while running; VoiceCore should pick it up without a restart.
         settings_manager.set("voice_core", "tts.order", "mock,orca")
 
         # The change callback runs synchronously; backend name list should update immediately.
-        assert core._tts_backend_names == ["mock", "orca"]  # noqa: SLF001
+        # Note: In the new architecture, SettingsHelper updates config, but
+        # ComponentManager parses it on reinit/init.
+        # SettingsHelper updates VoiceConfig directly. VoiceComponentManager reads it.
+        # But ComponentManager parses backend names in `initialize` or `reinitialize_pending`.
+        # So we need to ensure reinit happens.
+        # The test relies on `settings_manager.set` triggering the callback
+        # which triggers `_on_component_settings_changed`.
 
-        # Give the async reinit task a moment to run (should be safe: mock stays first).
-        await core.reinitialize_pending_backends()
-        assert core._active_tts_backend == "mock"  # noqa: SLF001
+        # Give the async reinit task a moment to run
+        await asyncio.sleep(0.1)
+
+        # Now check if it updated
+        assert core.component_manager.tts_backend_names == ["mock", "orca"]
+
+        assert core.component_manager.active_tts_backend == "mock"
 
         await core.stop()
 
@@ -306,11 +320,16 @@ class TestNoSpeechEvent:
         events = []
         core.add_listener(lambda e: events.append(e))
 
+        # Start the pipeline first
+        core._pipeline.start()
+
         # Avoid starting the full audio pipeline; we only need VADProcessor state.
-        core._vad_processor = VADProcessor(MockVAD(), frame_duration_ms=30)  # noqa: SLF001
+        core.component_manager.components.vad_processor = VADProcessor(
+            MockVAD(), frame_duration_ms=30
+        )
 
         # Simulate the state reached after wake word / PTT.
-        core._transition_to(VoiceState.IDLE)
+        core._pipeline.listener.start_listening()
         core._start_recording()  # Emits VoiceListening and resets VADProcessor  # noqa: SLF001
 
         # Simulate buffered audio (silence). We intentionally do not call
@@ -341,8 +360,8 @@ class TestPTT:
         # Note: In a real scenario, this might be async or racing with state transitions.
         # We manually set the flag to simulate the race condition where
         # push_to_talk_start was called but we haven't reached LISTENING yet.
+        core._pipeline.start()  # Start the pipeline
         core._ptt_active = True
-        core._state = VoiceState.IDLE  # Still IDLE, hasn't reached LISTENING
 
         # Stop PTT
         core.push_to_talk_stop()
@@ -358,7 +377,7 @@ class TestThreadSafety:
         config = make_test_voice_config()
         core = VoiceCore(config)
         await core.start()
-        
+
         loop = asyncio.get_running_loop()
         listener_thread_id = None
         event_received = asyncio.Event()
@@ -377,7 +396,7 @@ class TestThreadSafety:
 
         # Run emit from a worker thread
         def run_emit():
-            core._emit(VoiceEvent())
+            core.event_emitter.emit(VoiceEvent())
 
         t = threading.Thread(target=run_emit)
         t.start()
@@ -388,7 +407,7 @@ class TestThreadSafety:
 
         # Verify listener ran on the loop thread
         assert listener_thread_id == loop_thread_id
-        
+
         await core.stop()
 
 class TestBargeIn:
@@ -396,29 +415,200 @@ class TestBargeIn:
 
     def test_barge_in_stops_speaking(self):
         """Wake word detection during SPEAKING should stop TTS and switch to LISTENING."""
-        from strawberry.voice.wakeword.backends.mock import MockWakeWord
-        
+        from strawberry.voice.wakeword.backends.mock import MockWakeWordDetector as MockWakeWord
+
         config = make_test_voice_config()
         core = VoiceCore(config)
-        
-        # Manually force state to SPEAKING
-        # Note: In real usage, this happens via speak() -> _speak_queue -> _speak_response -> _transition_to
-        # For testing logic, we bypass the queue/threads.
-        with core._state_lock:
-            # First go to PROCESSING (valid transition)
-            core._state = VoiceState.PROCESSING
-        core._transition_to(VoiceState.SPEAKING)
-        
+
+        # Start the pipeline and set up speaking state
+        core._pipeline.start()
+        core._pipeline.speaker.start_speaking("Test")
+
         # Setup mock wakeword to return a hit
-        core._wake_detector = MockWakeWord(["test"])
-        
+        mock_wake = MockWakeWord(["test"])
+        mock_wake.trigger_on_next()
+        core.component_manager.components.wake = mock_wake
+
         # Simulate audio frame that triggers wake word
-        # This calls _on_audio_frame -> _handle_idle (which we reused)
-        # Should trigger: 1. stop_speaking() 2. _start_recording()
         import numpy as np
         core._on_audio_frame(np.zeros(512, dtype=np.int16))
-        
+
         # Assertions
         assert core.state == VoiceState.LISTENING
-        # In a real run, stop_speaking() would clear queue and stop audio player.
-        # Since we mocked the flow, checking state transition is the primary verification.
+        # Speaker should be interrupted
+        assert core._pipeline.speaker.state == SpeakerState.INTERRUPTED
+
+
+class TestInterruptibleSpeech:
+    """Tests for interruptible speech (pause/resume)."""
+
+    def test_interruption_buffers_speech(self):
+        """Wake word during speaking should move current and pending speech to resume buffer."""
+        from strawberry.voice.wakeword.backends.mock import MockWakeWordDetector as MockWakeWord
+
+        config = make_test_voice_config()
+        core = VoiceCore(config)
+
+        # Start pipeline and set up speaking state
+        core._pipeline.start()
+        core._current_speech_text = "Part 1"
+        core.speak("Part 2")
+        core._pipeline.speaker.start_speaking("Part 1")
+
+        # Interrupt
+        mock_wake = MockWakeWord(["test"])
+        mock_wake.trigger_on_next()
+        core.component_manager.components.wake = mock_wake
+
+        import numpy as np
+        core._on_audio_frame(np.zeros(512, dtype=np.int16))
+
+        # Verify
+        assert core.state == VoiceState.LISTENING
+        assert core._pipeline.speaker.state == SpeakerState.INTERRUPTED
+        # Speech should be buffered in speaker FSM
+        assert core._pipeline.speaker.has_buffered_speech
+
+    def test_response_defers_during_listening_after_barge_in(self):
+        """Responses arriving while LISTENING should be deferred after barge-in."""
+        from strawberry.voice.wakeword.backends.mock import MockWakeWordDetector as MockWakeWord
+
+        config = make_test_voice_config()
+        core = VoiceCore(config)
+
+        # Start pipeline and set up speaking state
+        core._pipeline.start()
+        core._pipeline.speaker.start_speaking("Test")
+
+        # Trigger wake word to barge in
+        mock_wake = MockWakeWord(["test"])
+        mock_wake.trigger_on_next()
+        core.component_manager.components.wake = mock_wake
+
+        import numpy as np
+        core._on_audio_frame(np.zeros(512, dtype=np.int16))
+
+        assert core.state == VoiceState.LISTENING
+        assert core._pipeline.speaker.state == SpeakerState.INTERRUPTED
+
+        # Simulate speak loop delivering a response while LISTENING
+        core._speak_response("Deferred response")
+
+        assert core.state == VoiceState.LISTENING
+        # Response should be buffered in speaker FSM
+        assert "Deferred response" in core._pipeline.speaker._buffer
+
+    def test_no_speech_resumes_buffer(self):
+        """No speech detected after interruption should resume from buffer."""
+        config = make_test_voice_config()
+        core = VoiceCore(config)
+
+        # Start pipeline and set up listening state with buffered speech
+        core._pipeline.start()
+        core._pipeline.listener.start_listening()
+        core._pipeline.speaker._buffer = ["Saved 1", "Saved 2"]
+        core._recording_start_time = time.time()
+
+        # Setup mock VAD that saw NO speech
+        from strawberry.voice.vad.backends.mock import MockVAD
+        from strawberry.voice.vad.processor import VADProcessor
+        core.component_manager.components.vad_processor = VADProcessor(MockVAD())
+
+        # Finish recording (silent)
+        core._finish_recording()
+
+        # Verify - buffer should be cleared and items in speak queue
+        assert core._pipeline.speaker._buffer == []
+        assert core._speak_queue.get_nowait() == "Saved 1"
+        assert core._speak_queue.get_nowait() == "Saved 2"
+
+    def test_new_speech_clears_buffer(self):
+        """New valid speech should clear the resume buffer."""
+        config = make_test_voice_config()
+        core = VoiceCore(config)
+
+        # Start pipeline and set up processing state with buffered speech
+        core._pipeline.start()
+        core._pipeline.listener.start_listening()
+        core._pipeline.listener.start_processing()
+        core._pipeline.speaker._buffer = ["Old 1"]
+
+        # Setup mock STT result
+        from strawberry.voice.stt.base import TranscriptionResult
+
+        def mock_stt_success(audio):
+            return TranscriptionResult(text="New Command")
+
+        # We need to mock the stt component
+        class MockSTT:
+            def transcribe(self, audio): return TranscriptionResult(text="New Command")
+
+        core.component_manager.components.stt = MockSTT()
+        core.component_manager.stt_backend_names = ["mock"]
+        core.component_manager.active_stt_backend = "mock"
+
+        # Run process sync
+        core._process_audio_sync(np.zeros(1600, dtype=np.int16))
+
+        # Verify - buffer should be cleared
+        assert core._pipeline.speaker._buffer == []
+        # Check if it tried to speak the new command (it would be in the queue)
+        # However, _process_audio_sync calls self.speak(response) if handler exists.
+        # If no handler, it just goes IDLE.
+
+class TestStateMachineFixes:
+    """Tests for recent state machine fixes."""
+
+    def test_spontaneous_speech_from_idle(self):
+        """Should be able to speak directly from IDLE state."""
+        config = make_test_voice_config()
+        core = VoiceCore(config)
+
+        # Start the pipeline so state is IDLE
+        core._pipeline.start()
+
+        # This used to fail with Invalid state transition IDLE -> SPEAKING
+        # Now it should work because we allowed it in state.py
+        core._speak_response("Hello")
+        # After speaking completes, should be back to IDLE
+        assert core.state == VoiceState.IDLE
+
+    def test_false_alarm_interruption_cycle(self):
+        """Full cycle: Speaking -> Interrupted -> False Alarm -> Resuming -> Speaking."""
+        from strawberry.voice.vad.backends.mock import MockVAD
+        from strawberry.voice.vad.processor import VADProcessor
+        from strawberry.voice.wakeword.backends.mock import MockWakeWordDetector as MockWakeWord
+
+        config = make_test_voice_config()
+        core = VoiceCore(config)
+
+        # Start pipeline and set up speaking state
+        core._pipeline.start()
+        core._current_speech_text = "Original"
+        core._pipeline.speaker.start_speaking("Original")
+
+        # 2. Interruption (Wake Word)
+        mock_wake = MockWakeWord(["test"])
+        mock_wake.trigger_on_next()
+        core.component_manager.components.wake = mock_wake
+
+        import numpy as np
+        core._on_audio_frame(np.zeros(512, dtype=np.int16))
+
+        assert core.state == VoiceState.LISTENING
+        assert core._pipeline.speaker.has_buffered_speech
+
+        # 3. False Alarm (No Speech)
+        core.component_manager.components.vad_processor = VADProcessor(MockVAD())
+        core._recording_start_time = time.time()
+
+        core._finish_recording()
+
+        # 4. Should be IDLE and items in queue
+        assert core.state == VoiceState.IDLE
+        assert core._speak_queue.get_nowait() == "Original"
+
+        # 5. Background loop would now call _speak_response("Original")
+        # which transitions IDLE -> SPEAKING. This must be valid.
+        core._speak_response("Original")
+        assert core.state == VoiceState.IDLE
