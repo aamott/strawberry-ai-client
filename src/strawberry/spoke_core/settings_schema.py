@@ -48,6 +48,13 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         default="http://localhost:8000",
         description="URL of the central Hub",
         group="hub",
+        metadata={
+            "help_text": (
+                "The address of the central AI Hub instance.\n"
+                "If running locally, use http://localhost:8000.\n"
+                "If on a network, use http://<hub-ip>:8000."
+            )
+        },
     ),
     SettingField(
         key="hub.token",
@@ -76,6 +83,13 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         default="llama3.2:3b",
         description="Model to use when offline",
         group="offline",
+        metadata={
+            "help_text": (
+                "The Ollama model to use when the Hub is unreachable.\n"
+                "Ensure this model is pulled in Ollama:\n"
+                "ollama pull llama3.2:3b"
+            )
+        },
     ),
     SettingField(
         key="local_llm.enabled",
@@ -132,6 +146,14 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         default=0.7,
         description="LLM temperature (0.0-2.0, higher = more creative)",
         group="llm",
+        metadata={
+            "help_text": (
+                "Controls randomness of the output.\n"
+                "0.0 = Deterministic, focused.\n"
+                "0.7 = Balanced.\n"
+                "1.0+ = Creative, unpredictable."
+            )
+        },
     ),
 
     # Conversation

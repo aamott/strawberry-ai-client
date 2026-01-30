@@ -1,5 +1,7 @@
 """Tests for VoiceCore state machine and API."""
 
+import asyncio
+import threading
 import pytest
 
 from strawberry.shared.settings import SettingsManager
@@ -7,6 +9,7 @@ from strawberry.voice import (
     VoiceConfig,
     VoiceController,
     VoiceCore,
+    VoiceEvent,
     VoiceNoSpeechDetected,
     VoiceState,
     VoiceStateChanged,
@@ -320,3 +323,102 @@ class TestNoSpeechEvent:
 
         assert core.state == VoiceState.IDLE
         assert any(isinstance(e, VoiceNoSpeechDetected) for e in events)
+
+
+class TestPTT:
+    """Tests for Push-to-Talk logic."""
+
+    def test_ptt_stop_clears_active_flag_early(self):
+        """PTT stop should clear active flag even if not listening yet.
+
+        Simulates a quick button press/release where the release happens
+        before the system transitions to LISTENING.
+        """
+        config = make_test_voice_config()
+        core = VoiceCore(config)
+
+        # Start PTT (sets active=True)
+        # Note: In a real scenario, this might be async or racing with state transitions.
+        # We manually set the flag to simulate the race condition where
+        # push_to_talk_start was called but we haven't reached LISTENING yet.
+        core._ptt_active = True
+        core._state = VoiceState.IDLE  # Still IDLE, hasn't reached LISTENING
+
+        # Stop PTT
+        core.push_to_talk_stop()
+
+        assert core._ptt_active is False
+
+@pytest.mark.asyncio
+class TestThreadSafety:
+    """Tests for thread safety and event marshaling."""
+
+    async def test_emit_marshals_to_loop(self):
+        """_emit called from thread should run listener on loop."""
+        config = make_test_voice_config()
+        core = VoiceCore(config)
+        await core.start()
+        
+        loop = asyncio.get_running_loop()
+        listener_thread_id = None
+        event_received = asyncio.Event()
+
+        def listener(e):
+            nonlocal listener_thread_id
+            listener_thread_id = threading.get_ident()
+            # Signal completion
+            if loop.is_running():
+                 loop.call_soon_threadsafe(event_received.set)
+
+        core.add_listener(listener)
+
+        # Capture loop thread ID
+        loop_thread_id = threading.get_ident()
+
+        # Run emit from a worker thread
+        def run_emit():
+            core._emit(VoiceEvent())
+
+        t = threading.Thread(target=run_emit)
+        t.start()
+        t.join()
+
+        # Wait for listener to run
+        await asyncio.wait_for(event_received.wait(), timeout=1.0)
+
+        # Verify listener ran on the loop thread
+        assert listener_thread_id == loop_thread_id
+        
+        await core.stop()
+
+class TestBargeIn:
+    """Tests for barge-in functionality."""
+
+    def test_barge_in_stops_speaking(self):
+        """Wake word detection during SPEAKING should stop TTS and switch to LISTENING."""
+        from strawberry.voice.wakeword.backends.mock import MockWakeWord
+        
+        config = make_test_voice_config()
+        core = VoiceCore(config)
+        
+        # Manually force state to SPEAKING
+        # Note: In real usage, this happens via speak() -> _speak_queue -> _speak_response -> _transition_to
+        # For testing logic, we bypass the queue/threads.
+        with core._state_lock:
+            # First go to PROCESSING (valid transition)
+            core._state = VoiceState.PROCESSING
+        core._transition_to(VoiceState.SPEAKING)
+        
+        # Setup mock wakeword to return a hit
+        core._wake_detector = MockWakeWord(["test"])
+        
+        # Simulate audio frame that triggers wake word
+        # This calls _on_audio_frame -> _handle_idle (which we reused)
+        # Should trigger: 1. stop_speaking() 2. _start_recording()
+        import numpy as np
+        core._on_audio_frame(np.zeros(512, dtype=np.int16))
+        
+        # Assertions
+        assert core.state == VoiceState.LISTENING
+        # In a real run, stop_speaking() would clear queue and stop audio player.
+        # Since we mocked the flow, checking state transition is the primary verification.
