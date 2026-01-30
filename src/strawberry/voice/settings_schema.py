@@ -17,11 +17,12 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
     SettingField(
         key="stt.order",
         label="STT Fallback Order",
-        type=FieldType.TEXT,
-        default="leopard,whisper,google",
+        type=FieldType.PROVIDER_SELECT,  # Selects active provider
+        provider_type="stt",
+        provider_namespace_template="voice.stt.{value}",
+        default=["leopard", "whisper", "google"],
         description=(
-            "Comma-separated list of STT backends to try in order. "
-            "If the first fails, the next is tried."
+            "Ordered list of STT backends. First one is active provider."
         ),
         group="stt",
     ),
@@ -40,11 +41,12 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
     SettingField(
         key="tts.order",
         label="TTS Fallback Order",
-        type=FieldType.TEXT,
-        default="pocket,orca,piper,google",
+        type=FieldType.PROVIDER_SELECT,
+        provider_type="tts",
+        provider_namespace_template="voice.tts.{value}",
+        default=["pocket", "orca", "piper", "google"],
         description=(
-            "Comma-separated list of TTS backends to try in order. "
-            "If the first fails, the next is tried."
+            "Ordered list of TTS backends. First one is active provider."
         ),
         group="tts",
     ),
@@ -63,9 +65,11 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
     SettingField(
         key="vad.order",
         label="VAD Backend Order",
-        type=FieldType.TEXT,
-        default="silero",
-        description="Comma-separated list of VAD backends to try in order",
+        type=FieldType.PROVIDER_SELECT,
+        provider_type="vad",
+        provider_namespace_template="voice.vad.{value}",
+        default=["silero"],
+        description="Ordered list of VAD backends.",
         group="vad",
     ),
     SettingField(
@@ -115,9 +119,11 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
     SettingField(
         key="wakeword.order",
         label="Wake Word Backend Order",
-        type=FieldType.TEXT,
-        default="porcupine",
-        description="Comma-separated list of wake word backends to try",
+        type=FieldType.PROVIDER_SELECT,
+        provider_type="wakeword",
+        provider_namespace_template="voice.wakeword.{value}",
+        default=["porcupine"],
+        description="Ordered list of wake word backends.",
         group="wakeword",
     ),
 

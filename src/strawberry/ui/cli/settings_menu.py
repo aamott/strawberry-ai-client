@@ -154,6 +154,11 @@ class CLISettingsMenu:
             # Just return the value as-is since it should match an option
             return str(value)
 
+        if field_type == FieldType.LIST or field_type == FieldType.PROVIDER_SELECT:
+            if isinstance(value, list):
+                return ",".join(str(v) for v in value)
+            return str(value)
+
         return str(value)
 
     def _get_backend_options(self, key: str) -> list[str]:
@@ -210,8 +215,15 @@ class CLISettingsMenu:
                 # Actions are not editable
                 renderer.print_system("Action fields cannot be edited here.")
                 return
+            elif field_type == FieldType.LIST or field_type == FieldType.PROVIDER_SELECT:
+                # Check for specialized backend order editor
+                backend_options = self._get_backend_options(key)
+                if backend_options:
+                    new_value = self._edit_backend_order(current, backend_options, label)
+                else:
+                    new_value = self._edit_list(current, label)
             else:
-                # Check if this is a backend order field
+                # Legacy check (fallback)
                 backend_options = self._get_backend_options(key)
                 if backend_options:
                     new_value = self._edit_backend_order(current, backend_options, label)
@@ -249,7 +261,9 @@ class CLISettingsMenu:
         """
         # Parse current order
         current_list = []
-        if current:
+        if isinstance(current, list):
+            current_list = [str(x) for x in current]
+        elif current:
             current_list = [b.strip() for b in str(current).split(",") if b.strip()]
 
         print(f"  Current: {current or '(not set)'}")
@@ -293,10 +307,35 @@ class CLISettingsMenu:
                 result.append(part)
 
         if result:
+            # Return as list for LIST/PROVIDER_SELECT types
+            # (The renderer logic implies we want to keep it compatible with what expects it)
+            # But SettingsManager expects correct type.
+            # If the original value was a list, return a list.
+            if isinstance(current, list):
+                return result
+            # Legacy fallback: return string
             return ",".join(result)
 
         renderer.print_error("No valid backends selected")
         return None
+
+    def _edit_list(self, current: Any, label: str = "list") -> Optional[list[str]]:
+        """Edit a generic list field."""
+        current_str = ""
+        if isinstance(current, list):
+            current_str = ",".join(str(v) for v in current)
+        elif current:
+            current_str = str(current)
+
+        print(f"  Current: {current_str or '(empty)'}")
+        print()
+        print(f"  Enter new {label} items separated by commas (empty to cancel):")
+        new_value = _prompt("  > ")
+
+        if not new_value:
+            return None
+
+        return [p.strip() for p in new_value.split(",") if p.strip()]
 
     def _edit_password(self, current: Any, label: str = "value") -> Optional[str]:
         """Edit a password field."""

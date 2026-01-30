@@ -260,7 +260,9 @@ class SettingsViewModel:
                 raw_value = values.get(setting_field.key, setting_field.default) or ""
 
                 # If value is a list (like "order"), take the first one
-                if "," in str(raw_value):
+                if isinstance(raw_value, list):
+                    selected = raw_value[0] if raw_value else ""
+                elif "," in str(raw_value):
                     parts = [p.strip() for p in str(raw_value).split(",") if p.strip()]
                     selected = parts[0] if parts else ""
                 else:

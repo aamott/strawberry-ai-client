@@ -165,6 +165,29 @@ class SchemaFieldWidget(QWidget):
             )
             return widget
 
+        elif field.type == FieldType.LIST or field.type == FieldType.PROVIDER_SELECT:
+            # Render as comma-separated text for now
+            # TODO: Future - reorderable list widget
+            widget = QLineEdit()
+            text = ""
+            if isinstance(value, list):
+                text = ", ".join(str(v) for v in value)
+            elif value:
+                text = str(value)
+
+            widget.setText(text)
+            if field.placeholder:
+                widget.setPlaceholderText(field.placeholder)
+
+            # For PROVIDER_SELECT/LIST, we convert text back to list on change
+            # But _create_widget just connects the signal. serialization happens in get_value/emit
+            def on_change(text):
+                items = [x.strip() for x in text.split(",") if x.strip()]
+                self._emit_change(items)
+
+            widget.textChanged.connect(on_change)
+            return widget
+
         return None
 
     def _emit_change(self, value: Any) -> None:
@@ -199,6 +222,12 @@ class SchemaFieldWidget(QWidget):
             return widget.currentText()
         elif isinstance(widget, QPlainTextEdit):
             return widget.toPlainText()
+        elif isinstance(widget, QLineEdit) and (
+            self._field.type == FieldType.LIST or self._field.type == FieldType.PROVIDER_SELECT
+        ):
+            # Parse comma-separated list
+            text = widget.text()
+            return [x.strip() for x in text.split(",") if x.strip()]
 
         return self._value
 
@@ -228,6 +257,15 @@ class SchemaFieldWidget(QWidget):
                 widget.setCurrentIndex(idx)
         elif isinstance(widget, QPlainTextEdit):
             widget.setPlainText(str(value) if value else "")
+        elif isinstance(widget, QLineEdit) and (
+            self._field.type == FieldType.LIST or self._field.type == FieldType.PROVIDER_SELECT
+        ):
+            text = ""
+            if isinstance(value, list):
+                text = ", ".join(str(v) for v in value)
+            elif value:
+                text = str(value)
+            widget.setText(text)
 
         widget.blockSignals(False)
 
