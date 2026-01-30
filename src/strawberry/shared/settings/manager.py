@@ -98,6 +98,9 @@ class SettingsManager:
         # Action handlers for ACTION fields
         self._action_handlers: Dict[str, Callable[[str, str], Any]] = {}
 
+        # External validators: (namespace, key) -> callable(value) -> Optional[str]
+        self._validators: Dict[str, Callable[[Any], Optional[str]]] = {}
+
         # Load existing values from storage
         self._load()
 
@@ -252,9 +255,21 @@ class SettingsManager:
         if not skip_validation:
             field = self.get_field(namespace, key)
             if field is not None:
+                # 1. Schema-based validation
                 error = field.validate(value)
                 if error:
                     return error
+
+            # 2. External validation
+            validator_key = f"{namespace}:{key}"
+            if validator_key in self._validators:
+                try:
+                    error = self._validators[validator_key](value)
+                    if error:
+                        return error
+                except Exception as e:
+                    logger.error(f"External validator failed for {namespace}.{key}: {e}")
+                    return str(e)
 
         # Initialize namespace if needed
         if namespace not in self._values:
@@ -299,11 +314,11 @@ class SettingsManager:
                 errors[key] = error
             else:
                 changed = True
-        
+
         # Save once if needed
         if self._auto_save and changed:
             self.save()
-            
+
         return errors
 
     def reset_to_default(self, namespace: str, key: str) -> None:
@@ -469,6 +484,22 @@ class SettingsManager:
         """
         key = f"{namespace}:{action}"
         self._action_handlers[key] = handler
+
+    def register_validator(
+        self,
+        namespace: str,
+        key: str,
+        validator: Callable[[Any], Optional[str]],
+    ) -> None:
+        """Register an external validator for a setting.
+
+        Args:
+            namespace: The namespace.
+            key: The setting key.
+            validator: Callback accepting value, returning error string or None.
+        """
+        k = f"{namespace}:{key}"
+        self._validators[k] = validator
 
     async def execute_action(
         self,

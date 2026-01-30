@@ -32,6 +32,7 @@ class FieldType(Enum):
     ACTION = "action"
     MULTILINE = "multiline"
     PROVIDER_SELECT = "provider_select"
+    LIST = "list"
 
 
 @dataclass
@@ -75,6 +76,7 @@ class SettingField:
     placeholder: Optional[str] = None
     env_key: Optional[str] = None  # Explicit env var name for secrets
     provider_type: Optional[str] = None  # Type of provider (stt, tts) for PROVIDER_SELECT
+    provider_namespace_template: Optional[str] = None  # Template for provider namespace (e.g. "voice.{provider_type}.{value}")
 
     def __post_init__(self):
         """Validate field configuration."""

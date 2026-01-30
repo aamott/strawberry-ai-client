@@ -254,11 +254,11 @@ class SettingsViewModel:
                     continue
 
                 provider_type = setting_field.provider_type
-                
+
                 # Determine currently selected provider
                 # Logic handles both "order" (comma-separated list) and simple selection
                 raw_value = values.get(setting_field.key, setting_field.default) or ""
-                
+
                 # If value is a list (like "order"), take the first one
                 if "," in str(raw_value):
                     parts = [p.strip() for p in str(raw_value).split(",") if p.strip()]
@@ -267,9 +267,17 @@ class SettingsViewModel:
                     selected = str(raw_value)
 
                 available = self._get_available_providers(provider_type)
-                
-                # If using explicit provider selection, namespace is strictly defined
-                provider_ns = f"voice.{provider_type}.{selected}"
+
+                # Determine provider namespace using template or fallback
+                if setting_field.provider_namespace_template:
+                    provider_ns = setting_field.provider_namespace_template.format(
+                        provider_type=provider_type,
+                        value=selected
+                    )
+                else:
+                    # Default/Fallback behavior (backward compatibility)
+                    provider_ns = f"voice.{provider_type}.{selected}"
+
                 display_name = provider_type.upper()
 
                 patterns.append(
