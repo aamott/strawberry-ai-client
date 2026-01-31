@@ -48,6 +48,8 @@ class HubConnectionManager:
         self._hub_client: Optional[HubClient] = None
         self._hub_connected = False
         self._hub_websocket_task: Optional[asyncio.Task] = None
+        # Store skill_service reference for reconnection
+        self._skill_service: Optional["SkillService"] = None
 
     @property
     def client(self) -> Optional[HubClient]:
@@ -122,9 +124,11 @@ class HubConnectionManager:
             ))
             logger.info(f"Connected to Hub at {hub_url}")
 
-            # Register skills with hub
+            # Store and register skills with hub
             if skill_service:
-                await self._register_skills(skill_service)
+                self._skill_service = skill_service
+            if self._skill_service:
+                await self._register_skills(self._skill_service)
 
             # Connect WebSocket for skill execution requests
             self._hub_websocket_task = asyncio.create_task(

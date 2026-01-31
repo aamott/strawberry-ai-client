@@ -344,6 +344,18 @@ class SettingsManager:
         for field in self._namespaces[namespace].schema:
             self.set(namespace, field.key, field.default)
 
+    def set_env(self, key: str, value: str) -> None:
+        """Set an environment variable directly in the .env file.
+
+        This is a public API for setting secrets or legacy environment variables
+        that need to be persisted outside the normal namespace/key structure.
+
+        Args:
+            key: Environment variable name (e.g., "HUB_DEVICE_TOKEN").
+            value: Value to set.
+        """
+        self._env_storage.set(key, value)
+
     # ─────────────────────────────────────────────────────────────────
     # Schema Access (for UI)
     # ─────────────────────────────────────────────────────────────────

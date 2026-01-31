@@ -91,6 +91,14 @@ class TensorZeroClient:
         self._initialized = True
         return self._gateway
 
+    async def start(self) -> None:
+        """Initialize the embedded gateway.
+
+        This is a public API for explicitly starting the gateway. Typically
+        called during application startup.
+        """
+        await self._get_gateway()
+
     async def close(self) -> None:
         """Close the embedded gateway."""
         if self._gateway is not None:

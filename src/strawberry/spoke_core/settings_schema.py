@@ -166,6 +166,24 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         group="conversation",
     ),
 
+    # Testing
+    SettingField(
+        key="testing.deterministic_tool_hooks",
+        label="Deterministic Tool Hooks",
+        type=FieldType.CHECKBOX,
+        default=False,
+        description="Enable deterministic tool hooks for testing",
+        group="testing",
+        metadata={
+            "help_text": (
+                "When enabled, specific phrases trigger immediate tool execution:\n"
+                "- 'use search_skills' -> runs search_skills\n"
+                "- 'must use python_exec' with device.* -> runs python_exec\n"
+                "This makes tool-use tests deterministic."
+            )
+        },
+    ),
+
     # UI Settings
     SettingField(
         key="ui.theme",

@@ -156,7 +156,8 @@ class MainWindow(QMainWindow):
         # Check external dependencies and connect to Hub
         # Skills are loaded by SpokeCore in _start_core()
         self._check_external_dependencies()
-        QTimer.singleShot(100, lambda: asyncio.ensure_future(self._connect_hub()))
+        # Hub connection is triggered after SpokeCore starts to ensure
+        # skill callbacks are registered before WebSocket requests arrive.
 
     async def _start_core(self) -> None:
         """Start SpokeCore and subscribe to hub events."""
@@ -179,6 +180,9 @@ class MainWindow(QMainWindow):
                     )
                 else:
                     self._chat_area.add_system_message("No skills found")
+
+            # Connect to Hub after core startup completes.
+            await self._connect_hub()
 
         except Exception as exc:
             logger.exception("Failed to start SpokeCore")

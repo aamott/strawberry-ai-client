@@ -52,10 +52,12 @@ class TestSpokeCoreToolExecution:
 
     @pytest.fixture
     async def core(self):
-        """Create and start a SpokeCore instance."""
+        """Create and start a SpokeCore instance with deterministic test hooks."""
         from strawberry.spoke_core import SpokeCore
 
         core = SpokeCore()
+        # Enable deterministic tool hooks for testing
+        core._settings_manager.set("spoke_core", "testing.deterministic_tool_hooks", True)
         await core.start()
         yield core
         await core.stop()
