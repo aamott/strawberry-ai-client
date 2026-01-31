@@ -78,6 +78,11 @@ class SpokeCore:
         self._hub_runner: Optional[HubAgentRunner] = None
         self._local_runner: Optional[LocalAgentRunner] = None
 
+        # Cache for available models (avoids repeated sync network calls)
+        self._models_cache: Optional[List[str]] = None
+        self._models_cache_time: float = 0.0
+        self._models_cache_ttl: float = 60.0  # seconds
+
         # Register with SettingsManager
         self._register_with_settings_manager()
 
@@ -172,9 +177,8 @@ class SpokeCore:
 
                 # Also persist to .env file with legacy names
                 try:
-                    env_storage = self._settings_manager._env_storage
-                    env_storage.set("HUB_DEVICE_TOKEN", str_value)
-                    env_storage.set("HUB_TOKEN", str_value)
+                    self._settings_manager.set_env("HUB_DEVICE_TOKEN", str_value)
+                    self._settings_manager.set_env("HUB_TOKEN", str_value)
                     logger.debug("Persisted HUB_DEVICE_TOKEN to .env")
                 except Exception as e:
                     logger.warning(f"Failed to persist hub token: {e}")
@@ -215,7 +219,18 @@ class SpokeCore:
         self._hub_manager.schedule_reconnection()
 
     def _get_available_models(self) -> List[str]:
-        """Get available Ollama models for dynamic options."""
+        """Get available Ollama models for dynamic options.
+
+        Uses a 60-second cache to avoid repeated synchronous network calls
+        that could freeze UI threads.
+        """
+        import time
+
+        # Check cache first
+        now = time.time()
+        if self._models_cache and (now - self._models_cache_time) < self._models_cache_ttl:
+            return self._models_cache
+
         try:
             import httpx
 
@@ -225,12 +240,17 @@ class SpokeCore:
             response = httpx.get(f"{url}/api/tags", timeout=5.0)
             if response.status_code == 200:
                 models = response.json().get("models", [])
-                return [m["name"] for m in models]
+                self._models_cache = [m["name"] for m in models]
+                self._models_cache_time = now
+                return self._models_cache
         except Exception as e:
             logger.warning(f"Failed to fetch Ollama models: {e}")
 
-        # Fallback to common models
-        return ["llama3.2:3b", "llama3.2:1b", "gemma:7b", "mistral:7b"]
+        # Fallback to common models (also cached)
+        fallback = ["llama3.2:3b", "llama3.2:1b", "gemma:7b", "mistral:7b"]
+        self._models_cache = fallback
+        self._models_cache_time = now
+        return fallback
 
     def _hub_oauth_action(self) -> ActionResult:
         """Execute Hub OAuth action."""
@@ -261,7 +281,7 @@ class SpokeCore:
             self._event_bus.set_loop(asyncio.get_running_loop())
             # Initialize LLM client
             self._llm = TensorZeroClient()
-            await self._llm._get_gateway()
+            await self._llm.start()
 
             # Initialize skills
             use_sandbox = self._get_setting("skills.sandbox.enabled", True)
@@ -350,11 +370,15 @@ class SpokeCore:
             session.add_message("user", text)
             await self._emit(MessageAdded(session_id=session_id, role="user", content=text))
 
-            # Offline-only: deterministic tool execution hooks.
+            # Deterministic tool execution hooks (for testing).
             #
+            # Only enabled when testing.deterministic_tool_hooks is True.
             # When online, the Hub runs the agent loop (including tool calls) and
             # owns the system prompt, so the Spoke must not execute tools locally.
-            if (not self.is_online()) and self._skills:
+            deterministic_hooks = self._get_setting(
+                "testing.deterministic_tool_hooks", False
+            )
+            if deterministic_hooks and (not self.is_online()) and self._skills:
                 # If the user explicitly requests search_skills, run it immediately.
                 # This makes tool-use tests deterministic and provides the model with
                 # authoritative tool output.
