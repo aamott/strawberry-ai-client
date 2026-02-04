@@ -2,7 +2,7 @@
 
 from typing import Any, Optional
 
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget
 
 from strawberry.shared.settings import FieldType, SettingField
 
