@@ -51,6 +51,10 @@ class VoiceComponentManager:
         self._config = config
         self._settings_manager = settings_manager
 
+        # TTS init error details (backend name -> reason). Used to provide
+        # user-facing error messages when all backends fail.
+        self._tts_init_errors: Dict[str, str] = {}
+
         # Active components container
         self.components = VoiceComponents()
 
@@ -259,11 +263,13 @@ class VoiceComponentManager:
 
     async def _init_tts(self, backend_names: List[str]) -> None:
         """Initialize TTS."""
-        errors = []
+        errors: List[str] = []
         for name in backend_names:
             if await self.init_tts_backend(name):
                 return
-            errors.append(f"TTS backend '{name}' failed")
+
+            # Prefer the most specific stored error, otherwise fall back.
+            errors.append(self._tts_init_errors.get(name, f"TTS backend '{name}' failed"))
 
         raise RuntimeError(f"TTS initialization failed. Errors: {errors}")
 
@@ -271,10 +277,20 @@ class VoiceComponentManager:
         """Initialize a specific TTS backend (used for fallback)."""
         cls = self._tts_modules.get(name)
         if not cls:
+            self._tts_init_errors[name] = f"TTS backend '{name}' not found"
             return False
 
         if not cls.is_healthy():
-            logger.warning(f"Skipping TTS backend '{name}' (unhealthy)")
+            health_error = None
+            if hasattr(cls, "health_check_error"):
+                health_error = cls.health_check_error()
+            msg = (
+                f"TTS backend '{name}' skipped (unhealthy): {health_error}"
+                if health_error
+                else f"TTS backend '{name}' skipped (unhealthy)"
+            )
+            self._tts_init_errors[name] = msg
+            logger.warning(msg)
             return False
 
         try:
@@ -290,7 +306,9 @@ class VoiceComponentManager:
             logger.info(f"TTS backend selected: {name}")
             return True
         except Exception as e:
-            logger.warning(f"TTS backend '{name}' init failed: {e}")
+            msg = f"TTS backend '{name}' init failed: {e}"
+            self._tts_init_errors[name] = msg
+            logger.warning(msg)
             return False
 
     # -------------------------------------------------------------------------
