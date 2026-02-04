@@ -15,7 +15,7 @@ from . import renderer
 from .settings_menu import CLISettingsMenu
 
 # Configure logging to file instead of console.
-LOG_DIR = Path(__file__).parent.parent.parent.parent.parent / ".cli-logs"
+LOG_DIR = Path(__file__).parent.parent.parent.parent.parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 LOG_FILE = LOG_DIR / "cli.log"
 
@@ -44,10 +44,13 @@ def _configure_cli_logging() -> None:
     sys.stderr = stderr_log_handle
     atexit.register(stderr_log_handle.close)
 
+    # Force logging configuration so we always get a file handler even if
+    # something imported earlier configured logging.
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.FileHandler(LOG_FILE)],
+        handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8")],
+        force=True,
     )
 
 
