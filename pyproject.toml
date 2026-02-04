@@ -30,6 +30,12 @@ picovoice = [
     "pvcobra>=2.0",
     "pvleopard>=2.0",
 ]
+ai_studio = [
+    "google-genai>=0.0",
+]
+pocket = [
+    "pocket-tts>=0.0",
+]
 google = [
     "google-cloud-speech>=2.0",
     "google-cloud-texttospeech>=2.0",
@@ -50,7 +56,7 @@ dev = [
     "ruff>=0.1",
 ]
 all = [
-    "strawberry-spoke[picovoice,google,silero,ui,dev]",
+    "strawberry-spoke[picovoice,ai_studio,pocket,google,silero,ui,dev]",
 ]
 
 [project.scripts]
