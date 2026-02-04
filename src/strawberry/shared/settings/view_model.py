@@ -4,11 +4,14 @@ This module provides the SettingsViewModel class that presents settings
 in a structured format suitable for UI rendering.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 from .manager import SettingsManager
 from .schema import FieldType, SettingField
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -293,60 +296,6 @@ class SettingsViewModel:
                         provider_display_name=display_name,
                     )
                 )
-                continue
-
-            # FALLBACK: Keep backward compatibility with existing implicit patterns for now
-            # (or remove if we decide to fully migrate immediately, but safer to keep)
-            if setting_field.key.endswith(".order"):
-                # Extract provider type (e.g., "stt" from "stt.order")
-                provider_type = setting_field.key.rsplit(".", 1)[0]
-
-                # Get the order value and extract first provider
-                order_value = values.get(setting_field.key, setting_field.default) or ""
-                providers = [p.strip() for p in str(order_value).split(",") if p.strip()]
-
-                if not providers:
-                    continue
-
-                # Find available providers by checking registered namespaces
-                available = self._get_available_providers(provider_type)
-
-                # The "selected" provider is the first in the order
-                selected = providers[0] if providers else ""
-                provider_ns = f"voice.{provider_type}.{selected}"
-                display_name = provider_type.upper()
-
-                patterns.append(
-                    ProviderSection(
-                        parent_namespace=namespace,
-                        provider_field=setting_field,
-                        provider_key=setting_field.key,
-                        available_providers=available,
-                        selected_provider=selected,
-                        provider_settings_namespace=provider_ns,
-                        provider_display_name=display_name,
-                    )
-                )
-
-            elif setting_field.key.endswith(".backend"):
-                provider_type = setting_field.key.rsplit(".", 1)[0]
-                selected = values.get(setting_field.key, setting_field.default) or ""
-                available = self._get_available_providers(provider_type)
-                provider_ns = f"voice.{provider_type}.{selected}"
-
-                display_name = provider_type.upper()
-
-                patterns.append(
-                    ProviderSection(
-                        parent_namespace=namespace,
-                        provider_field=setting_field,
-                        provider_key=setting_field.key,
-                        available_providers=available,
-                        selected_provider=str(selected),
-                        provider_settings_namespace=provider_ns,
-                        provider_display_name=display_name,
-                    )
-                )
 
         return patterns
 
@@ -547,8 +496,8 @@ class SettingsViewModel:
         for callback in self._refresh_callbacks:
             try:
                 callback()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Settings refresh callback error: {e}")
 
     # ─────────────────────────────────────────────────────────────────
     # Utility Methods

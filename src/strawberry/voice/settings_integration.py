@@ -50,6 +50,7 @@ class VoiceSettingsHelper:
                 display_name="Voice",
                 schema=VOICE_CORE_SCHEMA,
                 order=20,
+                tab="Voice",
             )
             # Sync to config
             self._sync_config_from_manager()
@@ -57,12 +58,15 @@ class VoiceSettingsHelper:
         # 2. Register backend namespaces
         self._register_backend_namespaces()
 
-        # 3. Register validators
+        # 3. Register options providers for discovered backends
+        self._register_backend_options_providers()
+
+        # 4. Register validators
         self._settings_manager.register_validator(
             "voice_core", "tts.order", self._validate_tts_order
         )
 
-        # 4. Listen for changes
+        # 5. Listen for changes
         self._settings_manager.on_change(self._handle_settings_change)
 
     def _sync_config_from_manager(self) -> None:
@@ -130,12 +134,69 @@ class VoiceSettingsHelper:
                             display_name=f"{label_prefix}: {cls.name}",
                             schema=schema,
                             order=100,
+                            tab="Voice",
                         )
 
         reg(data["stt"], "stt", "STT")
         reg(data["tts"], "tts", "TTS")
         reg(data["vad"], "vad", "VAD")
         reg(data["wakeword"], "wakeword", "Wake")
+
+    def _register_backend_options_providers(self) -> None:
+        """Register options providers that return discovered backend names.
+
+        These providers allow the settings UI to get the list of available
+        backends for PROVIDER_SELECT fields without requiring all backends
+        to have registered namespaces.
+        """
+        data = self._component_manager.get_discovered_modules()
+
+        # Create provider functions that return backend names
+        def make_provider(modules: Dict[str, Any]):
+            return lambda: list(modules.keys())
+
+        self._settings_manager.register_options_provider(
+            "available_stt_backends", make_provider(data["stt"])
+        )
+        self._settings_manager.register_options_provider(
+            "available_tts_backends", make_provider(data["tts"])
+        )
+        self._settings_manager.register_options_provider(
+            "available_vad_backends", make_provider(data["vad"])
+        )
+        self._settings_manager.register_options_provider(
+            "available_wakeword_backends", make_provider(data["wakeword"])
+        )
+
+        # Register health check providers
+        self._settings_manager.register_options_provider(
+            "stt_backend_health",
+            lambda: {
+                name: self._component_manager.get_backend_health("stt", name)
+                for name in data["stt"]
+            },
+        )
+        self._settings_manager.register_options_provider(
+            "tts_backend_health",
+            lambda: {
+                name: self._component_manager.get_backend_health("tts", name)
+                for name in data["tts"]
+            },
+        )
+        self._settings_manager.register_options_provider(
+            "vad_backend_health",
+            lambda: {
+                name: self._component_manager.get_backend_health("vad", name)
+                for name in data["vad"]
+            },
+        )
+        self._settings_manager.register_options_provider(
+            "wakeword_backend_health",
+            lambda: {
+                name: self._component_manager.get_backend_health("wakeword", name)
+                for name in data["wakeword"]
+            },
+        )
 
     def _validate_tts_order(self, value: Any) -> Optional[str]:
         if not value:

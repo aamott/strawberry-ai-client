@@ -126,6 +126,13 @@ def parse_args() -> argparse.Namespace:
         help="Only print final assistant response (no tool calls).",
     )
 
+    parser.add_argument(
+        "--settings",
+        nargs="*",
+        metavar="CMD",
+        help="Settings CLI: list, show, get, set, apply, discard, edit, reset",
+    )
+
     return parser.parse_args()
 
 
@@ -326,9 +333,55 @@ async def run_interactive(
         await runner.stop()
 
 
+def run_settings_mode(args: argparse.Namespace) -> int:
+    """Run settings CLI mode.
+
+    Args:
+        args: Parsed command line arguments.
+
+    Returns:
+        Exit code.
+    """
+    from pathlib import Path
+
+    from strawberry.shared.settings import SettingsManager
+
+    from .settings_cli import run_settings_command
+
+    # Determine config directory
+    if args.config:
+        config_dir = args.config
+    else:
+        # Default to config/ relative to project root
+        config_dir = Path(__file__).parent.parent.parent.parent.parent / "config"
+
+    if not config_dir.exists():
+        print(f"Error: Config directory not found: {config_dir}", file=sys.stderr)
+        return EXIT_CONFIG_ERROR
+
+    # Initialize settings manager
+    settings = SettingsManager(config_dir, auto_save=False)
+
+    # Parse command and args
+    settings_args = args.settings or []
+    if not settings_args:
+        command = "list"
+        cmd_args = []
+    else:
+        command = settings_args[0]
+        cmd_args = settings_args[1:]
+
+    return run_settings_command(settings, command, cmd_args)
+
+
 def main() -> None:
     """Main entry point."""
     args = parse_args()
+
+    # Handle settings mode first (doesn't need full SpokeCore)
+    if args.settings is not None:
+        exit_code = run_settings_mode(args)
+        sys.exit(exit_code)
 
     # Determine log file location
     log_dir = Path(__file__).parent.parent.parent.parent.parent / ".test-cli-logs"

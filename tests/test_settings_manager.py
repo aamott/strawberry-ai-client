@@ -287,22 +287,26 @@ class TestSettingsViewModel:
         assert "auth" in section.groups
 
     def test_provider_sections(self, settings_manager):
-        """Test provider sections for voice backends."""
-        # Create voice_core schema with provider order fields
+        """Test provider sections for voice backends using explicit PROVIDER_SELECT."""
+        # Create voice_core schema with explicit PROVIDER_SELECT fields
         voice_schema = [
             SettingField(
                 key="stt.order",
                 label="STT Order",
-                type=FieldType.TEXT,
+                type=FieldType.PROVIDER_SELECT,
                 default="whisper,google",
                 group="stt",
+                provider_type="stt",
+                provider_namespace_template="voice.stt.{value}",
             ),
             SettingField(
                 key="tts.order",
                 label="TTS Order",
-                type=FieldType.TEXT,
+                type=FieldType.PROVIDER_SELECT,
                 default="piper,google",
                 group="tts",
+                provider_type="tts",
+                provider_namespace_template="voice.tts.{value}",
             ),
         ]
 
