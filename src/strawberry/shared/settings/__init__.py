@@ -21,6 +21,7 @@ Example usage:
 """
 
 from .manager import (
+    MigrationFunc,
     RegisteredNamespace,
     SettingsManager,
     get_settings_manager,
@@ -29,10 +30,13 @@ from .manager import (
 from .schema import (
     ActionResult,
     FieldType,
+    SecretValue,
     SettingField,
+    ValidationMode,
     get_field_by_key,
     group_fields,
 )
+from .storage import parse_list_value
 from .view_model import (
     ProviderSection,
     SettingsSection,
@@ -45,11 +49,14 @@ __all__ = [
     "FieldType",
     "SettingField",
     "ActionResult",
+    "SecretValue",
+    "ValidationMode",
     "get_field_by_key",
     "group_fields",
     # Manager
     "SettingsManager",
     "RegisteredNamespace",
+    "MigrationFunc",
     "get_settings_manager",
     "init_settings_manager",
     # ViewModel
@@ -57,4 +64,6 @@ __all__ = [
     "SettingsSection",
     "ProviderSection",
     "ValidationResult",
+    # Storage utilities
+    "parse_list_value",
 ]

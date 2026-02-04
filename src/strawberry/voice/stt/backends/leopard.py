@@ -45,6 +45,7 @@ class LeopardSTT(STTEngine):
                 label="Picovoice Access Key",
                 type=FieldType.PASSWORD,
                 secret=True,
+                env_key="PICOVOICE_API_KEY",
                 description="API key from Picovoice Console",
             ),
             SettingField(
@@ -55,7 +56,6 @@ class LeopardSTT(STTEngine):
                 description="Optional path to custom Leopard model file",
             ),
         ]
-
 
     def __init__(
         self,
@@ -73,7 +73,7 @@ class LeopardSTT(STTEngine):
             ImportError: If pvleopard is not installed
             ValueError: If access_key is not provided
         """
-        if access_key is None:
+        if not access_key:
             access_key = os.environ.get("PICOVOICE_API_KEY")
 
         if not access_key:

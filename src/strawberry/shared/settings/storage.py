@@ -316,6 +316,31 @@ def namespace_to_env_key(namespace: str, key: str) -> str:
     return f"{ns_part}__{key_part}"
 
 
+def parse_list_value(value: Any) -> list:
+    """Parse a value that should be a list.
+
+    Handles backward compatibility with CSV strings stored in older configs.
+
+    Args:
+        value: The value to parse (list, CSV string, or other).
+
+    Returns:
+        List of items.
+    """
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    if isinstance(value, str):
+        # Handle CSV strings for backward compatibility
+        if "," in value:
+            return [item.strip() for item in value.split(",") if item.strip()]
+        # Single value
+        return [value] if value.strip() else []
+    # Other types - wrap in list
+    return [value]
+
+
 def env_key_to_namespace(
     env_key: str, known_namespaces: list[str]
 ) -> tuple[Optional[str], str]:

@@ -10,15 +10,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from .schema import ActionResult, SettingField
+from .schema import ActionResult, FieldType, SettingField
 from .storage import (
     EnvStorage,
     YamlStorage,
     env_key_to_namespace,
     namespace_to_env_key,
+    parse_list_value,
 )
 
 logger = logging.getLogger(__name__)
+
+
+# Type alias for migration functions: (old_values) -> new_values
+MigrationFunc = Callable[[Dict[str, Any]], Dict[str, Any]]
 
 
 @dataclass
@@ -30,12 +35,17 @@ class RegisteredNamespace:
         display_name: Human-readable name for UI (e.g., "Spoke Core").
         schema: List of SettingField definitions.
         order: Display order in UI (lower = first).
+        schema_version: Version number for migration support.
+        tab: UI tab name (e.g., "General", "Voice", "Skills"). Defaults to "General".
     """
 
     name: str
     display_name: str
     schema: List[SettingField]
+    schema_by_key: Dict[str, SettingField] = None  # Built during register()
     order: int = 100
+    schema_version: int = 1
+    tab: str = "General"
 
 
 class SettingsManager:
@@ -92,6 +102,9 @@ class SettingsManager:
         # Change listeners
         self._listeners: List[Callable[[str, str, Any], None]] = []
 
+        # Save listeners (called after save() completes)
+        self._save_listeners: List[Callable[[], None]] = []
+
         # Options providers for DYNAMIC_SELECT fields
         self._options_providers: Dict[str, Callable[[], List[str]]] = {}
 
@@ -100,6 +113,13 @@ class SettingsManager:
 
         # External validators: (namespace, key) -> callable(value) -> Optional[str]
         self._validators: Dict[str, Callable[[Any], Optional[str]]] = {}
+
+        # Change batching: buffer changes and emit once at end
+        self._batch_mode: bool = False
+        self._pending_changes: Dict[str, Dict[str, Any]] = {}  # namespace -> {key: value}
+
+        # Schema migrations: (namespace, from_version, to_version) -> migration_func
+        self._migrations: Dict[str, MigrationFunc] = {}
 
         # Load existing values from storage
         self._load()
@@ -119,6 +139,8 @@ class SettingsManager:
         display_name: str,
         schema: List[SettingField],
         order: int = 100,
+        schema_version: int = 1,
+        tab: str = "General",
     ) -> None:
         """Register a settings namespace with its schema.
 
@@ -127,6 +149,8 @@ class SettingsManager:
             display_name: Human-readable name for UI (e.g., "Spoke Core").
             schema: List of SettingField definitions.
             order: Display order in UI (lower = first).
+            schema_version: Version number for migration support.
+            tab: UI tab name for grouping (e.g., "General", "Voice", "Skills").
 
         Raises:
             ValueError: If namespace is already registered.
@@ -134,12 +158,21 @@ class SettingsManager:
         if namespace in self._namespaces:
             raise ValueError(f"Namespace '{namespace}' already registered")
 
+        # Build schema index for O(1) field lookups
+        schema_by_key = {field.key: field for field in schema}
+
         self._namespaces[namespace] = RegisteredNamespace(
             name=namespace,
             display_name=display_name,
             schema=schema,
+            schema_by_key=schema_by_key,
             order=order,
+            schema_version=schema_version,
+            tab=tab,
         )
+
+        # Run migrations if stored version differs from registered version
+        self._run_migrations(namespace, schema_version)
 
         # Initialize values with defaults if not already loaded
         if namespace not in self._values:
@@ -150,6 +183,12 @@ class SettingsManager:
         for field in schema:
             if field.key not in self._values[namespace]:
                 self._values[namespace][field.key] = field.default
+
+            # Normalize LIST fields (convert CSV strings to lists for backward compat)
+            if field.type == FieldType.LIST:
+                current_value = self._values[namespace].get(field.key)
+                if current_value is not None and not isinstance(current_value, list):
+                    self._values[namespace][field.key] = parse_list_value(current_value)
 
             # Load secrets with custom env_key from environment variables (os.environ)
             # This handles explicit overrides defined in schema (e.g. API keys)
@@ -192,6 +231,104 @@ class SettingsManager:
             True if registered, False otherwise.
         """
         return namespace in self._namespaces
+
+    # ─────────────────────────────────────────────────────────────────
+    # Schema Migrations
+    # ─────────────────────────────────────────────────────────────────
+
+    def register_migration(
+        self,
+        namespace: str,
+        from_version: int,
+        to_version: int,
+        migrator: MigrationFunc,
+    ) -> None:
+        """Register a migration function for a namespace.
+
+        Migrations are run automatically when a namespace is registered
+        with a newer schema_version than what's stored.
+
+        Args:
+            namespace: The namespace this migration applies to.
+            from_version: The version to migrate from.
+            to_version: The version to migrate to.
+            migrator: Function that takes old values dict and returns new values dict.
+        """
+        key = f"{namespace}:{from_version}:{to_version}"
+        self._migrations[key] = migrator
+        logger.debug(f"Registered migration: {key}")
+
+    def _run_migrations(self, namespace: str, target_version: int) -> None:
+        """Run migrations to bring stored values up to target version.
+
+        Args:
+            namespace: The namespace to migrate.
+            target_version: The version to migrate to.
+        """
+        # Get stored version from YAML metadata
+        stored_version = self._get_stored_schema_version(namespace)
+
+        if stored_version >= target_version:
+            return  # Already up to date
+
+        logger.info(
+            f"Migrating {namespace} from version {stored_version} to {target_version}"
+        )
+
+        # Run migrations sequentially
+        current_version = stored_version
+        while current_version < target_version:
+            next_version = current_version + 1
+            key = f"{namespace}:{current_version}:{next_version}"
+
+            if key in self._migrations:
+                migrator = self._migrations[key]
+                try:
+                    old_values = self._values.get(namespace, {})
+                    new_values = migrator(old_values)
+                    self._values[namespace] = new_values
+                    logger.debug(f"Applied migration: {key}")
+                except Exception as e:
+                    logger.error(f"Migration {key} failed: {e}")
+                    break
+            else:
+                logger.debug(f"No migration found for {key}, skipping")
+
+            current_version = next_version
+
+        # Store the new version
+        self._set_stored_schema_version(namespace, target_version)
+
+    def _get_stored_schema_version(self, namespace: str) -> int:
+        """Get the stored schema version for a namespace.
+
+        Args:
+            namespace: The namespace.
+
+        Returns:
+            Stored version number, or 0 if not found.
+        """
+        meta = self._values.get("_meta", {})
+        versions = meta.get("schema_versions", {})
+        return versions.get(namespace, 0)
+
+    def _set_stored_schema_version(self, namespace: str, version: int) -> None:
+        """Store the schema version for a namespace.
+
+        Args:
+            namespace: The namespace.
+            version: The version number to store.
+        """
+        if "_meta" not in self._values:
+            self._values["_meta"] = {}
+        if "schema_versions" not in self._values["_meta"]:
+            self._values["_meta"]["schema_versions"] = {}
+
+        self._values["_meta"]["schema_versions"][namespace] = version
+
+        # Persist to YAML
+        if self._auto_save:
+            self._yaml_storage.set("_meta", f"schema_versions.{namespace}", version)
 
     # ─────────────────────────────────────────────────────────────────
     # Value Access
@@ -407,10 +544,8 @@ class SettingsManager:
         """
         if namespace not in self._namespaces:
             return None
-        for field in self._namespaces[namespace].schema:
-            if field.key == key:
-                return field
-        return None
+        # O(1) lookup via schema_by_key index
+        return self._namespaces[namespace].schema_by_key.get(key)
 
     def is_secret(self, namespace: str, key: str) -> bool:
         """Check if a field is marked as secret.
@@ -573,19 +708,89 @@ class SettingsManager:
         if callback in self._listeners:
             self._listeners.remove(callback)
 
+    def on_save(self, callback: Callable[[], None]) -> None:
+        """Register a callback to be invoked after settings are saved.
+
+        This allows systems to subscribe to save events for health checks,
+        reinitialization, or other post-save actions.
+
+        Args:
+            callback: Function called after save() completes successfully.
+        """
+        self._save_listeners.append(callback)
+
+    def remove_save_listener(self, callback: Callable[[], None]) -> None:
+        """Remove a save listener.
+
+        Args:
+            callback: The callback to remove.
+        """
+        if callback in self._save_listeners:
+            self._save_listeners.remove(callback)
+
     def _emit_change(self, namespace: str, key: str, value: Any) -> None:
         """Notify all listeners of a change.
+
+        If batch mode is enabled, changes are buffered and emitted when
+        batch mode ends. Otherwise, listeners are notified immediately.
 
         Args:
             namespace: The namespace that changed.
             key: The key that changed.
             value: The new value.
         """
-        for listener in self._listeners:
+        if self._batch_mode:
+            # Buffer the change for later emission
+            if namespace not in self._pending_changes:
+                self._pending_changes[namespace] = {}
+            self._pending_changes[namespace][key] = value
+            return
+
+        # Immediate emission (snapshot list to avoid mutation during iteration)
+        for listener in list(self._listeners):
             try:
                 listener(namespace, key, value)
             except Exception as e:
                 logger.warning(f"Settings listener error: {e}")
+
+    def begin_batch(self) -> None:
+        """Begin batching change events.
+
+        While in batch mode, change events are buffered instead of
+        immediately emitted. Call end_batch() to emit all buffered changes.
+        Useful for making multiple related changes without triggering
+        N listener invocations.
+        """
+        self._batch_mode = True
+        self._pending_changes.clear()
+
+    def end_batch(self, emit: bool = True) -> None:
+        """End batching and optionally emit buffered changes.
+
+        Args:
+            emit: If True, emit all buffered changes. If False, discard them.
+        """
+        self._batch_mode = False
+
+        if not emit:
+            self._pending_changes.clear()
+            return
+
+        # Emit all buffered changes
+        for namespace, changes in self._pending_changes.items():
+            for key, value in changes.items():
+                for listener in list(self._listeners):
+                    try:
+                        listener(namespace, key, value)
+                    except Exception as e:
+                        logger.warning(f"Settings listener error: {e}")
+
+        self._pending_changes.clear()
+
+    @property
+    def is_batching(self) -> bool:
+        """Check if batch mode is currently active."""
+        return self._batch_mode
 
     # ─────────────────────────────────────────────────────────────────
     # Persistence
@@ -629,7 +834,7 @@ class SettingsManager:
             for key, value in ns_values.items():
                 if self.is_secret(namespace, key):
                     env_key = self._get_env_key(namespace, key)
-                    env_values[env_key] = str(value) if value else ""
+                    env_values[env_key] = "" if value is None else str(value)
                 else:
                     yaml_values[namespace][key] = value
 
@@ -637,6 +842,13 @@ class SettingsManager:
         self._env_storage.save(env_values)
 
         logger.debug(f"Saved settings to {self._config_dir}")
+
+        # Notify save listeners
+        for listener in self._save_listeners:
+            try:
+                listener()
+            except Exception as e:
+                logger.warning(f"Save listener error: {e}")
 
     def reload(self) -> None:
         """Reload settings from storage, discarding unsaved changes."""

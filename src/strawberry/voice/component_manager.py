@@ -354,3 +354,59 @@ class VoiceComponentManager:
             return [name for name in names if name]
         names = [str(item).strip() for item in value]
         return [name for name in names if name]
+
+    def get_backend_health(self, type_: str, name: str) -> tuple[bool, str | None]:
+        """Check if a backend is healthy.
+
+        Args:
+            type_: Backend type ("stt", "tts", "vad", "wakeword").
+            name: Backend name (e.g., "whisper", "pocket").
+
+        Returns:
+            Tuple of (is_healthy, error_message).
+        """
+        modules = {
+            "stt": self._stt_modules,
+            "tts": self._tts_modules,
+            "vad": self._vad_modules,
+            "wakeword": self._wake_modules,
+        }
+
+        module_dict = modules.get(type_, {})
+        if not module_dict:
+            self.refresh_module_discovery()
+            module_dict = modules.get(type_, {})
+
+        cls = module_dict.get(name)
+        if not cls:
+            return False, f"Backend '{name}' not found"
+
+        try:
+            if hasattr(cls, "is_healthy") and not cls.is_healthy():
+                error = cls.health_check_error() if hasattr(cls, "health_check_error") else None
+                return False, error or "Backend unavailable"
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def get_all_backend_health(self) -> Dict[str, Dict[str, tuple[bool, str | None]]]:
+        """Get health status for all discovered backends.
+
+        Returns:
+            Dict mapping type -> name -> (is_healthy, error_message).
+        """
+        if not self._stt_modules:
+            self.refresh_module_discovery()
+
+        result: Dict[str, Dict[str, tuple[bool, str | None]]] = {}
+        for type_, modules in [
+            ("stt", self._stt_modules),
+            ("tts", self._tts_modules),
+            ("vad", self._vad_modules),
+            ("wakeword", self._wake_modules),
+        ]:
+            result[type_] = {}
+            for name in modules:
+                result[type_][name] = self.get_backend_health(type_, name)
+
+        return result

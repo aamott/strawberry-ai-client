@@ -47,6 +47,7 @@ class CobraVAD(VADBackend):
                 label="Picovoice Access Key",
                 type=FieldType.PASSWORD,
                 secret=True,
+                env_key="PICOVOICE_API_KEY",
                 description=(
                     "API key from Picovoice Console. "
                     "Same key works for Porcupine, Leopard, Orca, etc."
@@ -96,7 +97,7 @@ class CobraVAD(VADBackend):
         self._last_probability = 0.0
 
         # Resolve access key
-        if access_key is None:
+        if not access_key:
             access_key = os.environ.get("PICOVOICE_API_KEY")
 
         if not access_key:

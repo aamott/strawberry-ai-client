@@ -120,6 +120,7 @@ class SpokeCore:
                 display_name="Spoke Core",
                 schema=SPOKE_CORE_SCHEMA,
                 order=10,
+                tab="General",
             )
 
         # Register MCP namespace so MCP settings appear automatically in UIs.
@@ -132,6 +133,7 @@ class SpokeCore:
                 display_name="MCP",
                 schema=MCP_SETTINGS_SCHEMA,
                 order=35,
+                tab="Skills",
             )
 
         # Register options providers

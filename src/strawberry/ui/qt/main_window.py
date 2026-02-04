@@ -1487,7 +1487,11 @@ class MainWindow(QMainWindow):
 
     def _on_settings(self):
         """Open settings dialog."""
-        from .widgets.settings import SettingsDialog
+        from .settings.dialog import SettingsDialog
+
+        if not self._settings_manager:
+            self._chat_area.add_system_message("Settings manager not available")
+            return
 
         dialog = SettingsDialog(
             settings_manager=self._settings_manager,
