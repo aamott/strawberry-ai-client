@@ -360,13 +360,26 @@ class SettingsManager:
     def get_all(self, namespace: str) -> Dict[str, Any]:
         """Get all settings for a namespace.
 
+        Includes values from YAML storage and environment variables for
+        fields that are secrets or define an explicit env_key.
+
         Args:
             namespace: The namespace.
 
         Returns:
             Dict of all settings in the namespace.
         """
-        return dict(self._values.get(namespace, {}))
+        values = dict(self._values.get(namespace, {}))
+
+        if namespace in self._namespaces:
+            for field in self._namespaces[namespace].schema:
+                if field.env_key or field.secret:
+                    env_key = self._get_env_key(namespace, field.key)
+                    env_value = self._env_storage.get(env_key)
+                    if env_value is not None:
+                        values[field.key] = env_value
+
+        return values
 
     def set(
         self,
