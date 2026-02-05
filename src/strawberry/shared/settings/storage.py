@@ -7,7 +7,7 @@ and environment files (.env).
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 from dotenv import load_dotenv, set_key
@@ -235,18 +235,51 @@ class EnvStorage:
         """
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-        lines = []
-        for key, value in sorted(data.items()):
-            # Quote values with spaces or special characters
-            if value and (" " in value or '"' in value or "'" in value):
-                # Escape existing quotes and wrap in double quotes
-                escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-                value = f'"{escaped}"'
-            lines.append(f"{key}={value}")
+        existing_lines = self._read_raw_lines()
+        seen_keys: set[str] = set()
+        written_keys: set[str] = set()
+        output_lines: List[str] = []
+        duplicate_keys: set[str] = set()
+
+        for raw_line in existing_lines:
+            line = raw_line.rstrip("\n")
+            stripped = line.strip()
+
+            # Preserve comments/blank/unknown lines untouched
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                output_lines.append(line)
+                continue
+
+            key, _, current_value = line.partition("=")
+            key = key.strip()
+
+            if key in seen_keys:
+                duplicate_keys.add(key)
+                continue  # drop later duplicates to avoid multiple definitions
+
+            seen_keys.add(key)
+
+            if key in data:
+                new_value = self._format_env_value(data[key])
+                output_lines.append(f"{key}={new_value}")
+                written_keys.add(key)
+            else:
+                output_lines.append(line)
+
+        # Append new keys not present in the original file
+        for key, value in data.items():
+            if key in written_keys:
+                continue
+            output_lines.append(f"{key}={self._format_env_value(value)}")
+
+        if duplicate_keys:
+            logger.warning(
+                "Removed duplicate env keys during save: %s", ", ".join(sorted(duplicate_keys))
+            )
 
         with open(self._path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-            if lines:
+            f.write("\n".join(output_lines))
+            if output_lines:
                 f.write("\n")
 
     def set(self, key: str, value: Any) -> None:
@@ -284,6 +317,29 @@ class EnvStorage:
         # Fall back to loading from file
         data = self.load()
         return data.get(key, default)
+
+    def _read_raw_lines(self) -> List[str]:
+        """Read raw lines from the .env file preserving comments and blanks."""
+
+        if not self._path.exists():
+            return []
+
+        try:
+            with open(self._path, encoding="utf-8") as f:
+                return f.readlines()
+        except OSError as e:
+            logger.warning(f"Failed to read .env from {self._path}: {e}")
+            return []
+
+    @staticmethod
+    def _format_env_value(value: Any) -> str:
+        """Format an env value with minimal quoting to preserve readability."""
+
+        text = "" if value is None else str(value)
+        if text and (" " in text or '"' in text or "'" in text):
+            escaped = text.replace("\\", "\\\\").replace('"', '\\\"')
+            return f'"{escaped}"'
+        return text
 
     def delete(self, key: str) -> None:
         """Delete an environment variable.
