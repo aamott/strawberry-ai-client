@@ -852,7 +852,12 @@ class SettingsManager:
                     yaml_values[namespace][key] = value
 
         self._yaml_storage.save(yaml_values)
-        self._env_storage.save(env_values)
+
+        # Merge managed secrets into existing .env content to avoid overwriting
+        # unrelated environment variables maintained outside the settings system.
+        existing_env = self._env_storage.load()
+        merged_env = {**existing_env, **env_values}
+        self._env_storage.save(merged_env)
 
         logger.debug(f"Saved settings to {self._config_dir}")
 
