@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
 
+import anyio
 import httpx
 from tenacity import (
     before_sleep_log,
@@ -295,11 +296,14 @@ class HubClient:
         if max_tokens:
             payload["max_tokens"] = max_tokens
 
-        async with self.client.stream(
+        stream_cm = self.client.stream(
             "POST",
             "/api/v1/chat/completions",
             json=payload,
-        ) as response:
+        )
+        response: Optional[httpx.Response] = None
+        try:
+            response = await stream_cm.__aenter__()
             self._check_response(response)
 
             async for line in response.aiter_lines():
@@ -320,6 +324,18 @@ class HubClient:
 
                 if isinstance(event, dict):
                     yield event
+        except (asyncio.CancelledError, GeneratorExit):
+            raise
+        finally:
+            # During GUI shutdown, the task consuming this async generator may be
+            # cancelled while httpx/httpcore is still cleaning up the underlying
+            # streaming response. If cleanup is interrupted, anyio may raise:
+            # "Attempted to exit cancel scope in a different task".
+            #
+            # Shield the stream context manager exit from cancellation to ensure
+            # the response is always closed cleanly.
+            with anyio.CancelScope(shield=True):
+                await stream_cm.__aexit__(None, None, None)
 
     async def chat_simple(self, user_message: str) -> str:
         """Simple chat - send a message and get a reply.
