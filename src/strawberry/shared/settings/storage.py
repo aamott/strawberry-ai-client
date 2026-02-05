@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -293,8 +293,10 @@ class EnvStorage:
 
         str_value = str(value) if value is not None else ""
 
-        # Use dotenv's set_key for proper escaping
-        set_key(str(self._path), key, str_value)
+        # Preserve comments/ordering by using our comment-aware save path.
+        # This avoids rewriting the entire file in a way that can drop user
+        # organization.
+        self.save({key: str_value})
 
         # Also update the current environment
         os.environ[key] = str_value
