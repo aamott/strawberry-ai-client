@@ -361,7 +361,8 @@ class MainWindow(QMainWindow):
             self._input_area.set_voice_mode_active(True)
 
             # Check if wake word detection is available
-            if self._voice_core._wake_detector:
+            wake_detector = self._voice_core.component_manager.components.wake
+            if wake_detector:
                 wake_words = ", ".join(self._voice_core._config.wake_words)
                 self._chat_area.add_system_message(
                     f"Voice mode started. Say '{wake_words}' to begin speaking."
@@ -1493,9 +1494,11 @@ class MainWindow(QMainWindow):
             self._chat_area.add_system_message("Settings manager not available")
             return
 
+        # Don't pass parent to avoid inheriting main window's stylesheet
+        # The stylesheet causes pink buttons, invisible checkmarks, etc.
         dialog = SettingsDialog(
             settings_manager=self._settings_manager,
-            parent=self,
+            parent=None,
         )
         dialog.exec()
 
