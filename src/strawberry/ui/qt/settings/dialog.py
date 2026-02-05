@@ -56,6 +56,11 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Settings")
         self.setMinimumSize(700, 500)
 
+        # Clear inherited stylesheet to use native Qt styling
+        # The main window applies a global custom theme that breaks
+        # settings UI elements (pink buttons, invisible checkmarks, etc.)
+        self.setStyleSheet("")
+
         self._settings = settings_manager
         self.vm = SettingsViewModel(settings_manager)
 
