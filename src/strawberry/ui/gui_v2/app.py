@@ -19,6 +19,27 @@ from .models.state import ConnectionStatus, VoiceStatus
 logger = logging.getLogger(__name__)
 
 
+def _ensure_settings_manager(
+    settings_manager: Optional["SettingsManager"] = None,
+) -> "SettingsManager":
+    """Create a SettingsManager if one was not provided.
+
+    Args:
+        settings_manager: Existing manager or None.
+
+    Returns:
+        A ready-to-use SettingsManager.
+    """
+    if settings_manager is not None:
+        return settings_manager
+
+    from ...shared.settings import SettingsManager
+    from ...utils.paths import get_project_root
+
+    config_dir = get_project_root() / "config"
+    return SettingsManager(config_dir=config_dir, env_filename="../.env")
+
+
 def run_app(
     settings_manager: Optional["SettingsManager"] = None,
     voice_core: Optional["VoiceCore"] = None,
@@ -32,6 +53,9 @@ def run_app(
     Returns:
         Application exit code
     """
+    # Ensure we always have a SettingsManager
+    settings_manager = _ensure_settings_manager(settings_manager)
+
     # Create Qt application
     app = QApplication.instance()
     if app is None:
@@ -75,6 +99,9 @@ def run_app_async(
     except ImportError:
         logger.warning("qasync not installed, falling back to sync mode")
         return run_app(settings_manager, voice_core)
+
+    # Ensure we always have a SettingsManager
+    settings_manager = _ensure_settings_manager(settings_manager)
 
     # Create Qt application
     app = QApplication.instance()
@@ -357,6 +384,9 @@ def run_app_integrated(
 
     from ...spoke_core import SpokeCore
 
+    # Ensure we always have a SettingsManager
+    settings_manager = _ensure_settings_manager(settings_manager)
+
     # Create Qt application
     app = QApplication.instance()
     if app is None:
@@ -403,7 +433,7 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # Run the integrated app
+    # Run the integrated app (SettingsManager created automatically)
     # Note: httpcore may print "no running event loop" errors during shutdown.
     # These are cosmetic and don't affect functionality - they occur because
     # qasync closes the event loop before httpcore can clean up connections.
