@@ -13,7 +13,14 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 from ..hub import HubError
-from .events import CoreError, CoreEvent, MessageAdded, ToolCallResult, ToolCallStarted
+from .events import (
+    CoreError,
+    CoreEvent,
+    MessageAdded,
+    StreamingDelta,
+    ToolCallResult,
+    ToolCallStarted,
+)
 
 if TYPE_CHECKING:
     from ..hub import HubClient
@@ -129,6 +136,17 @@ class HubAgentRunner(AgentRunner):
                                 error=str(error) if ((not success) and error is not None) else None,
                             )
                         )
+                        continue
+
+                    if event_type == "content_delta":
+                        delta = str(event.get("delta") or "")
+                        if delta:
+                            await self._emit(
+                                StreamingDelta(
+                                    session_id=session.id,
+                                    delta=delta,
+                                )
+                            )
                         continue
 
                     if event_type == "assistant_message":

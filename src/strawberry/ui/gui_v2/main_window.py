@@ -22,7 +22,7 @@ from .components import (
     TitleBar,
 )
 from .models.message import Message, MessageRole, TextSegment
-from .models.state import ConnectionStatus, UIState, VoiceStatus
+from .models.state import ConnectionStatus, MessageSource, UIState, VoiceStatus
 from .services.voice_service import VoiceService
 from .themes import DARK_THEME, LIGHT_THEME
 
@@ -42,12 +42,12 @@ class MainWindow(QMainWindow):
 
     Signals:
         closing: Emitted when window is about to close
-        message_submitted: Emitted when user submits a message (str: content)
+        message_submitted: Emitted when user submits a message (str: content, str: source)
         session_changed: Emitted when session changes (str: session_id)
     """
 
     closing = Signal()
-    message_submitted = Signal(str)
+    message_submitted = Signal(str, str)  # content, source (MessageSource value)
     session_changed = Signal(str)
 
     # Default window size
@@ -231,12 +231,23 @@ class MainWindow(QMainWindow):
         self._chat_view.focus_input()
 
     def _on_message_sent(self, content: str) -> None:
-        """Handle message submission from chat view.
+        """Handle message submission from chat view (typed input)."""
+        self.submit_message(content, MessageSource.TYPED)
+
+    def submit_message(
+        self, content: str, source: MessageSource = MessageSource.TYPED
+    ) -> None:
+        """Display a user message and emit message_submitted.
+
+        This is the single entry point for all message submissions
+        (typed, voice record, voice mode). It creates the user bubble,
+        shows the typing indicator, and signals IntegratedApp.
 
         Args:
-            content: Message content
+            content: Message text.
+            source: How the message was produced (typed, voice_record, voice_mode).
         """
-        logger.debug(f"Message sent: {content[:50]}...")
+        logger.debug(f"Message sent ({source.value}): {content[:50]}...")
 
         # Create and display user message
         user_msg = Message(
@@ -247,8 +258,8 @@ class MainWindow(QMainWindow):
         )
         self._chat_view.add_message(user_msg)
 
-        # Emit signal for external handling
-        self.message_submitted.emit(content)
+        # Emit signal for external handling (content + source)
+        self.message_submitted.emit(content, source.value)
 
         # Show typing indicator
         self._chat_view.set_typing(True)

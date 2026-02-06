@@ -12,6 +12,13 @@ class ConnectionStatus(Enum):
     CONNECTING = "connecting"
 
 
+class MessageSource(Enum):
+    """How a user message was produced."""
+    TYPED = "typed"
+    VOICE_RECORD = "voice_record"  # Record button (tap or hold)
+    VOICE_MODE = "voice_mode"      # Voice mode (wakeword listening)
+
+
 class VoiceStatus(Enum):
     """Voice mode status."""
     IDLE = "idle"
