@@ -5,6 +5,7 @@ Provides two implementations:
 - LocalAgentRunner: runs tool loop locally with TensorZero
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -91,53 +92,65 @@ class HubAgentRunner(AgentRunner):
         try:
             final_content: Optional[str] = None
 
-            async for event in hub_client.chat_stream(
+            stream = hub_client.chat_stream(
                 messages=messages,
                 enable_tools=True,
-            ):
-                event_type = str(event.get("type") or "")
+            )
+            try:
+                while True:
+                    event = await stream.__anext__()
+                    event_type = str(event.get("type") or "")
 
-                if event_type == "tool_call_started":
-                    tool_name = str(event.get("tool_name") or "")
-                    arguments = event.get("arguments")
-                    if not isinstance(arguments, dict):
-                        arguments = {}
-                    await self._emit(
-                        ToolCallStarted(
-                            session_id=session.id,
-                            tool_name=tool_name,
-                            arguments=arguments,
+                    if event_type == "tool_call_started":
+                        tool_name = str(event.get("tool_name") or "")
+                        arguments = event.get("arguments")
+                        if not isinstance(arguments, dict):
+                            arguments = {}
+                        await self._emit(
+                            ToolCallStarted(
+                                session_id=session.id,
+                                tool_name=tool_name,
+                                arguments=arguments,
+                            )
                         )
-                    )
-                    continue
+                        continue
 
-                if event_type == "tool_call_result":
-                    tool_name = str(event.get("tool_name") or "")
-                    success = bool(event.get("success"))
-                    result = event.get("result")
-                    error = event.get("error")
-                    await self._emit(
-                        ToolCallResult(
-                            session_id=session.id,
-                            tool_name=tool_name,
-                            success=success,
-                            result=str(result) if (success and result is not None) else None,
-                            error=str(error) if ((not success) and error is not None) else None,
+                    if event_type == "tool_call_result":
+                        tool_name = str(event.get("tool_name") or "")
+                        success = bool(event.get("success"))
+                        result = event.get("result")
+                        error = event.get("error")
+                        await self._emit(
+                            ToolCallResult(
+                                session_id=session.id,
+                                tool_name=tool_name,
+                                success=success,
+                                result=str(result) if (success and result is not None) else None,
+                                error=str(error) if ((not success) and error is not None) else None,
+                            )
                         )
-                    )
-                    continue
+                        continue
 
-                if event_type == "assistant_message":
-                    final_content = str(event.get("content") or "")
-                    continue
+                    if event_type == "assistant_message":
+                        final_content = str(event.get("content") or "")
+                        continue
 
-                if event_type == "error":
-                    error_msg = str(event.get("error") or "Hub stream error")
-                    await self._emit(CoreError(error=error_msg))
-                    return None
+                    if event_type == "error":
+                        error_msg = str(event.get("error") or "Hub stream error")
+                        await self._emit(CoreError(error=error_msg))
+                        return None
 
-                if event_type == "done":
-                    break
+                    if event_type == "done":
+                        # Close the stream explicitly rather than breaking out of an
+                        # async-for loop, which can interrupt the underlying SSE
+                        # iterator mid-yield and produce noisy GeneratorExit errors.
+                        await asyncio.shield(stream.aclose())
+                        break
+
+            except StopAsyncIteration:
+                pass
+            finally:
+                await asyncio.shield(stream.aclose())
 
             if final_content and final_content.strip():
                 session.add_message("assistant", final_content)
