@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from ...voice import VoiceCore
 
 from .main_window import MainWindow
-from .models.state import ConnectionStatus, VoiceStatus
+from .models.state import ConnectionStatus, MessageSource, VoiceStatus
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +157,9 @@ class IntegratedApp:
         self._current_session_id: Optional[str] = None
         self._current_assistant_card = None
         self._pending_tool_calls: dict = {}
+        # Track how the last message was produced so we know whether to
+        # speak the assistant response via TTS.
+        self._last_message_source: MessageSource = MessageSource.TYPED
 
         self._connect_window_signals()
         if self._voice:
@@ -183,16 +186,41 @@ class IntegratedApp:
         )
 
     def _on_voice_transcription(self, text: str, is_final: bool) -> None:
-        """Handle voice transcription → submit as chat message."""
-        if is_final and text:
-            self._on_message_submitted(text)
+        """Handle voice transcription → display in chat and send.
+
+        Routes through MainWindow.submit_message so the user bubble appears
+        in the chat view. The source is VOICE_MODE if wakeword listening is
+        active, otherwise VOICE_RECORD (record button tap/hold).
+        """
+        if not (is_final and text):
+            return
+
+        # Determine source based on whether voice mode (wakeword) is active
+        if self._window.voice_service.is_voice_mode_active:
+            source = MessageSource.VOICE_MODE
+        else:
+            source = MessageSource.VOICE_RECORD
+
+        # submit_message adds the user bubble, then emits message_submitted
+        # which triggers _on_message_submitted
+        self._window.submit_message(text, source)
 
     def _subscribe_to_core_events(self) -> None:
         """Subscribe to SpokeCore events. Must be called after core.start()."""
         self._subscription = self._core.subscribe(self._on_core_event)
 
-    def _on_message_submitted(self, content: str) -> None:
-        """Handle message submission from GUI."""
+    def _on_message_submitted(self, content: str, source: str = "typed") -> None:
+        """Handle message submission from GUI.
+
+        Args:
+            content: Message text.
+            source: MessageSource value string (typed, voice_record, voice_mode).
+        """
+        # Remember the source so we can decide whether to speak the response
+        try:
+            self._last_message_source = MessageSource(source)
+        except ValueError:
+            self._last_message_source = MessageSource.TYPED
         asyncio.ensure_future(self._send_message(content), loop=self._loop)
 
     async def _send_message(self, content: str) -> None:
@@ -222,6 +250,7 @@ class IntegratedApp:
             CoreReady,
             MessageAdded,
             ModeChanged,
+            StreamingDelta,
             ToolCallResult,
             ToolCallStarted,
         )
@@ -235,12 +264,29 @@ class IntegratedApp:
             self._window.chat_view.set_typing(False)
             self._window.chat_view.set_input_enabled(True)
 
+        elif isinstance(event, StreamingDelta):
+            # Append streaming text chunk to the current assistant card
+            if self._current_assistant_card:
+                self._current_assistant_card.append_text(event.delta)
+
         elif isinstance(event, MessageAdded):
             if event.role == "assistant" and self._current_assistant_card:
-                self._current_assistant_card.append_text(event.content)
+                # Only append text if there's no streaming card text yet
+                # (streaming deltas may have already populated it)
+                if not self._current_assistant_card.message.segments:
+                    self._current_assistant_card.append_text(event.content)
                 self._window.finish_assistant_message(
                     self._current_assistant_card.message.id
                 )
+
+                # Speak the response via TTS if the user used Voice Mode
+                if (
+                    self._last_message_source == MessageSource.VOICE_MODE
+                    and self._voice
+                    and event.content
+                ):
+                    self._voice.speak(event.content)
+
                 self._current_assistant_card = None
 
         elif isinstance(event, ToolCallStarted):

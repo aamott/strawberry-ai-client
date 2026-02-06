@@ -56,6 +56,13 @@ class ToolCallResult(CoreEvent):
 
 
 @dataclass
+class StreamingDelta(CoreEvent):
+    """A streaming text chunk from the assistant response."""
+    session_id: str
+    delta: str  # The new text chunk to append
+
+
+@dataclass
 class SettingsChanged(CoreEvent):
     """Configuration settings have changed."""
     changed_keys: List[str] = field(default_factory=list)
