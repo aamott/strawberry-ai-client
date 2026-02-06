@@ -111,13 +111,18 @@ class StatusBar(QFrame):
     def _update_voice_label(self) -> None:
         """Update the voice status display."""
         status_map = {
+            VoiceStatus.IDLE: (Icons.VOICE_READY, "Voice: Idle"),
             VoiceStatus.READY: (Icons.VOICE_READY, "Voice: Ready"),
+            VoiceStatus.STARTING: (Icons.VOICE_PROCESSING, "Voice: Starting..."),
             VoiceStatus.LISTENING: (Icons.VOICE_LISTENING, "Voice: Listening"),
             VoiceStatus.PROCESSING: (Icons.VOICE_PROCESSING, "Voice: Processing"),
             VoiceStatus.SPEAKING: (Icons.VOICE_READY, "Voice: Speaking"),
-            VoiceStatus.DISABLED: (Icons.VOICE_READY, "Voice: Disabled"),
+            VoiceStatus.DISABLED: (Icons.VOICE_DISABLED, "Voice: Unavailable"),
+            VoiceStatus.ERROR: (Icons.VOICE_ERROR, "Voice: Error"),
         }
-        icon, text = status_map.get(self._voice_status, (Icons.VOICE_READY, "Voice: Unknown"))
+        icon, text = status_map.get(
+            self._voice_status, (Icons.VOICE_DISABLED, "Voice: Unknown")
+        )
         self._voice_label.setText(f"{icon} {text}")
 
     def set_connection(self, status: ConnectionStatus, details: Optional[str] = None) -> None:

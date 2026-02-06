@@ -268,11 +268,10 @@ class SettingsWindow(QDialog):
                 tabs[tab_name] = []
             tabs[tab_name].append(ns)
 
-        # Sort tabs (General first, then alphabetical)
-        tab_order = ["General", "Voice", "Skills"]
+        # Sort tabs by the minimum namespace order within each tab, then alphabetically
         sorted_tabs = sorted(
             tabs.keys(),
-            key=lambda t: (tab_order.index(t) if t in tab_order else 100, t)
+            key=lambda t: (min(ns.order for ns in tabs[t]), t)
         )
 
         for tab_name in sorted_tabs:

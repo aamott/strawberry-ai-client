@@ -12,6 +12,18 @@ from strawberry.shared.settings import FieldType, SettingField
 # Voice Core settings schema
 VOICE_CORE_SCHEMA: List[SettingField] = [
     # ─────────────────────────────────────────────────────────────────
+    # General
+    # ─────────────────────────────────────────────────────────────────
+    SettingField(
+        key="general.autostart",
+        label="Auto-start Voice Engine",
+        type=FieldType.CHECKBOX,
+        default=False,
+        description="Start the voice engine automatically when the app launches",
+        group="general",
+    ),
+
+    # ─────────────────────────────────────────────────────────────────
     # STT Settings
     # ─────────────────────────────────────────────────────────────────
     SettingField(

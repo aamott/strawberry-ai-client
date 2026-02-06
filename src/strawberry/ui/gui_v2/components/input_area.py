@@ -1,8 +1,9 @@
 """Input area component for message composition."""
 
+import time
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -75,35 +76,48 @@ class AutoResizingTextEdit(QTextEdit):
         super().keyPressEvent(event)
 
 
+# Threshold (ms) to distinguish a tap from a hold on the record button
+_HOLD_THRESHOLD_MS = 300
+
+
 class InputArea(QFrame):
     """Message input area with voice and send controls.
 
     Provides a text input field with:
     - Auto-resizing based on content
-    - Voice button for speech-to-text (push-to-talk)
+    - Record button: tap to trigger immediate recording (trigger_wakeword),
+      hold to push-to-talk (records until released)
+    - Voice Mode button: toggles the full voice pipeline (wakeword listening)
     - Attachment button (future)
     - Send button
 
     Signals:
         submit: Emitted when message is submitted (str: content)
-        voice_clicked: Emitted when voice button is clicked
-        voice_pressed: Emitted when voice button is pressed (PTT start)
-        voice_released: Emitted when voice button is released (PTT stop)
+        record_tapped: Emitted on a short tap of the record button (trigger_wakeword)
+        record_hold_start: Emitted when record button is held down (PTT start)
+        record_hold_stop: Emitted when record button is released after a hold (PTT stop)
         voice_mode_toggled: Emitted when voice mode is toggled (bool: enabled)
         attach_clicked: Emitted when attach button is clicked
     """
 
     submit = Signal(str)
+    record_tapped = Signal()
+    record_hold_start = Signal()
+    record_hold_stop = Signal()
+    voice_mode_toggled = Signal(bool)
+    attach_clicked = Signal()
+
+    # Keep legacy signals for backward compat (ChatView forwards these)
     voice_clicked = Signal()
     voice_pressed = Signal()
     voice_released = Signal()
-    voice_mode_toggled = Signal(bool)
-    attach_clicked = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._voice_mode = False
         self._enabled = True
+        self._recording = False
+        self._press_time: Optional[float] = None  # Track press start for hold detection
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -126,16 +140,23 @@ class InputArea(QFrame):
         self._text_input.submit_requested.connect(self._on_submit)
         input_layout.addWidget(self._text_input, 1)
 
-        # Voice button (push-to-talk)
-        self._voice_btn = QToolButton()
-        self._voice_btn.setObjectName("VoiceButton")
-        self._voice_btn.setText(Icons.MICROPHONE)
-        self._voice_btn.setToolTip("Voice input (hold to speak)")
-        self._voice_btn.setCheckable(True)
-        self._voice_btn.clicked.connect(self._on_voice_clicked)
-        self._voice_btn.pressed.connect(self.voice_pressed.emit)
-        self._voice_btn.released.connect(self.voice_released.emit)
-        input_layout.addWidget(self._voice_btn)
+        # Record button (tap = trigger_wakeword, hold = push-to-talk)
+        self._record_btn = QToolButton()
+        self._record_btn.setObjectName("RecordButton")
+        self._record_btn.setText(Icons.MICROPHONE)
+        self._record_btn.setToolTip("Record (tap to record, hold to push-to-talk)")
+        self._record_btn.pressed.connect(self._on_record_pressed)
+        self._record_btn.released.connect(self._on_record_released)
+        input_layout.addWidget(self._record_btn)
+
+        # Voice Mode button (toggles full pipeline with wakeword)
+        self._voice_mode_btn = QToolButton()
+        self._voice_mode_btn.setObjectName("VoiceModeButton")
+        self._voice_mode_btn.setText(Icons.VOICE_MODE)
+        self._voice_mode_btn.setToolTip("Voice mode (wakeword listening)")
+        self._voice_mode_btn.setCheckable(True)
+        self._voice_mode_btn.clicked.connect(self._on_voice_mode_clicked)
+        input_layout.addWidget(self._voice_mode_btn)
 
         # Attach button
         self._attach_btn = QToolButton()
@@ -162,11 +183,84 @@ class InputArea(QFrame):
             self.submit.emit(text)
             self.clear()
 
-    def _on_voice_clicked(self) -> None:
-        """Handle voice button click."""
-        self._voice_mode = self._voice_btn.isChecked()
-        self.voice_clicked.emit()
+    # -- Record button (tap vs hold) -----------------------------------------
+
+    def _on_record_pressed(self) -> None:
+        """Track when the record button is pressed to detect hold vs tap."""
+        self._press_time = time.monotonic()
+        self._start_hold_timer()
+
+    def _on_record_released(self) -> None:
+        """Determine tap vs hold based on elapsed time since press.
+
+        - Tap (< _HOLD_THRESHOLD_MS): emit record_tapped (trigger_wakeword)
+        - Hold (>= _HOLD_THRESHOLD_MS): emit record_hold_stop (PTT stop)
+        """
+        # Stop the hold timer so it doesn't fire after release
+        if hasattr(self, '_hold_timer') and self._hold_timer.isActive():
+            self._hold_timer.stop()
+
+        if self._press_time is None:
+            return
+
+        elapsed_ms = (time.monotonic() - self._press_time) * 1000
+        self._press_time = None
+
+        if self._recording:
+            # Was in PTT hold mode — release stops recording
+            self._recording = False
+            self._record_btn.setText(Icons.MICROPHONE)
+            self._record_btn.setToolTip("Record (tap to record, hold to push-to-talk)")
+            self.record_hold_stop.emit()
+            self.voice_released.emit()  # legacy compat
+        elif elapsed_ms < _HOLD_THRESHOLD_MS:
+            # Quick tap — trigger immediate recording (VAD decides when to stop)
+            self.record_tapped.emit()
+            self.voice_clicked.emit()  # legacy compat
+        else:
+            # Slow-enough press that crossed the hold threshold while we
+            # waited — treat it as a hold that just finished (edge case).
+            # The hold_start was already emitted via the timer below.
+            self._recording = False
+            self._record_btn.setText(Icons.MICROPHONE)
+            self._record_btn.setToolTip("Record (tap to record, hold to push-to-talk)")
+            self.record_hold_stop.emit()
+            self.voice_released.emit()  # legacy compat
+
+    def _start_hold_timer(self) -> None:
+        """Start a timer to detect hold gesture on the record button."""
+        self._hold_timer = QTimer(self)
+        self._hold_timer.setSingleShot(True)
+        self._hold_timer.setInterval(_HOLD_THRESHOLD_MS)
+        self._hold_timer.timeout.connect(self._on_hold_threshold)
+        self._hold_timer.start()
+
+    def _on_hold_threshold(self) -> None:
+        """Called when the hold threshold is reached while still pressed."""
+        if self._press_time is not None:
+            # Still pressed — enter PTT mode
+            self._recording = True
+            self._record_btn.setText(Icons.VOICE_LISTENING)
+            self._record_btn.setToolTip("Release to stop recording")
+            self.record_hold_start.emit()
+            self.voice_pressed.emit()  # legacy compat
+
+    # -- Voice Mode button ----------------------------------------------------
+
+    def _on_voice_mode_clicked(self) -> None:
+        """Handle voice mode toggle."""
+        self._voice_mode = self._voice_mode_btn.isChecked()
+        self._update_voice_mode_btn()
         self.voice_mode_toggled.emit(self._voice_mode)
+
+    def _update_voice_mode_btn(self) -> None:
+        """Update voice mode button appearance based on state."""
+        if self._voice_mode:
+            self._voice_mode_btn.setText(Icons.VOICE_MODE_ACTIVE)
+            self._voice_mode_btn.setToolTip("Voice mode active (click to stop)")
+        else:
+            self._voice_mode_btn.setText(Icons.VOICE_MODE)
+            self._voice_mode_btn.setToolTip("Voice mode (wakeword listening)")
 
     def clear(self) -> None:
         """Clear the input text."""
@@ -185,7 +279,8 @@ class InputArea(QFrame):
         self._enabled = enabled
         self._text_input.setEnabled(enabled)
         self._send_btn.setEnabled(enabled)
-        self._voice_btn.setEnabled(enabled)
+        self._record_btn.setEnabled(enabled)
+        self._voice_mode_btn.setEnabled(enabled)
         self._attach_btn.setEnabled(enabled)
 
     def set_text(self, text: str) -> None:
@@ -200,19 +295,54 @@ class InputArea(QFrame):
         """Get the current input text."""
         return self._text_input.toPlainText()
 
+    def set_voice_available(self, available: bool) -> None:
+        """Enable or disable voice buttons based on VoiceCore availability.
+
+        Args:
+            available: Whether VoiceCore is initialized and usable
+        """
+        self._record_btn.setEnabled(available)
+        self._voice_mode_btn.setEnabled(available)
+        if not available:
+            self._record_btn.setToolTip("Voice engine not available")
+            self._voice_mode_btn.setToolTip("Voice engine not available")
+        else:
+            self._record_btn.setToolTip(
+                "Record (tap to record, hold to push-to-talk)"
+            )
+            self._voice_mode_btn.setToolTip("Voice mode (wakeword listening)")
+
+    def set_recording_state(self, recording: bool) -> None:
+        """Update the record button visual state.
+
+        Args:
+            recording: Whether currently recording speech
+        """
+        self._recording = recording
+        if recording:
+            self._record_btn.setText(Icons.VOICE_LISTENING)
+            self._record_btn.setToolTip("Recording...")
+        else:
+            self._record_btn.setText(Icons.MICROPHONE)
+            self._record_btn.setToolTip("Record (tap to record, hold to push-to-talk)")
+
+    def set_voice_mode(self, active: bool) -> None:
+        """Update the voice mode button state programmatically.
+
+        Args:
+            active: Whether voice mode is active
+        """
+        self._voice_mode = active
+        self._voice_mode_btn.setChecked(active)
+        self._update_voice_mode_btn()
+
     def set_voice_state(self, listening: bool) -> None:
-        """Update the voice button state.
+        """Update the voice button state (legacy compat).
 
         Args:
             listening: Whether currently listening for voice input
         """
-        self._voice_btn.setChecked(listening)
-        if listening:
-            self._voice_btn.setText(Icons.STOP)
-            self._voice_btn.setToolTip("Stop listening")
-        else:
-            self._voice_btn.setText(Icons.MICROPHONE)
-            self._voice_btn.setToolTip("Voice input (hold to speak)")
+        self.set_recording_state(listening)
 
     def set_placeholder(self, text: str) -> None:
         """Set the placeholder text.
@@ -226,6 +356,11 @@ class InputArea(QFrame):
     def is_voice_mode(self) -> bool:
         """Check if voice mode is active."""
         return self._voice_mode
+
+    @property
+    def is_recording(self) -> bool:
+        """Check if currently recording (PTT hold active)."""
+        return self._recording
 
     @property
     def is_enabled(self) -> bool:

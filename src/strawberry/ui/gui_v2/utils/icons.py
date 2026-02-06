@@ -48,6 +48,11 @@ class Icons:
     VOICE_READY = "🎙️"
     VOICE_LISTENING = "🔴"
     VOICE_PROCESSING = "⏳"
+    VOICE_DISABLED = "🎙️"
+    VOICE_ERROR = "🎙️"
+    VOICE_MODE = "🗣️"
+    VOICE_MODE_ACTIVE = "🟢"
+    RECORD = "⏺"
 
     # Misc
     WARNING = "⚠️"

@@ -168,58 +168,24 @@ class IntegratedApp:
         self._window.closing.connect(self._on_closing)
 
     def _connect_voice_signals(self) -> None:
-        """Connect VoiceCore events to handlers."""
-        self._voice.add_listener(self._on_voice_event)
+        """Connect VoiceCore events to handlers.
 
-        # Connect voice button in chat view to PTT
-        self._window.chat_view.voice_pressed.connect(self._on_voice_pressed)
-        self._window.chat_view.voice_released.connect(self._on_voice_released)
+        MainWindow already wires record/voice-mode buttons to its VoiceService.
+        Here we only subscribe to VoiceCore events that IntegratedApp cares about
+        (transcriptions → send as chat messages, errors → status bar).
+        """
+        # Set VoiceCore on the window's VoiceService so it can control it
+        self._window.voice_service.set_voice_core(self._voice)
 
-    def _on_voice_pressed(self) -> None:
-        """Handle voice button press (start PTT)."""
-        if self._voice and self._voice.is_running():
-            self._voice.push_to_talk_start()
-            self._window.set_voice_status(VoiceStatus.LISTENING)
-
-    def _on_voice_released(self) -> None:
-        """Handle voice button release (stop PTT)."""
-        if self._voice and self._voice.is_push_to_talk_active():
-            self._voice.push_to_talk_stop()
-            self._window.set_voice_status(VoiceStatus.PROCESSING)
-
-    def _on_voice_event(self, event) -> None:
-        """Handle VoiceCore events."""
-        from ...voice.events import (
-            VoiceError,
-            VoiceSpeaking,
-            VoiceStateChanged,
-            VoiceTranscription,
+        # When a transcription arrives, send it as a chat message
+        self._window.voice_service.transcription_received.connect(
+            self._on_voice_transcription
         )
-        from ...voice.state import VoiceState
 
-        if isinstance(event, VoiceStateChanged):
-            # Update voice status indicator
-            if event.new_state == VoiceState.IDLE:
-                self._window.set_voice_status(VoiceStatus.IDLE)
-            elif event.new_state == VoiceState.LISTENING:
-                self._window.set_voice_status(VoiceStatus.LISTENING)
-            elif event.new_state == VoiceState.PROCESSING:
-                self._window.set_voice_status(VoiceStatus.PROCESSING)
-            elif event.new_state == VoiceState.SPEAKING:
-                self._window.set_voice_status(VoiceStatus.SPEAKING)
-
-        elif isinstance(event, VoiceTranscription):
-            if event.is_final and event.text:
-                # Send transcribed text as a message
-                self._on_message_submitted(event.text)
-
-        elif isinstance(event, VoiceSpeaking):
-            logger.debug(f"TTS speaking: {event.text[:50]}...")
-
-        elif isinstance(event, VoiceError):
-            logger.error(f"Voice error: {event.error}")
-            self._window.status_bar.flash_message(f"Voice error: {event.error}")
-            self._window.set_voice_status(VoiceStatus.ERROR)
+    def _on_voice_transcription(self, text: str, is_final: bool) -> None:
+        """Handle voice transcription → submit as chat message."""
+        if is_final and text:
+            self._on_message_submitted(text)
 
     def _subscribe_to_core_events(self) -> None:
         """Subscribe to SpokeCore events. Must be called after core.start()."""
@@ -316,13 +282,20 @@ class IntegratedApp:
         logger.info("Shutting down...")
         if self._subscription:
             self._subscription.cancel()
-        if self._voice:
-            self._voice.remove_listener(self._on_voice_event)
+        # VoiceService manages the VoiceCore listener; just stop VoiceCore
+        if self._voice and self._voice.is_running():
             await self._voice.stop()
         await self._core.stop()
         # Allow pending httpx/httpcore cleanup tasks to complete
         await asyncio.sleep(0.1)
         logger.info("Shutdown complete")
+
+    def _should_autostart_voice(self) -> bool:
+        """Check the voice_core general.autostart setting."""
+        sm = self._window._settings_manager
+        if sm and sm.is_registered("voice_core"):
+            return bool(sm.get("voice_core", "general.autostart", False))
+        return False
 
     async def start(self) -> None:
         """Start SpokeCore, VoiceCore, and connect to Hub."""
@@ -331,16 +304,24 @@ class IntegratedApp:
         # Subscribe to events after core is started (event bus has loop set)
         self._subscribe_to_core_events()
 
-        # Start VoiceCore if available
+        # Set up VoiceCore (response handler) regardless of autostart
         if self._voice:
-            # Set response handler to speak assistant responses
             self._voice.set_response_handler(self._handle_voice_response)
-            voice_started = await self._voice.start()
-            if voice_started:
-                logger.info("VoiceCore started")
-                self._window.set_voice_status(VoiceStatus.IDLE)
+
+            # Only auto-start if the setting says so; otherwise the voice
+            # buttons will lazy-start VoiceCore on first click.
+            if self._should_autostart_voice():
+                logger.info("Autostart enabled — starting VoiceCore")
+                self._window.set_voice_status(VoiceStatus.STARTING)
+                voice_started = await self._voice.start()
+                if voice_started:
+                    logger.info("VoiceCore started (autostart)")
+                    self._window.set_voice_status(VoiceStatus.IDLE)
+                else:
+                    logger.warning("VoiceCore failed to start")
+                    self._window.set_voice_status(VoiceStatus.ERROR)
             else:
-                logger.warning("VoiceCore failed to start")
+                logger.info("VoiceCore available but autostart disabled — will start on demand")
 
         # Try to connect to Hub
         device_name = self._core._get_setting("device.name", "Strawberry Spoke")
@@ -359,6 +340,45 @@ class IntegratedApp:
         """
         # The transcription is handled via VoiceTranscription event
         return ""
+
+
+def _ensure_voice_core(
+    voice_core: Optional["VoiceCore"],
+    settings_manager: "SettingsManager",
+) -> Optional["VoiceCore"]:
+    """Create a VoiceCore instance if one was not provided.
+
+    VoiceCore is created but NOT started — it will be started lazily
+    on first button click or via the autostart setting.
+
+    Args:
+        voice_core: Existing VoiceCore or None.
+        settings_manager: SettingsManager for config and backend discovery.
+
+    Returns:
+        A VoiceCore instance, or None if voice deps are unavailable.
+    """
+    if voice_core is not None:
+        return voice_core
+
+    try:
+        from ...voice import VoiceConfig, VoiceCore
+
+        # VoiceCore reads actual values from SettingsManager during init;
+        # we just supply a default VoiceConfig as the base.
+        config = VoiceConfig()
+        voice_core = VoiceCore(
+            config=config,
+            settings_manager=settings_manager,
+        )
+        logger.info("Created VoiceCore (not yet started)")
+        return voice_core
+    except ImportError as e:
+        logger.warning("Voice dependencies not available: %s", e)
+        return None
+    except Exception:
+        logger.exception("Failed to create VoiceCore")
+        return None
 
 
 def run_app_integrated(
@@ -386,6 +406,9 @@ def run_app_integrated(
 
     # Ensure we always have a SettingsManager
     settings_manager = _ensure_settings_manager(settings_manager)
+
+    # Create VoiceCore if not provided (lazy — not started yet)
+    voice_core = _ensure_voice_core(voice_core, settings_manager)
 
     # Create Qt application
     app = QApplication.instance()

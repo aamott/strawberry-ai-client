@@ -16,6 +16,7 @@ class VoiceStatus(Enum):
     """Voice mode status."""
     IDLE = "idle"
     READY = "ready"
+    STARTING = "starting"
     LISTENING = "listening"
     PROCESSING = "processing"
     SPEAKING = "speaking"
@@ -41,7 +42,7 @@ class UIState:
     current_session_id: Optional[str] = None
     connection_status: ConnectionStatus = ConnectionStatus.DISCONNECTED
     device_name: str = "unknown"
-    voice_status: VoiceStatus = VoiceStatus.READY
+    voice_status: VoiceStatus = VoiceStatus.DISABLED
     is_typing: bool = False
     offline_mode: bool = False
     settings_panel_open: bool = False
