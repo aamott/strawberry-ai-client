@@ -24,6 +24,13 @@ A class that can be imported by external classes.
 voice/
 ├── voice_core.py
 ├── About-Voice-Core.md # read this if you're working VoiceCore
+├── config.py           # VoiceConfig dataclass
+├── events.py           # VoiceEvent types and emitter
+├── state.py            # VoiceState enum and transitions
+├── settings_schema.py  # VOICE_CORE_SCHEMA for SettingsManager
+├── settings_integration.py  # VoiceSettingsHelper
+├── component_manager.py     # Backend discovery and initialization
+├── pipeline_manager.py      # Dual-FSM pipeline coordinator
 ├── stt/
 │   ├── base.py
 │   ├── discovery.py
@@ -58,24 +65,90 @@ voice/
 │       └── vad_ten.py
 └── ...
 
+## Settings
+
+VoiceCore registers a `voice_core` namespace with the SettingsManager on
+construction (if a SettingsManager is provided). The schema is defined in
+`settings_schema.py` and includes:
+
+- **general.autostart** (checkbox, default off) — Start the voice engine
+  automatically when the app launches. When off, VoiceCore is created but
+  not started; it starts lazily on first voice button click.
+- **stt/tts/vad/wakeword order** — Backend fallback order (PROVIDER_SELECT).
+- **wakeword.phrase / sensitivity** — Wake word configuration.
+- **audio.sample_rate / feedback_enabled** — Audio pipeline settings.
+
+Backend-specific settings (e.g. `voice.stt.leopard`, `voice.tts.pocket`)
+are registered dynamically by `VoiceSettingsHelper` based on discovered
+backend modules.
+
+## GUI V2 Integration
+
+The GUI V2 uses a `VoiceService` (`ui/gui_v2/services/voice_service.py`)
+as a Qt bridge between VoiceCore and the UI.
+
+### Lifecycle
+
+1. `run_app_integrated()` creates a VoiceCore instance (but does **not**
+   start it) and passes it to `MainWindow` and `IntegratedApp`.
+2. `IntegratedApp` calls `VoiceService.set_voice_core()` to wire event
+   listeners and enable the voice buttons.
+3. VoiceCore starts lazily:
+   - If `general.autostart` is on → started during `IntegratedApp.start()`.
+   - Otherwise → started on first voice button click via
+     `VoiceService._ensure_started()`, which emits a `starting` signal
+     so the UI shows "Voice: Starting..." during initialization.
+
+### Voice Buttons (InputArea)
+
+- **Record button** (tap / hold):
+  - *Tap* → `trigger_wakeword()` — skips wakeword, starts listening
+    immediately. VAD determines when to stop.
+  - *Hold* → push-to-talk (PTT). Recording for as long as held.
+  - Both auto-start VoiceCore if not yet running.
+- **Voice Mode button** (toggle):
+  - *On* → starts VoiceCore and listens for wake word continuously.
+  - *Off* → stops VoiceCore.
+
+### UI Status
+
+The status bar shows the current voice state:
+- **Voice: Idle** — VoiceCore available but not started.
+- **Voice: Starting...** — VoiceCore is initializing.
+- **Voice: Ready** — VoiceCore running, listening for wake word.
+- **Voice: Listening** — Recording speech (STT active).
+- **Voice: Processing** — Processing transcription.
+- **Voice: Speaking** — TTS playback.
+- **Voice: Unavailable** — No VoiceCore (deps missing).
+- **Voice: Error** — An error occurred.
+
+When VoiceCore is unavailable, voice buttons are disabled with a tooltip
+explaining why.
+
+## VoiceCore API
 
 **Key functionality**
 Classes can use VoiceCore to:
 - Start or stop the listening pipeline.
 - Trigger a wakeword detect (skipping the wakeword as if it had been said).
+- Push-to-talk start/stop.
 - Send text to be read out loud.
 - See the current state.
 
 **Public functions**
-- `start_listening()`: Starts the listening pipeline.
-- `stop_listening()`: Stops the listening pipeline.
+- `start()`: Initializes components and starts the audio/voice pipeline.
+- `stop()`: Stops the pipeline and cleans up.
 - `trigger_wakeword()`: Triggers a wakeword detect (skipping the wakeword as if it had been said) and starts the listening flow.
+- `push_to_talk_start()` / `push_to_talk_stop()`: Manual recording control.
 - `speak(text: str)`: Adds text to the speaking pipeline queue.
-- `get_state()`: Returns the current state.
+- `stop_speaking()`: Interrupts current TTS playback.
+- `get_state()` / `state`: Returns the current VoiceState.
+- `is_running()`: Whether the pipeline is active.
+- `set_response_handler(handler)`: Sets the callback for transcribed text.
 
-**Callbacks**
-- `on_voice_event(event: VoiceEvent)`: Called when a voice event occurs.
-
+**Events**
+- `add_listener(callback)` / `remove_listener(callback)`: Subscribe to VoiceEvent instances.
+- Event types: `VoiceStateChanged`, `VoiceWakeWordDetected`, `VoiceListening`, `VoiceTranscription`, `VoiceSpeaking`, `VoiceError`, `VoiceNoSpeechDetected`, `VoiceResponse`.
 
 **The Listening pipeline:**
 1. Listens for the wakeword.
@@ -92,17 +165,17 @@ Classes can use VoiceCore to:
 
 **States:**
  - Stopped: Not listening for wakeword.
- - Waiting: Waiting for wakeword.
+ - Idle: Pipeline started, waiting for wakeword.
  - Listening: Running STT.
  - Processing: Processing chat and TTS (wakeword can interrupt).
  - Speaking: Speaking text (wakeword can interrupt).
 
 State transitions:
-- Stopped → Waiting on start_listening.
-- Waiting → Listening on wakeword detect or trigger_wakeword.
+- Stopped → Idle on start().
+- Idle → Listening on wakeword detect or trigger_wakeword.
 - Listening → Processing after STT completes.
 - Processing → Speaking when TTS begins playback.
-- Speaking → Waiting when TTS finishes (or Processing if another wakeword arrives).
-- Waiting → Stopped on stop_listening.
+- Speaking → Idle when TTS finishes (or Processing if another wakeword arrives).
+- Idle → Stopped on stop().
 
 Listening pipeline runs independently of the speaking pipeline. When it detects a wakeword, it stops the speaking pipeline if it is speaking.
