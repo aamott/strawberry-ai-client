@@ -1,5 +1,6 @@
 """Main application window for GUI V2."""
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
@@ -22,6 +23,7 @@ from .components import (
 )
 from .models.message import Message, MessageRole, TextSegment
 from .models.state import ConnectionStatus, UIState, VoiceStatus
+from .services.voice_service import VoiceService
 from .themes import DARK_THEME, LIGHT_THEME
 
 if TYPE_CHECKING:
@@ -67,10 +69,15 @@ class MainWindow(QMainWindow):
         self._state = UIState()
         self._theme = DARK_THEME
 
+        # Voice service bridges VoiceCore ↔ Qt signals
+        self._voice_service = VoiceService(voice_core=voice_core, parent=self)
+
         self._setup_window()
         self._setup_ui()
         self._connect_signals()
+        self._connect_voice_signals()
         self._apply_theme()
+        self._init_voice_state()
 
         # Focus input on start
         QTimer.singleShot(100, self._chat_view.focus_input)
@@ -142,7 +149,6 @@ class MainWindow(QMainWindow):
 
         # Chat view
         self._chat_view.message_sent.connect(self._on_message_sent)
-        self._chat_view.voice_requested.connect(self._on_voice_requested)
 
     def _apply_theme(self) -> None:
         """Apply the current theme stylesheet."""
@@ -250,11 +256,122 @@ class MainWindow(QMainWindow):
         # Disable input while processing
         self._chat_view.set_input_enabled(False)
 
-    def _on_voice_requested(self) -> None:
-        """Handle voice button click."""
-        logger.debug("Voice requested")
-        # TODO: Integrate with VoiceCore
-        self._status_bar.flash_message("Voice input coming soon")
+    # -------------------------------------------------------------------------
+    # Voice integration
+    # -------------------------------------------------------------------------
+
+    def _init_voice_state(self) -> None:
+        """Set initial voice UI state based on VoiceCore availability."""
+        available = self._voice_service.is_available
+        self._chat_view.set_voice_available(available)
+        if available:
+            self.set_voice_status(VoiceStatus.IDLE)
+        else:
+            self.set_voice_status(VoiceStatus.DISABLED)
+            logger.info("VoiceCore not provided — voice buttons disabled")
+
+    def _connect_voice_signals(self) -> None:
+        """Connect voice-related signals between ChatView and VoiceService."""
+        # Record button: tap → trigger_wakeword, hold → PTT
+        self._chat_view.record_tapped.connect(self._on_record_tapped)
+        self._chat_view.record_hold_start.connect(self._on_record_hold_start)
+        self._chat_view.record_hold_stop.connect(self._on_record_hold_stop)
+
+        # Voice mode toggle
+        self._chat_view.voice_mode_toggled.connect(self._on_voice_mode_toggled)
+
+        # VoiceService → UI feedback
+        self._voice_service.starting.connect(self._on_voice_starting)
+        self._voice_service.state_changed.connect(self._on_voice_state_changed)
+        self._voice_service.listening_started.connect(self._on_voice_listening)
+        self._voice_service.error_occurred.connect(self._on_voice_error)
+        self._voice_service.voice_mode_changed.connect(self._on_voice_mode_changed)
+        self._voice_service.availability_changed.connect(self._on_voice_availability_changed)
+
+    def _on_record_tapped(self) -> None:
+        """Handle record button tap → trigger immediate recording."""
+        if not self._voice_service.is_available:
+            # Should not happen (buttons are disabled), but guard anyway
+            self._voice_service.error_occurred.emit("Voice engine not initialized")
+            return
+        logger.debug("Record tapped (trigger_wakeword)")
+        # Don't set recording state here — _on_voice_state_changed will
+        # update the UI once VoiceCore actually transitions to LISTENING.
+        asyncio.ensure_future(self._voice_service.trigger_wakeword())
+
+    def _on_record_hold_start(self) -> None:
+        """Handle record button hold start → push-to-talk."""
+        if not self._voice_service.is_available:
+            self._voice_service.error_occurred.emit("Voice engine not initialized")
+            return
+        logger.debug("Record hold start (PTT)")
+        asyncio.ensure_future(self._voice_service.push_to_talk_start())
+
+    def _on_record_hold_stop(self) -> None:
+        """Handle record button hold release → stop PTT."""
+        logger.debug("Record hold stop (PTT release)")
+        self._voice_service.push_to_talk_stop()
+        self._chat_view.set_recording_state(False)
+
+    def _on_voice_mode_toggled(self, enabled: bool) -> None:
+        """Handle voice mode toggle from UI."""
+        logger.debug(f"Voice mode toggled: {enabled}")
+        asyncio.ensure_future(self._voice_service.toggle_voice_mode(enabled))
+
+    def _on_voice_starting(self) -> None:
+        """Handle VoiceCore starting → show 'Starting...' in status bar."""
+        self.set_voice_status(VoiceStatus.STARTING)
+        self._status_bar.flash_message("Starting voice engine...", duration=10000)
+
+    def _on_voice_state_changed(self, old_state: str, new_state: str) -> None:
+        """Handle VoiceCore state changes → update UI."""
+        logger.debug(f"Voice state: {old_state} → {new_state}")
+
+        # Update recording button state
+        is_listening = new_state == "LISTENING"
+        self._chat_view.set_recording_state(is_listening)
+
+        # Update status bar voice indicator
+        status_map = {
+            "IDLE": VoiceStatus.READY,
+            "LISTENING": VoiceStatus.LISTENING,
+            "PROCESSING": VoiceStatus.PROCESSING,
+            "SPEAKING": VoiceStatus.SPEAKING,
+            "STOPPED": VoiceStatus.DISABLED,
+        }
+        status = status_map.get(new_state, VoiceStatus.READY)
+        self.set_voice_status(status)
+
+    def _on_voice_listening(self) -> None:
+        """Handle voice listening started."""
+        self._chat_view.set_recording_state(True)
+
+    def _on_voice_error(self, error_msg: str) -> None:
+        """Handle voice error → flash a visible message and update status."""
+        logger.error(f"Voice error: {error_msg}")
+        self._status_bar.flash_message(f"⚠️ {error_msg}", duration=5000)
+        self._chat_view.set_recording_state(False)
+        self.set_voice_status(VoiceStatus.ERROR)
+
+    def _on_voice_mode_changed(self, active: bool) -> None:
+        """Handle voice mode state change from VoiceService → sync UI button."""
+        self._chat_view.set_voice_mode(active)
+        if active:
+            self._status_bar.flash_message("Voice mode: listening for wake word")
+            self.set_voice_status(VoiceStatus.READY)
+        else:
+            self._status_bar.flash_message("Voice mode off")
+            self.set_voice_status(VoiceStatus.IDLE)
+
+    def _on_voice_availability_changed(self, available: bool) -> None:
+        """Handle VoiceCore being set or cleared at runtime."""
+        self._chat_view.set_voice_available(available)
+        if available:
+            self.set_voice_status(VoiceStatus.IDLE)
+            logger.info("VoiceCore now available — voice buttons enabled")
+        else:
+            self.set_voice_status(VoiceStatus.DISABLED)
+            logger.info("VoiceCore removed — voice buttons disabled")
 
     # Public API for external integration
 
@@ -358,6 +475,16 @@ class MainWindow(QMainWindow):
     def sidebar(self) -> SidebarRail:
         """Get the sidebar component."""
         return self._sidebar
+
+    @property
+    def status_bar(self) -> StatusBar:
+        """Get the status bar component."""
+        return self._status_bar
+
+    @property
+    def voice_service(self) -> VoiceService:
+        """Get the voice service instance."""
+        return self._voice_service
 
     @property
     def state(self) -> UIState:
