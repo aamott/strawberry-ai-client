@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
 
-import anyio
 import httpx
 from tenacity import (
     before_sleep_log,
@@ -302,11 +301,13 @@ class HubClient:
             json=payload,
         )
         response: Optional[httpx.Response] = None
+        line_iter: Optional[Any] = None
         try:
             response = await stream_cm.__aenter__()
             self._check_response(response)
 
-            async for line in response.aiter_lines():
+            line_iter = response.aiter_lines()
+            async for line in line_iter:
                 if not line:
                     continue
                 if not line.startswith("data:"):
@@ -332,10 +333,13 @@ class HubClient:
             # streaming response. If cleanup is interrupted, anyio may raise:
             # "Attempted to exit cancel scope in a different task".
             #
-            # Shield the stream context manager exit from cancellation to ensure
-            # the response is always closed cleanly.
-            with anyio.CancelScope(shield=True):
-                await stream_cm.__aexit__(None, None, None)
+            # Ensure the response is always closed cleanly, even if the caller
+            # cancels the task consuming this stream. We use asyncio.shield
+            # instead of anyio.CancelScope because this code runs under asyncio
+            # (qasync) and may not have an anyio cancel scope installed.
+            if line_iter is not None and hasattr(line_iter, "aclose"):
+                await asyncio.shield(line_iter.aclose())
+            await asyncio.shield(stream_cm.__aexit__(None, None, None))
 
     async def chat_simple(self, user_message: str) -> str:
         """Simple chat - send a message and get a reply.
