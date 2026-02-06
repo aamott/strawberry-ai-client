@@ -50,6 +50,38 @@ python -m strawberry.ui.qt.app
 ```
 **Voice in GUI:** Click the microphone icon to toggle voice listening.
 
+### Settings CLI
+Manage settings from the command line without launching a full UI.
+
+```bash
+# List all namespaces
+python -m strawberry.ui.test_cli --settings list
+
+# Show a namespace with all fields
+python -m strawberry.ui.test_cli --settings show voice_core
+
+# Get/set individual values
+python -m strawberry.ui.test_cli --settings get voice_core stt.backend
+python -m strawberry.ui.test_cli --settings set voice_core stt.backend whisper
+
+# Apply pending changes (required after set)
+python -m strawberry.ui.test_cli --settings apply
+
+# Interactive list editor for backends
+python -m strawberry.ui.test_cli --settings edit voice_core stt.order
+
+# Reset a field to default
+python -m strawberry.ui.test_cli --settings reset voice_core stt.backend
+```
+
+### Settings GUI
+Open the Qt settings dialog for visual configuration.
+
+```bash
+# Launch GUI then open Settings from menu, or:
+python -c "from strawberry.ui.qt.settings import SettingsDialog; ..."
+```
+
 ### Tests
 ```bash
 strawberry-test -h  # See how to use the test command
@@ -62,7 +94,7 @@ python -m pytest
 - **VoiceCore**: Runs the voice pipelines (listening pipeline and speaking pipeline).
 - **UI**: CLI/GUI frontends that interact with SpokeCore and/or VoiceCore.
 - **VoiceInterface**: Voice-only example UI that wires VoiceCore and SpokeCore together (in `ui/voice_interface/`).
-- **SettingsManager**: Manages device settings (see [settings-design.md](../docs/plans/settings-design.md)).
+- **SettingsManager**: Centralized configuration with namespace isolation, schema-driven validation, and reactive updates (see [SETTINGS.md](../docs/plans/settings/SETTINGS.md)).
 
 ## Project Structure
 ```
@@ -82,7 +114,7 @@ ai-pc-spoke/
 │   │   ├── pipeline/       # Conversation orchestration
 │   │   ├── controller.py   # VoiceController (VoiceCore)
 │   │   └── state.py        # Voice state machine
-│   ├── config/             # Config management and schemas
+│   ├── shared/settings/    # SettingsManager, schema, storage
 │   ├── skills/             # Skill loading and sandbox execution
 │   └── hub/                # Hub client for remote ops
 ├── config/                 # Config files (settings.yaml, tensorzero.toml)
@@ -104,5 +136,5 @@ ai-pc-spoke/
 
 - [ ] Add more skills
 - [ ] Test deleting the config and loading from scratch (automatically recreate config.yaml and .env)
-- [ ] Make a unified settings GUI, make it easier to configure tensorzero models, fallback models, and API keys.
+- [x] Make a unified settings GUI, make it easier to configure tensorzero models, fallback models, and API keys.
 - [ ] Move `SYSTEM_PROMPT_TEMPLATE` from service.py to config.yaml (with fallback).
