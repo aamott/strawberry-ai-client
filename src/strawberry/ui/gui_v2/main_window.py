@@ -20,6 +20,8 @@ from .components import (
     SidebarRail,
     StatusBar,
     TitleBar,
+    ToastLevel,
+    ToastManager,
 )
 from .models.message import Message, MessageRole, TextSegment
 from .models.state import ConnectionStatus, MessageSource, UIState, VoiceStatus
@@ -133,6 +135,9 @@ class MainWindow(QMainWindow):
         # Status bar
         self._status_bar = StatusBar()
         main_layout.addWidget(self._status_bar)
+
+        # Toast notification manager (overlays on central widget)
+        self._toast = ToastManager(central)
 
     def _connect_signals(self) -> None:
         """Connect component signals."""
@@ -359,11 +364,21 @@ class MainWindow(QMainWindow):
             return
 
         if self._voice_service.is_available:
-            self._voice_service.speak(text)
+            if self._voice_service.is_running():
+                self._voice_service.speak(text)
+            else:
+                logger.warning(
+                    "Read aloud requested but VoiceCore is not running",
+                )
+                self._toast.show(
+                    "Voice engine not running — cannot read aloud",
+                    ToastLevel.WARNING,
+                )
         else:
             logger.warning("Read aloud requested but VoiceCore is not available")
-            self._status_bar.flash_message(
-                "Voice engine not available — cannot read aloud"
+            self._toast.show(
+                "Voice engine not available — cannot read aloud",
+                ToastLevel.WARNING,
             )
 
     def _on_voice_starting(self) -> None:
@@ -401,9 +416,9 @@ class MainWindow(QMainWindow):
         self._chat_view.set_recording_state(True)
 
     def _on_voice_error(self, error_msg: str) -> None:
-        """Handle voice error → flash a visible message and update status."""
+        """Handle voice error → toast + update status."""
         logger.error(f"Voice error: {error_msg}")
-        self._status_bar.flash_message(f"⚠️ {error_msg}", duration=5000)
+        self._toast.show(error_msg, ToastLevel.ERROR, duration_ms=5000)
         self._chat_view.set_recording_state(False)
         self._chat_view.set_record_loading(False)
         self._chat_view.set_voice_mode_loading(False)
@@ -541,6 +556,11 @@ class MainWindow(QMainWindow):
     def voice_service(self) -> VoiceService:
         """Get the voice service instance."""
         return self._voice_service
+
+    @property
+    def toast(self) -> ToastManager:
+        """Get the toast notification manager."""
+        return self._toast
 
     @property
     def state(self) -> UIState:

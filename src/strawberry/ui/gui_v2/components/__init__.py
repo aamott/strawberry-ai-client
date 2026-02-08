@@ -9,6 +9,7 @@ from .sidebar_rail import SidebarRail
 from .status_bar import StatusBar
 from .text_block import TextBlock
 from .title_bar import TitleBar
+from .toast import ToastLevel, ToastManager
 from .tool_call_widget import ToolCallWidget
 from .typing_indicator import TypingIndicator
 
@@ -24,4 +25,6 @@ __all__ = [
     "InputArea",
     "TypingIndicator",
     "SettingsWindow",
+    "ToastManager",
+    "ToastLevel",
 ]
