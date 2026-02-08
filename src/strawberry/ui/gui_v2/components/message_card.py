@@ -3,12 +3,13 @@
 from datetime import datetime
 from typing import List, Optional, Union
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -26,7 +27,10 @@ from .tool_call_widget import ToolCallWidget
 
 
 class MessageHeader(QWidget):
-    """Header widget showing role and timestamp."""
+    """Header widget showing role, timestamp, and action buttons."""
+
+    # Emitted when the user clicks the read-aloud button
+    read_aloud = Signal()
 
     def __init__(
         self,
@@ -50,11 +54,21 @@ class MessageHeader(QWidget):
         role_text = "You" if self._role == MessageRole.USER else "Assistant"
 
         self._role_label = QLabel(f"{icon} {role_text}")
+        self._role_label.setToolTip(role_text)
         self._role_label.setObjectName("RoleLabel")
         layout.addWidget(self._role_label)
 
         # Stretch
         layout.addStretch()
+
+        # Read aloud button (speaker icon)
+        self._read_aloud_btn = QToolButton()
+        self._read_aloud_btn.setObjectName("ReadAloudButton")
+        self._read_aloud_btn.setText("🔊")
+        self._read_aloud_btn.setToolTip("Read aloud")
+        self._read_aloud_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._read_aloud_btn.clicked.connect(self.read_aloud.emit)
+        layout.addWidget(self._read_aloud_btn)
 
         # Timestamp
         time_str = self._timestamp.strftime("%I:%M %p")
@@ -83,6 +97,7 @@ class MessageCard(QFrame):
 
     tool_call_toggled = Signal(int, bool)
     content_changed = Signal()
+    read_aloud_requested = Signal(str)  # text content to speak
 
     def __init__(
         self,
@@ -128,6 +143,7 @@ class MessageCard(QFrame):
 
         # Header with role and timestamp
         self._header = MessageHeader(self._message.role, self._message.timestamp)
+        self._header.read_aloud.connect(self._on_read_aloud)
         layout.addWidget(self._header)
 
         # Separator line
@@ -305,6 +321,20 @@ class MessageCard(QFrame):
             if isinstance(segment, ToolCallSegment) and isinstance(widget, ToolCallWidget):
                 segment.expanded = True
                 widget.set_expanded(True)
+
+    def _on_read_aloud(self) -> None:
+        """Handle read-aloud button click."""
+        text = self.get_text_content()
+        if text:
+            self.read_aloud_requested.emit(text)
+
+    def get_text_content(self) -> str:
+        """Extract concatenated text from all TextSegments."""
+        parts: list[str] = []
+        for seg in self._message.segments:
+            if isinstance(seg, TextSegment) and seg.content:
+                parts.append(seg.content)
+        return "\n".join(parts)
 
     @property
     def message(self) -> Message:

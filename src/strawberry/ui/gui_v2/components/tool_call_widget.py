@@ -76,12 +76,14 @@ class ToolCallWidget(QFrame):
         self._toggle_label = QLabel()
         self._toggle_label.setObjectName("ToggleLabel")
         self._toggle_label.setFixedWidth(16)
+        self._toggle_label.setToolTip("Expand/collapse tool details")
         self._update_toggle_icon()
         header_layout.addWidget(self._toggle_label)
 
         # Tool icon and name
         self._name_label = QLabel(f"{Icons.TOOL} {self._tool_name}")
         self._name_label.setObjectName("ToolName")
+        self._name_label.setToolTip(f"Tool: {self._tool_name}")
         header_layout.addWidget(self._name_label, 1)
 
         # Status indicator (pending/success/error)
@@ -118,6 +120,7 @@ class ToolCallWidget(QFrame):
         # Duration (only shown if available)
         self._duration_label = QLabel()
         self._duration_label.setObjectName("ToolDetails")
+        self._duration_label.setToolTip("Execution duration")
         self._update_duration_label()
         details_layout.addWidget(self._duration_label)
 

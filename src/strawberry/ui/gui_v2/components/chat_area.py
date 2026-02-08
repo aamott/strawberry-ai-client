@@ -29,6 +29,7 @@ class ChatArea(QScrollArea):
 
     message_clicked = Signal(str)
     scroll_to_bottom_requested = Signal()
+    read_aloud_requested = Signal(str)  # text content to speak
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -86,6 +87,7 @@ class ChatArea(QScrollArea):
 
         card = MessageCard(message=message)
         card.content_changed.connect(self._on_content_changed)
+        card.read_aloud_requested.connect(self.read_aloud_requested.emit)
 
         # Insert before the stretch
         insert_index = self._layout.count() - 1  # Before stretch

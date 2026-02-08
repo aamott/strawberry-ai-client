@@ -22,6 +22,17 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         description="Start the voice engine automatically when the app launches",
         group="general",
     ),
+    SettingField(
+        key="general.read_responses_aloud",
+        label="Read Responses Aloud",
+        type=FieldType.CHECKBOX,
+        default=False,
+        description=(
+            "Always read assistant responses aloud via TTS, "
+            "regardless of whether the message was typed or spoken"
+        ),
+        group="general",
+    ),
 
     # ─────────────────────────────────────────────────────────────────
     # STT Settings
