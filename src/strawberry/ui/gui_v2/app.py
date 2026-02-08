@@ -292,7 +292,8 @@ class IntegratedApp:
             ui_session_id = str(uuid4())
             self._window._state.current_session_id = ui_session_id
             # Add sidebar entry for the initial chat if none was added yet.
-            self._window.sidebar.add_session(ui_session_id, "New Chat")
+            title = datetime.now().strftime("%b %d, %I:%M %p")
+            self._window.sidebar.add_session(ui_session_id, title)
             self._window.sidebar.highlight_session(ui_session_id)
             # Mark that the sidebar already has this UI session entry.
             self._sidebar_entry_pending = True
@@ -304,7 +305,8 @@ class IntegratedApp:
             self._ui_to_core_session[ui_session_id] = session.id
             # Only add a sidebar entry if _on_new_chat didn't already.
             if not self._sidebar_entry_pending:
-                self._window.sidebar.add_session(ui_session_id, "New Chat")
+                title = datetime.now().strftime("%b %d, %I:%M %p")
+                self._window.sidebar.add_session(ui_session_id, title)
                 self._window.sidebar.highlight_session(ui_session_id)
             self._sidebar_entry_pending = False
 

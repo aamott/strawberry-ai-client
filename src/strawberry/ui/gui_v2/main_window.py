@@ -239,8 +239,9 @@ class MainWindow(QMainWindow):
         # Notify listeners (e.g. IntegratedApp) so they reset conversation state
         self.session_changed.emit(session_id)
 
-        # Add to sidebar
-        self._sidebar.add_session(session_id, "New Chat")
+        # Add to sidebar with date/time title
+        title = datetime.now().strftime("%b %d, %I:%M %p")
+        self._sidebar.add_session(session_id, title)
         self._sidebar.highlight_session(session_id)
 
         # Focus input

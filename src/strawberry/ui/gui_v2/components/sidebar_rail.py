@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QScrollArea,
     QToolButton,
     QVBoxLayout,
@@ -17,9 +18,14 @@ from ..utils.icons import Icons
 
 
 class SessionItem(QFrame):
-    """Individual session item in the sidebar."""
+    """Individual session item in the sidebar.
+
+    Single-click selects the session. Double-click enters inline
+    rename mode.
+    """
 
     clicked = Signal(str)  # session_id
+    renamed = Signal(str, str)  # session_id, new_title
 
     def __init__(
         self,
@@ -31,6 +37,7 @@ class SessionItem(QFrame):
         self._session_id = session_id
         self._title = title
         self._selected = False
+        self._editing = False
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -39,7 +46,7 @@ class SessionItem(QFrame):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
 
         # Session icon
@@ -53,13 +60,53 @@ class SessionItem(QFrame):
         self._title_label.setWordWrap(False)
         layout.addWidget(self._title_label, 1)
 
+        # Inline rename editor (hidden by default)
+        self._edit = QLineEdit()
+        self._edit.setObjectName("SessionEdit")
+        self._edit.hide()
+        self._edit.editingFinished.connect(self._finish_rename)
+        layout.addWidget(self._edit, 1)
+
     def mousePressEvent(self, event) -> None:
         """Handle mouse press."""
+        if self._editing:
+            super().mousePressEvent(event)
+            return
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self._session_id)
             event.accept()
         else:
             super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        """Enter rename mode on double-click."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._start_rename()
+            event.accept()
+        else:
+            super().mouseDoubleClickEvent(event)
+
+    def _start_rename(self) -> None:
+        """Show inline editor for renaming."""
+        self._editing = True
+        self._title_label.hide()
+        self._edit.setText(self._title)
+        self._edit.show()
+        self._edit.setFocus()
+        self._edit.selectAll()
+
+    def _finish_rename(self) -> None:
+        """Commit the rename and hide the editor."""
+        if not self._editing:
+            return
+        self._editing = False
+        new_title = self._edit.text().strip()
+        self._edit.hide()
+        self._title_label.show()
+        if new_title and new_title != self._title:
+            self._title = new_title
+            self._title_label.setText(new_title)
+            self.renamed.emit(self._session_id, new_title)
 
     def set_selected(self, selected: bool) -> None:
         """Set the selected state."""
@@ -84,7 +131,7 @@ class SessionItem(QFrame):
         return self._selected
 
 
-class NavButton(QWidget):
+class NavButton(QFrame):
     """Navigation button with icon and label for the sidebar."""
 
     clicked = Signal(str)  # nav_id
@@ -98,12 +145,12 @@ class NavButton(QWidget):
     ):
         super().__init__(parent)
         self.nav_id = nav_id
-        self.setObjectName(f"NavButton_{nav_id}")
+        self.setObjectName("NavButton")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(8)
+        layout.setContentsMargins(2, 4, 4, 4)
+        layout.setSpacing(6)
 
         # Icon button
         self.icon_btn = QToolButton()
@@ -148,6 +195,7 @@ class SidebarRail(QFrame):
 
     navigation_changed = Signal(str)
     session_selected = Signal(str)
+    session_renamed = Signal(str, str)  # session_id, new_title
     new_chat_requested = Signal()
     expand_toggled = Signal(bool)
 
@@ -187,9 +235,10 @@ class SidebarRail(QFrame):
         self._chats_btn.icon_btn.setChecked(True)
         nav_layout.addWidget(self._chats_btn)
 
-        # New chat button
+        # New chat button — entire row triggers new_chat_requested
         self._new_chat_btn = self._create_nav_button(Icons.NEW_CHAT, "New Chat", "new_chat")
-        # Override click handler for new chat
+        self._new_chat_btn.clicked.disconnect()
+        self._new_chat_btn.clicked.connect(lambda _: self.new_chat_requested.emit())
         self._new_chat_btn.icon_btn.clicked.disconnect()
         self._new_chat_btn.icon_btn.clicked.connect(self.new_chat_requested.emit)
         nav_layout.addWidget(self._new_chat_btn)
@@ -384,6 +433,7 @@ class SidebarRail(QFrame):
 
             item = SessionItem(session_id, title)
             item.clicked.connect(self._on_session_clicked)
+            item.renamed.connect(self.session_renamed)
 
             if session_id == self._current_session_id:
                 item.set_selected(True)
@@ -403,6 +453,7 @@ class SidebarRail(QFrame):
 
         item = SessionItem(session_id, title)
         item.clicked.connect(self._on_session_clicked)
+        item.renamed.connect(self.session_renamed)
 
         # Insert at top
         self._session_layout.insertWidget(0, item)
