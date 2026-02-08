@@ -51,265 +51,163 @@ class Theme:
     # Shadows (optional)
     shadow_color: str = "rgba(0, 0, 0, 0.3)"
 
-    def get_stylesheet(self) -> str:
+    def get_stylesheet(self) -> str:  # noqa: E501
         """Generate the QSS stylesheet for this theme.
 
-        Covers all component areas: title bar, sidebar, chat area,
-        input area, message cards, tool calls, status bar, and
-        interactive states (hover, pressed, disabled, checked, loading).
+        Covers: global, buttons, title bar, sidebar, input area,
+        message cards, tool calls, status bar, scrollbar.
         """
+        # QSS rules are intentionally compact; line length is
+        # governed by the stylesheet, not Python style.
+        bg = self.bg_primary
+        fg = self.text_primary
+        hover = self.bg_hover
+        sel = self.bg_selected
+        bdr = self.border
+        muted = self.text_muted
+        sec = self.text_secondary
+        acc = self.accent_primary
+
         return f"""
-            /* ───────────────────── Global ───────────────────── */
-            QWidget {{
-                background-color: {self.bg_primary};
-                color: {self.text_primary};
-                font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-                font-size: 14px;
-            }}
+/* Global */
+QWidget {{
+    background-color: {bg}; color: {fg};
+    font-family: "Segoe UI", "SF Pro Text", sans-serif;
+    font-size: 14px;
+}}
 
-            /* ───────────────────── Buttons (base) ───────────── */
-            QPushButton, QToolButton {{
-                border: none;
-                border-radius: 6px;
-                padding: 4px 8px;
-                background-color: transparent;
-            }}
+/* Buttons */
+QPushButton, QToolButton {{
+    border: none; border-radius: 6px;
+    padding: 4px 8px; background-color: transparent;
+}}
+QPushButton:hover, QToolButton:hover {{ background-color: {hover}; }}
+QPushButton:pressed, QToolButton:pressed {{ background-color: {sel}; }}
+QPushButton:disabled, QToolButton:disabled {{ color: {muted}; }}
 
-            QPushButton:hover, QToolButton:hover {{
-                background-color: {self.bg_hover};
-            }}
+/* Title bar */
+#TitleBar {{
+    background-color: {self.titlebar_bg};
+    border-bottom: 1px solid {bdr};
+}}
+#AppTitle {{ font-size: 15px; font-weight: bold; color: {acc}; }}
+#CloseButton:hover {{ background-color: {self.error}; color: white; }}
 
-            QPushButton:pressed, QToolButton:pressed {{
-                background-color: {self.bg_selected};
-            }}
+/* Sidebar */
+#SidebarRail {{
+    background-color: {self.sidebar_bg};
+    border-right: 1px solid {bdr};
+}}
+#SidebarRail QWidget, #SidebarRail QFrame,
+#SidebarRail QLabel, #SidebarRail QScrollArea {{
+    background-color: transparent;
+}}
+#SidebarRail QToolButton {{
+    background-color: transparent;
+    border-radius: 8px; padding: 4px;
+    min-width: 32px; min-height: 32px;
+    max-width: 32px; max-height: 32px;
+    font-size: 16px;
+}}
+#SidebarRail QLabel {{ font-size: 13px; }}
+#NavButton {{ border-radius: 8px; }}
+#NavButton:hover {{ background-color: {hover}; }}
+#SessionEdit {{
+    background-color: {self.bg_input};
+    border: 1px solid {acc}; border-radius: 4px;
+    padding: 2px 4px; font-size: 13px;
+}}
 
-            QPushButton:disabled, QToolButton:disabled {{
-                color: {self.text_muted};
-            }}
+/* Session items */
+#SessionItem {{ border-radius: 8px; padding: 6px 8px; }}
+#SessionItem:hover {{ background-color: {hover}; }}
+#SessionItem[selected="true"] {{
+    background-color: {sel};
+    border-left: 3px solid {acc};
+}}
+#SessionTitle {{ font-size: 13px; color: {sec}; }}
 
-            /* ───────────────────── Title bar ────────────────── */
-            #TitleBar {{
-                background-color: {self.titlebar_bg};
-                border-bottom: 1px solid {self.border};
-            }}
+/* Input area */
+#InputArea {{
+    background-color: {self.bg_secondary};
+    border-top: 1px solid {bdr};
+}}
+#InputContainer {{
+    background-color: {self.bg_input};
+    border: 1px solid {bdr}; border-radius: 22px;
+}}
+#InputContainer QTextEdit {{
+    background-color: transparent;
+    border: none; padding: 6px 4px;
+}}
+#InputContainer QToolButton {{
+    border-radius: 16px; padding: 4px;
+    min-width: 32px; min-height: 32px;
+    max-width: 32px; max-height: 32px;
+    font-size: 15px; color: {sec};
+}}
+#InputContainer QToolButton:hover {{ color: {fg}; }}
+#SendButton {{ color: {acc}; }}
+#SendButton:hover {{ background-color: {acc}; color: white; }}
 
-            #AppTitle {{
-                font-size: 15px;
-                font-weight: bold;
-                color: {self.accent_primary};
-            }}
+/* Voice button states */
+#VoiceModeButton:checked {{ background-color: {acc}; color: white; }}
+#RecordButton[recording="true"] {{
+    background-color: {self.error}; color: white;
+}}
+#RecordButton[loading="true"],
+#VoiceModeButton[loading="true"],
+#ReadAloudButton[loading="true"] {{
+    background-color: {sel}; color: {muted};
+}}
 
-            /* Close button red highlight on hover */
-            #CloseButton:hover {{
-                background-color: {self.error};
-                color: white;
-            }}
+/* Message cards */
+#MessageCard {{
+    background-color: {self.message_assistant_bg};
+    border: 1px solid {bdr}; border-radius: 12px;
+    padding: 12px 16px; margin: 4px 12px;
+}}
+#MessageCard[role="user"] {{ background-color: {self.message_user_bg}; }}
+#RoleLabel {{ font-size: 13px; font-weight: bold; color: {sec}; }}
+#TimestampLabel {{ font-size: 11px; color: {muted}; }}
+#MessageSeparator {{ color: {bdr}; }}
+#ReadAloudButton {{
+    font-size: 13px; border-radius: 13px; color: {muted};
+    min-width: 26px; min-height: 26px;
+    max-width: 26px; max-height: 26px;
+}}
+#ReadAloudButton:hover {{ color: {fg}; }}
 
-            /* ───────────────────── Sidebar ──────────────────── */
-            #SidebarRail {{
-                background-color: {self.sidebar_bg};
-                border-right: 1px solid {self.border};
-            }}
+/* Tool calls */
+#ToolCallWidget {{
+    background-color: {self.tool_call_bg};
+    border: 1px solid {bdr}; border-radius: 8px;
+    padding: 8px 12px;
+}}
 
-            #SidebarRail QToolButton {{
-                border-radius: 8px;
-                min-width: 32px;
-                min-height: 32px;
-                font-size: 16px;
-            }}
+/* Status bar */
+#StatusBar {{
+    background-color: {self.statusbar_bg};
+    border-top: 1px solid {bdr};
+}}
+#StatusBar QWidget, #StatusBar QLabel {{
+    background-color: transparent;
+    font-size: 11px; color: {muted};
+}}
+#FlashMessage {{ color: {self.warning}; font-weight: bold; }}
 
-            /* Nav button labels (shown when expanded) */
-            #SidebarRail QLabel {{
-                color: {self.text_primary};
-                font-size: 13px;
-            }}
+/* Scrollbar */
+QScrollBar:vertical {{ width: 6px; background: transparent; }}
+QScrollBar::handle:vertical {{
+    background-color: {bdr}; border-radius: 3px; min-height: 30px;
+}}
+QScrollBar::handle:vertical:hover {{ background-color: {self.border_light}; }}
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {{ height: 0; }}
 
-            /* Session items */
-            #SessionItem {{
-                border-radius: 8px;
-                padding: 6px 8px;
-                margin: 1px 0px;
-            }}
-
-            #SessionItem:hover {{
-                background-color: {self.bg_hover};
-            }}
-
-            #SessionItem[selected="true"] {{
-                background-color: {self.bg_selected};
-                border-left: 3px solid {self.accent_primary};
-            }}
-
-            #SessionTitle {{
-                font-size: 13px;
-                color: {self.text_secondary};
-            }}
-
-            #SessionItem[selected="true"] #SessionTitle {{
-                color: {self.text_primary};
-                font-weight: bold;
-            }}
-
-            /* ───────────────────── Input area ───────────────── */
-            #InputArea {{
-                background-color: {self.bg_secondary};
-                border-top: 1px solid {self.border};
-            }}
-
-            #InputContainer {{
-                background-color: {self.bg_input};
-                border: 1px solid {self.border};
-                border-radius: 22px;
-            }}
-
-            #InputContainer QTextEdit {{
-                background-color: transparent;
-                border: none;
-                padding: 6px 4px;
-                font-size: 14px;
-                color: {self.text_primary};
-            }}
-
-            /* Input action buttons — circular, subtle */
-            #InputContainer QToolButton {{
-                border-radius: 16px;
-                padding: 4px;
-                min-width: 32px;
-                min-height: 32px;
-                max-width: 32px;
-                max-height: 32px;
-                font-size: 15px;
-                color: {self.text_secondary};
-            }}
-
-            #InputContainer QToolButton:hover {{
-                background-color: {self.bg_hover};
-                color: {self.text_primary};
-            }}
-
-            /* Send button — accent on hover */
-            #SendButton {{
-                color: {self.accent_primary};
-            }}
-
-            #SendButton:hover {{
-                background-color: {self.accent_primary};
-                color: white;
-            }}
-
-            /* Checked state for voice mode toggle */
-            #VoiceModeButton:checked {{
-                background-color: {self.accent_primary};
-                color: white;
-            }}
-
-            /* Recording state for record button */
-            #RecordButton[recording="true"] {{
-                background-color: {self.error};
-                color: white;
-            }}
-
-            /* Loading state for buttons */
-            #RecordButton[loading="true"],
-            #VoiceModeButton[loading="true"],
-            #ReadAloudButton[loading="true"] {{
-                background-color: {self.bg_selected};
-                color: {self.text_muted};
-            }}
-
-            /* ───────────────────── Message cards ────────────── */
-            #MessageCard {{
-                background-color: {self.message_assistant_bg};
-                border: 1px solid {self.border};
-                border-radius: 12px;
-                padding: 12px 16px;
-                margin: 4px 12px;
-            }}
-
-            #MessageCard[role="user"] {{
-                background-color: {self.message_user_bg};
-            }}
-
-            #RoleLabel {{
-                font-size: 13px;
-                font-weight: bold;
-                color: {self.text_secondary};
-            }}
-
-            #TimestampLabel {{
-                font-size: 11px;
-                color: {self.text_muted};
-            }}
-
-            #MessageSeparator {{
-                color: {self.border};
-            }}
-
-            /* Read-aloud button in message header — small, subtle */
-            #ReadAloudButton {{
-                font-size: 13px;
-                min-width: 26px;
-                min-height: 26px;
-                max-width: 26px;
-                max-height: 26px;
-                border-radius: 13px;
-                color: {self.text_muted};
-            }}
-
-            #ReadAloudButton:hover {{
-                color: {self.text_primary};
-                background-color: {self.bg_hover};
-            }}
-
-            /* ───────────────────── Tool calls ───────────────── */
-            #ToolCallWidget {{
-                background-color: {self.tool_call_bg};
-                border: 1px solid {self.border};
-                border-radius: 8px;
-                padding: 8px 12px;
-            }}
-
-            /* ───────────────────── Status bar ───────────────── */
-            #StatusBar {{
-                background-color: {self.statusbar_bg};
-                border-top: 1px solid {self.border};
-            }}
-
-            #StatusBar QLabel {{
-                font-size: 11px;
-                color: {self.text_muted};
-            }}
-
-            #FlashMessage {{
-                color: {self.warning};
-                font-weight: bold;
-            }}
-
-            /* ───────────────────── Scrollbar ────────────────── */
-            QScrollBar:vertical {{
-                width: 6px;
-                background: transparent;
-            }}
-
-            QScrollBar::handle:vertical {{
-                background-color: {self.border};
-                border-radius: 3px;
-                min-height: 30px;
-            }}
-
-            QScrollBar::handle:vertical:hover {{
-                background-color: {self.border_light};
-            }}
-
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0;
-            }}
-
-            /* ───────────────────── Offline banner ───────────── */
-            #OfflineBanner {{
-                background-color: {self.warning};
-                border-radius: 8px;
-                padding: 8px;
-                color: {self.bg_primary};
-            }}
+/* Offline banner */
+#OfflineBanner {{
+    background-color: {self.warning}; border-radius: 8px;
+    padding: 8px; color: {bg};
+}}
         """
