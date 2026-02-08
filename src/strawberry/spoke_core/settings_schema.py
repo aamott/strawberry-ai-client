@@ -154,6 +154,23 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
 
     # LLM Settings
     SettingField(
+        key="llm.system_prompt",
+        label="System Prompt",
+        type=FieldType.MULTILINE,
+        default="",
+        description="Custom system prompt template for the LLM",
+        group="llm",
+        metadata={
+            "help_text": (
+                "Override the default system prompt sent to the LLM.\n"
+                "Use {skill_descriptions} as a placeholder for the\n"
+                "auto-generated list of loaded skills.\n\n"
+                "Leave empty to use the built-in default prompt."
+            ),
+            "rows": 12,
+        },
+    ),
+    SettingField(
         key="llm.temperature",
         label="Temperature",
         type=FieldType.NUMBER,
