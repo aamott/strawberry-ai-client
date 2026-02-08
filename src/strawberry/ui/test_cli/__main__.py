@@ -127,6 +127,13 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "-c",
+        "--compact",
+        action="store_true",
+        help="Compact output: truncate tool args/results to reduce verbosity.",
+    )
+
+    parser.add_argument(
         "--settings",
         nargs="*",
         metavar="CMD",
@@ -174,6 +181,7 @@ async def run_one_shot(
     messages: list[str],
     json_output: bool,
     quiet: bool,
+    compact: bool,
     offline: bool,
     timeout: int,
     config_dir: Path | None,
@@ -184,6 +192,7 @@ async def run_one_shot(
         messages: List of messages to send.
         json_output: If True, output JSON.
         quiet: If True, only print final response.
+        compact: If True, use compact formatter with truncation.
         offline: If True, skip hub connection.
         timeout: Timeout in seconds.
         config_dir: Config directory path.
@@ -191,14 +200,18 @@ async def run_one_shot(
     Returns:
         Exit code.
     """
-    from .output import JSONFormatter, PlainFormatter
+    from .output import CompactFormatter, JSONFormatter, PlainFormatter
     from .runner import TestRunner
 
-    plain_formatter = PlainFormatter()
+    # Select formatter based on flags
+    if compact:
+        formatter = CompactFormatter()
+    else:
+        formatter = PlainFormatter()
     json_formatter = JSONFormatter()
 
     # Create streaming handler (only for non-JSON mode)
-    stream_handler = None if json_output else create_stream_handler(plain_formatter, quiet)
+    stream_handler = None if json_output else create_stream_handler(formatter, quiet)
 
     runner = TestRunner(
         config_dir=config_dir,
@@ -404,6 +417,7 @@ def main() -> None:
                 messages=args.messages,
                 json_output=args.json,
                 quiet=args.quiet,
+                compact=args.compact,
                 offline=args.offline,
                 timeout=args.timeout,
                 config_dir=args.config,

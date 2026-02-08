@@ -123,19 +123,6 @@ class SpokeCore:
                 tab="General",
             )
 
-        # Register MCP namespace so MCP settings appear automatically in UIs.
-        # Import lazily to avoid introducing import cycles during app startup.
-        if not self._settings_manager.is_registered("mcp"):
-            from ..mcp.settings_schema import MCP_SETTINGS_SCHEMA
-
-            self._settings_manager.register(
-                namespace="mcp",
-                display_name="MCP",
-                schema=MCP_SETTINGS_SCHEMA,
-                order=35,
-                tab="Skills",
-            )
-
         # Register options providers
         self._settings_manager.register_options_provider(
             "get_available_models",
@@ -154,10 +141,6 @@ class SpokeCore:
 
     def _on_settings_changed(self, namespace: str, key: str, value: Any) -> None:
         """Handle settings changes from the SettingsManager."""
-        if namespace == "mcp":
-            self._on_mcp_settings_changed(key, value)
-            return
-
         if namespace != "spoke_core":
             return
 
@@ -189,32 +172,6 @@ class SpokeCore:
             if section == "hub" and field in ("url", "token"):
                 logger.info(f"Hub setting changed ({field}), triggering reconnection")
                 self._schedule_hub_reconnection()
-
-    def _on_mcp_settings_changed(self, key: str, value: Any) -> None:
-        """Handle MCP settings changes.
-
-        Ensures that when the user updates the MCP config path via the UI and
-        clicks save, an MCP config file appears at that location immediately.
-
-        Args:
-            key: MCP setting key (e.g., "config_path", "enabled").
-            value: New setting value.
-        """
-        try:
-            from pathlib import Path
-
-            from ..mcp.settings import ensure_mcp_config_file_at_path
-
-            if key == "config_path" and value:
-                ensure_mcp_config_file_at_path(Path(str(value)))
-                return
-
-            # If MCP gets enabled, also ensure the current config path exists.
-            if key == "enabled" and bool(value):
-                cfg_path = self._settings_manager.get("mcp", "config_path", "config/mcp.json")
-                ensure_mcp_config_file_at_path(Path(str(cfg_path)))
-        except Exception as e:
-            logger.warning(f"Failed to handle MCP setting change ({key}): {e}")
 
     def _schedule_hub_reconnection(self) -> None:
         """Schedule hub reconnection after settings change."""
