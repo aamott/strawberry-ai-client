@@ -389,13 +389,22 @@ class ConversationPipeline:
         self._speak_response(tts_text)
 
     def _speak_response(self, text: str) -> None:
-        """Synthesize and play response."""
+        """Synthesize and play response via streaming output.
+
+        Uses start_stream/write_chunk/finish_stream for gap-free playback
+        of small TTS chunks (~80 ms each from pocket-tts).
+        """
         if self._stop_event.is_set():
             return
         self._set_state(PipelineState.SPEAKING)
         self._emit(EventType.TTS_STARTED, {"text": text})
 
         try:
+            # Open a persistent audio stream for gap-free playback
+            self._audio_player.start_stream(
+                sample_rate=self._tts_engine.sample_rate
+            )
+
             for chunk in self._tts_engine.synthesize_stream(text):
                 if self._stop_event.is_set():
                     self._audio_player.stop()
@@ -408,14 +417,13 @@ class ConversationPipeline:
                     "samples": len(chunk.audio),
                     "duration": chunk.duration_sec,
                 })
-                # Play the audio chunk
-                self._audio_player.play(
-                    chunk.audio,
-                    sample_rate=chunk.sample_rate,
-                    blocking=True  # Wait for chunk to finish
-                )
+                self._audio_player.write_chunk(chunk.audio)
+
+            # Drain the audio buffer cleanly
+            self._audio_player.finish_stream()
         except Exception as e:
             logger.warning("TTS playback failed: %s", e)
+            self._audio_player.finish_stream()
             self._emit(EventType.ERROR, {"error": str(e), "stage": "tts"})
 
         self._emit(EventType.TTS_COMPLETE)

@@ -40,7 +40,6 @@ class PocketTTS(TTSEngine):
     Cons:
     - Model loading is slow (~few seconds)
     - Voice prompt initialization is slow
-    - No native streaming support
     """
 
     # Module metadata for discovery
@@ -177,18 +176,24 @@ class PocketTTS(TTSEngine):
         return AudioChunk(audio=audio, sample_rate=self._sample_rate_val)
 
     def synthesize_stream(self, text: str) -> Iterator[AudioChunk]:
-        """Synthesize with streaming output.
+        """Synthesize with streaming output using native pocket-tts streaming.
 
-        Note: Pocket-TTS doesn't support native streaming, so this
-        yields a single chunk from synthesize().
+        Uses ``generate_audio_stream()`` which yields audio tensors as each
+        frame (~80 ms) is decoded by the Mimi codec, allowing playback to
+        start almost immediately instead of waiting for the full utterance.
 
         Args:
             text: Text to synthesize
 
         Yields:
-            Single audio chunk
+            Audio chunks as they are decoded (typically ~80 ms each).
         """
-        yield self.synthesize(text)
+        for audio_tensor in self._model.generate_audio_stream(
+            self._voice_state, text
+        ):
+            audio = (audio_tensor.numpy() * 32767).astype(np.int16)
+            if len(audio) > 0:
+                yield AudioChunk(audio=audio, sample_rate=self._sample_rate_val)
 
     def cleanup(self) -> None:
         """Release resources.

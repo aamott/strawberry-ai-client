@@ -617,6 +617,13 @@ class VoiceCore:
                 )
 
     def _synthesize_with_fallback(self, text: str) -> None:
+        """Synthesize text and play via streaming output.
+
+        Uses the streaming playback API (start_stream/write_chunk/finish_stream)
+        so that small TTS chunks (~80 ms from pocket-tts) play back-to-back
+        without audible gaps.  Falls back through available TTS backends on
+        failure.
+        """
         tried = []
 
         # Check if speaker was interrupted
@@ -649,6 +656,9 @@ class VoiceCore:
             player = self.component_manager.components.audio_player
 
             try:
+                # Open a persistent audio stream for gap-free playback
+                player.start_stream(sample_rate=tts.sample_rate)
+
                 for chunk in tts.synthesize_stream(text):
                     # Check for interrupt via speaker FSM state
                     speaker_state = self._pipeline.speaker.state
@@ -659,10 +669,14 @@ class VoiceCore:
                     if speaker_state != SpeakerState.SPEAKING:
                         player.stop()
                         return
-                    player.play(chunk.audio, sample_rate=chunk.sample_rate, blocking=True)
+                    player.write_chunk(chunk.audio)
+
+                # Drain the audio buffer cleanly
+                player.finish_stream()
                 return  # Success
             except Exception as e:
                 logger.error(f"TTS backend '{name}' failed: {e}")
+                player.finish_stream()
 
         raise RuntimeError(f"All TTS backends failed. Tried: {tried}")
 
