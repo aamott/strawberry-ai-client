@@ -123,6 +123,8 @@ class InputArea(QFrame):
         self._enabled = True
         self._recording = False
         self._press_time: Optional[float] = None  # Track press start for hold detection
+        # Hold-gesture timer (reused across presses)
+        self._hold_timer: Optional[QTimer] = None
         # Loading state trackers
         self._record_loading = False
         self._voice_mode_loading = False
@@ -241,10 +243,11 @@ class InputArea(QFrame):
 
     def _start_hold_timer(self) -> None:
         """Start a timer to detect hold gesture on the record button."""
-        self._hold_timer = QTimer(self)
-        self._hold_timer.setSingleShot(True)
-        self._hold_timer.setInterval(_HOLD_THRESHOLD_MS)
-        self._hold_timer.timeout.connect(self._on_hold_threshold)
+        if self._hold_timer is None:
+            self._hold_timer = QTimer(self)
+            self._hold_timer.setSingleShot(True)
+            self._hold_timer.setInterval(_HOLD_THRESHOLD_MS)
+            self._hold_timer.timeout.connect(self._on_hold_threshold)
         self._hold_timer.start()
 
     def _on_hold_threshold(self) -> None:

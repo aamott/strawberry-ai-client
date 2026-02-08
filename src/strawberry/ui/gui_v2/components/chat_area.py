@@ -1,5 +1,6 @@
 """Chat area component - scrollable message list."""
 
+import logging
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -13,6 +14,8 @@ from PySide6.QtWidgets import (
 from ..models.message import Message
 from .message_card import MessageCard
 from .typing_indicator import TypingIndicator
+
+logger = logging.getLogger(__name__)
 
 
 class ChatArea(QScrollArea):
@@ -83,8 +86,10 @@ class ChatArea(QScrollArea):
         """
         if message.id in self._message_cards:
             # Message already exists, update it instead
+            logger.debug("Message %s already exists, returning existing card", message.id)
             return self._message_cards[message.id]
 
+        logger.debug("Adding message %s (role=%s)", message.id, message.role)
         card = MessageCard(message=message)
         card.content_changed.connect(self._on_content_changed)
         card.read_aloud_requested.connect(self.read_aloud_requested.emit)
@@ -140,6 +145,7 @@ class ChatArea(QScrollArea):
         """
         card = self._message_cards.get(message_id)
         if card:
+            logger.debug("Removing message %s", message_id)
             self._layout.removeWidget(card)
             card.deleteLater()
             del self._message_cards[message_id]
@@ -149,6 +155,7 @@ class ChatArea(QScrollArea):
 
     def clear_messages(self) -> None:
         """Remove all messages from the chat."""
+        logger.debug("Clearing all messages (count=%d)", len(self._message_cards))
         for message_id in list(self._message_cards.keys()):
             self.remove_message(message_id)
 
@@ -178,6 +185,7 @@ class ChatArea(QScrollArea):
         Args:
             is_typing: Whether to show the typing indicator
         """
+        logger.debug("set_typing(%s)", is_typing)
         if is_typing:
             # Insert typing indicator before stretch if not already there
             if self._typing_indicator.parent() != self._container:

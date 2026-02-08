@@ -10,7 +10,7 @@ from typing import Any, Optional
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from strawberry.shared.settings import SettingField
+from ....shared.settings import SettingField
 
 # Shared style constants (dark-theme aware)
 LABEL_STYLE = "color: #a0a0a0; font-size: 12px;"

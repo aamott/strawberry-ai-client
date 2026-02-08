@@ -84,6 +84,55 @@ class SessionItem(QFrame):
         return self._selected
 
 
+class NavButton(QWidget):
+    """Navigation button with icon and label for the sidebar."""
+
+    clicked = Signal(str)  # nav_id
+
+    def __init__(
+        self,
+        icon: str,
+        label: str,
+        nav_id: str,
+        parent: Optional[QWidget] = None,
+    ):
+        super().__init__(parent)
+        self.nav_id = nav_id
+        self.setObjectName(f"NavButton_{nav_id}")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(8)
+
+        # Icon button
+        self.icon_btn = QToolButton()
+        self.icon_btn.setObjectName(f"NavIcon_{nav_id}")
+        self.icon_btn.setText(icon)
+        self.icon_btn.setToolTip(label)
+        self.icon_btn.setCheckable(True)
+        self.icon_btn.setAutoExclusive(False)
+        self.icon_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.icon_btn.clicked.connect(lambda: self.clicked.emit(nav_id))
+        layout.addWidget(self.icon_btn)
+
+        # Text label (hidden when collapsed)
+        self.label_widget = QLabel(label)
+        self.label_widget.setObjectName(f"NavLabel_{nav_id}")
+        self.label_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.label_widget.setToolTip(label)
+        self.label_widget.hide()
+        layout.addWidget(self.label_widget, 1)
+
+    def mousePressEvent(self, event) -> None:
+        """Forward clicks on the entire container."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.nav_id)
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+
 class SidebarRail(QFrame):
     """Collapsible navigation sidebar.
 
@@ -113,6 +162,7 @@ class SidebarRail(QFrame):
         self._session_items: dict[str, SessionItem] = {}
         self._current_session_id: Optional[str] = None
         self._animation: Optional[QPropertyAnimation] = None
+        self._max_animation: Optional[QPropertyAnimation] = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -134,15 +184,14 @@ class SidebarRail(QFrame):
 
         # Chats button
         self._chats_btn = self._create_nav_button(Icons.CHATS, "Chats", "chats")
-        self._chats_btn._icon_btn.setChecked(True)
+        self._chats_btn.icon_btn.setChecked(True)
         nav_layout.addWidget(self._chats_btn)
 
         # New chat button
         self._new_chat_btn = self._create_nav_button(Icons.NEW_CHAT, "New Chat", "new_chat")
         # Override click handler for new chat
-        self._new_chat_btn._icon_btn.clicked.disconnect()
-        self._new_chat_btn._icon_btn.clicked.connect(self.new_chat_requested.emit)
-        self._new_chat_btn.mousePressEvent = lambda e: self.new_chat_requested.emit()
+        self._new_chat_btn.icon_btn.clicked.disconnect()
+        self._new_chat_btn.icon_btn.clicked.connect(self.new_chat_requested.emit)
         nav_layout.addWidget(self._new_chat_btn)
 
         layout.addWidget(self._nav_container)
@@ -183,8 +232,8 @@ class SidebarRail(QFrame):
 
         layout.addWidget(self._bottom_nav)
 
-    def _create_nav_button(self, icon: str, label: str, nav_id: str) -> QWidget:
-        """Create a navigation button with icon and label.
+    def _create_nav_button(self, icon: str, label: str, nav_id: str) -> NavButton:
+        """Create a navigation button with icon and optional label.
 
         Args:
             icon: Icon text
@@ -192,53 +241,17 @@ class SidebarRail(QFrame):
             nav_id: Navigation identifier
 
         Returns:
-            Container widget with icon button and label
+            NavButton widget with icon button and label
         """
-        container = QWidget()
-        container.setObjectName(f"NavButton_{nav_id}")
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(8)
-
-        # Icon button
-        btn = QToolButton()
-        btn.setObjectName(f"NavIcon_{nav_id}")
-        btn.setText(icon)
-        btn.setToolTip(label)
-        btn.setCheckable(True)
-        btn.setAutoExclusive(False)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.clicked.connect(lambda: self._on_nav_clicked(nav_id))
-        layout.addWidget(btn)
-
-        # Text label (hidden when collapsed)
-        label_widget = QLabel(label)
-        label_widget.setObjectName(f"NavLabel_{nav_id}")
-        label_widget.setCursor(Qt.CursorShape.PointingHandCursor)
-        label_widget.setToolTip(label)
-        label_widget.hide()  # Hidden by default (collapsed)
-        layout.addWidget(label_widget, 1)
-
-        # Click label same as button
-        label_widget.mousePressEvent = lambda e: self._on_nav_clicked(nav_id)
-
-        # Attach references so callers can access them via the container
-        container._icon_btn = btn
-        container._label_widget = label_widget
-        container._nav_id = nav_id
-
-        # Make the whole container clickable
-        container.mousePressEvent = lambda e: self._on_nav_clicked(nav_id)
-        container.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        return container
+        nav_btn = NavButton(icon, label, nav_id, parent=self)
+        nav_btn.clicked.connect(self._on_nav_clicked)
+        return nav_btn
 
     def _on_nav_clicked(self, nav_id: str) -> None:
         """Handle navigation button click."""
         # Uncheck all nav buttons
-        for container in [self._chats_btn, self._skills_btn, self._settings_btn]:
-            if hasattr(container, "_icon_btn"):
-                container._icon_btn.setChecked(False)
+        for nav_btn in [self._chats_btn, self._skills_btn, self._settings_btn]:
+            nav_btn.icon_btn.setChecked(False)
 
         # Check the clicked button
         btn_map = {
@@ -247,9 +260,7 @@ class SidebarRail(QFrame):
             "settings": self._settings_btn,
         }
         if nav_id in btn_map:
-            container = btn_map[nav_id]
-            if hasattr(container, "_icon_btn"):
-                container._icon_btn.setChecked(True)
+            btn_map[nav_id].icon_btn.setChecked(True)
 
         self._current_nav = nav_id
 
@@ -277,11 +288,13 @@ class SidebarRail(QFrame):
         self._session_scroll.show()
 
         # Show nav labels
-        for container in [
+        for nav_btn in [
             self._chats_btn, self._new_chat_btn, self._skills_btn, self._settings_btn
         ]:
-            if hasattr(container, "_label_widget"):
-                container._label_widget.show()
+            nav_btn.label_widget.show()
+
+        # Stop any in-flight animations before starting new ones
+        self._stop_animations()
 
         # Animate width
         self._animation = QPropertyAnimation(self, b"minimumWidth")
@@ -310,11 +323,13 @@ class SidebarRail(QFrame):
         self._expanded = False
 
         # Hide nav labels
-        for container in [
+        for nav_btn in [
             self._chats_btn, self._new_chat_btn, self._skills_btn, self._settings_btn
         ]:
-            if hasattr(container, "_label_widget"):
-                container._label_widget.hide()
+            nav_btn.label_widget.hide()
+
+        # Stop any in-flight animations before starting new ones
+        self._stop_animations()
 
         # Animate width
         self._animation = QPropertyAnimation(self, b"minimumWidth")
@@ -335,6 +350,13 @@ class SidebarRail(QFrame):
         self._max_animation.start()
 
         self.expand_toggled.emit(False)
+
+    def _stop_animations(self) -> None:
+        """Stop any in-flight expand/collapse animations."""
+        if self._animation and self._animation.state() == QPropertyAnimation.State.Running:
+            self._animation.stop()
+        if self._max_animation and self._max_animation.state() == QPropertyAnimation.State.Running:
+            self._max_animation.stop()
 
     def toggle(self) -> None:
         """Toggle the expanded state."""
