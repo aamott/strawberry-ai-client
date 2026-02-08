@@ -168,15 +168,25 @@ QPushButton:disabled, QToolButton:disabled {{ color: {muted}; }}
     padding: 12px 16px; margin: 4px 12px;
 }}
 #MessageCard[role="user"] {{ background-color: {self.message_user_bg}; }}
+#MessageCard QWidget, #MessageCard QLabel,
+#MessageCard QFrame, #MessageCard QTextBrowser {{
+    background-color: transparent;
+}}
 #RoleLabel {{ font-size: 13px; font-weight: bold; color: {sec}; }}
 #TimestampLabel {{ font-size: 11px; color: {muted}; }}
 #MessageSeparator {{ color: {bdr}; }}
-#ReadAloudButton {{
+
+/* Action buttons (read aloud, copy) */
+#ReadAloudButton, #CopyButton {{
     font-size: 13px; border-radius: 13px; color: {muted};
+    border: 1px solid {self.border_light};
     min-width: 26px; min-height: 26px;
     max-width: 26px; max-height: 26px;
 }}
-#ReadAloudButton:hover {{ color: {fg}; }}
+#ReadAloudButton:hover, #CopyButton:hover {{
+    background-color: {hover};
+    color: {fg};
+}}
 
 /* Tool calls */
 #ToolCallWidget {{
