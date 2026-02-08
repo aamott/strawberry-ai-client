@@ -170,6 +170,7 @@ class IntegratedApp:
     def _connect_window_signals(self) -> None:
         """Connect window signals to handlers."""
         self._window.message_submitted.connect(self._on_message_submitted)
+        self._window.session_changed.connect(self._on_session_changed)
         self._window.closing.connect(self._on_closing)
         # Note: read-aloud is handled by MainWindow._on_read_aloud_requested
         # via VoiceService — no duplicate connection needed here.
@@ -212,6 +213,20 @@ class IntegratedApp:
     def _subscribe_to_core_events(self) -> None:
         """Subscribe to SpokeCore events. Must be called after core.start()."""
         self._subscription = self._core.subscribe(self._on_core_event)
+
+    def _on_session_changed(self, session_id: str) -> None:
+        """Handle session change (new chat or sidebar session switch).
+
+        Resets conversation state so the next message starts a fresh session
+        instead of continuing the old one.
+
+        Args:
+            session_id: The new session ID.
+        """
+        logger.debug("Session changed to %s — resetting conversation state", session_id)
+        self._current_session_id = None
+        self._current_assistant_card = None
+        self._pending_tool_calls.clear()
 
     def _on_message_submitted(self, content: str, source: str = "typed") -> None:
         """Handle message submission from GUI.

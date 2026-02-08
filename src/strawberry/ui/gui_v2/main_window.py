@@ -221,9 +221,17 @@ class MainWindow(QMainWindow):
         # Clear current chat
         self._chat_view.clear_messages()
 
+        # Stop typing indicator and re-enable input in case a response was
+        # still streaming when the user clicked "New Chat"
+        self._chat_view.set_typing(False)
+        self._chat_view.set_input_enabled(True)
+
         # Create new session ID
         session_id = str(uuid4())
         self._state.current_session_id = session_id
+
+        # Notify listeners (e.g. IntegratedApp) so they reset conversation state
+        self.session_changed.emit(session_id)
 
         # Add to sidebar
         self._sidebar.add_session(session_id, "New Chat")
