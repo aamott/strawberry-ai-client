@@ -215,6 +215,21 @@ QScrollBar::handle:vertical:hover {{ background-color: {self.border_light}; }}
 QScrollBar::add-line:vertical,
 QScrollBar::sub-line:vertical {{ height: 0; }}
 
+/* Toast notifications */
+#ToastCard {{
+    background-color: rgba(30, 30, 50, 0.92);
+    border: 1px solid {self.border_light};
+    border-radius: 10px;
+    color: {fg};
+}}
+#ToastCard[level="warning"] {{ border-left: 3px solid {self.warning}; }}
+#ToastCard[level="error"] {{ border-left: 3px solid {self.error}; }}
+#ToastCard[level="success"] {{ border-left: 3px solid {self.success}; }}
+#ToastCard[level="info"] {{ border-left: 3px solid {self.info}; }}
+#ToastCard QLabel {{ background-color: transparent; }}
+#ToastIcon {{ font-size: 15px; }}
+#ToastText {{ font-size: 13px; color: {fg}; }}
+
 /* Offline banner */
 #OfflineBanner {{
     background-color: {self.warning}; border-radius: 8px;

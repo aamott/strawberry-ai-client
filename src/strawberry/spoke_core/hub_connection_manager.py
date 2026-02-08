@@ -132,6 +132,13 @@ class HubConnectionManager:
             if self._skill_service:
                 await self._register_skills(self._skill_service)
 
+            # Set up WebSocket connection callback so we detect
+            # when the hub goes offline (WebSocket drops) and can
+            # emit ConnectionChanged / ModeChanged events + auto-reconnect.
+            self._hub_client.set_connection_callback(
+                self._on_ws_connection_changed
+            )
+
             # Connect WebSocket for skill execution requests
             self._hub_websocket_task = asyncio.create_task(
                 self._hub_client.connect_websocket()
@@ -250,6 +257,43 @@ class HubConnectionManager:
         except HubError as e:
             logger.error(f"Failed to register skills with Hub: {e}")
             return False
+
+    async def _on_ws_connection_changed(self, connected: bool) -> None:
+        """Handle WebSocket connection state changes from HubClient.
+
+        Called by the HubClient's _websocket_loop when the WebSocket
+        connects or disconnects. Emits ConnectionChanged and ModeChanged
+        events so the UI can react (toast notifications, status bar).
+
+        Args:
+            connected: True if WebSocket reconnected, False if it dropped.
+        """
+        if connected:
+            # WebSocket reconnected after a drop
+            if not self._hub_connected:
+                self._hub_connected = True
+                logger.info("Hub WebSocket reconnected")
+                await self._emit(ConnectionChanged(connected=True))
+                await self._emit(ModeChanged(
+                    online=True,
+                    message="Reconnected to Hub.",
+                ))
+                # Re-register skills after reconnection
+                if self._skill_service:
+                    await self._register_skills(self._skill_service)
+        else:
+            # WebSocket dropped — hub went offline
+            if self._hub_connected:
+                self._hub_connected = False
+                logger.warning("Hub WebSocket disconnected")
+                await self._emit(ConnectionChanged(
+                    connected=False,
+                    error="Hub connection lost",
+                ))
+                await self._emit(ModeChanged(
+                    online=False,
+                    message="Lost connection to Hub. Running in local mode.",
+                ))
 
     def _configure_ping_pong_logging(self) -> None:
         """Configure logging level for WebSocket ping/pong frames.

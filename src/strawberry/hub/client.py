@@ -741,6 +741,23 @@ class HubClient:
                         except Exception as e:
                             logger.error(f"Error handling WebSocket message: {e}")
 
+                # If we exit the async-with cleanly (server closed connection),
+                # fall through to the reconnect logic below.
+                logger.warning("WebSocket closed by server")
+                self._websocket = None
+
+                if self._connection_callback:
+                    try:
+                        await self._connection_callback(False)
+                    except Exception as cb_err:
+                        logger.error(f"Error in connection callback: {cb_err}")
+
+                logger.info(f"Reconnecting in {self._reconnect_delay}s...")
+                await asyncio.sleep(self._reconnect_delay)
+                self._reconnect_delay = min(
+                    self._reconnect_delay * 2, 60.0,
+                )
+
             except asyncio.CancelledError:
                 logger.info("WebSocket connection cancelled")
                 break
@@ -753,13 +770,15 @@ class HubClient:
                 if self._connection_callback:
                     try:
                         await self._connection_callback(False)
-                    except Exception as e:
-                        logger.error(f"Error in connection callback: {e}")
+                    except Exception as cb_err:
+                        logger.error(f"Error in connection callback: {cb_err}")
 
                 # Exponential backoff for reconnection
                 logger.info(f"Reconnecting in {self._reconnect_delay}s...")
                 await asyncio.sleep(self._reconnect_delay)
-                self._reconnect_delay = min(self._reconnect_delay * 2, 60.0)  # Max 60s
+                self._reconnect_delay = min(
+                    self._reconnect_delay * 2, 60.0,
+                )
 
     async def _handle_websocket_message(self, message: dict):
         """Handle incoming WebSocket message from Hub.

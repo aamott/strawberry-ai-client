@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from ...spoke_core import SpokeCore
     from ...voice import VoiceCore
 
+from .components.toast import ToastLevel
 from .main_window import MainWindow
 from .models.message import Message, MessageRole, TextSegment
 from .models.state import ConnectionStatus, MessageSource, VoiceStatus
@@ -391,14 +392,32 @@ class IntegratedApp:
         elif isinstance(event, ConnectionChanged):
             if event.connected:
                 self._window.set_connection_status(ConnectionStatus.CONNECTED)
+                self._window.toast.show(
+                    "Hub connected", ToastLevel.SUCCESS, duration_ms=2500,
+                )
             else:
                 self._window.set_connection_status(
                     ConnectionStatus.DISCONNECTED,
                     event.error,
                 )
+                self._window.toast.show(
+                    event.error or "Hub disconnected",
+                    ToastLevel.WARNING,
+                    duration_ms=5000,
+                )
 
         elif isinstance(event, ModeChanged):
             self._window.set_offline_mode(not event.online)
+            if event.online:
+                self._window.toast.show(
+                    "Online mode restored", ToastLevel.SUCCESS, duration_ms=2500,
+                )
+            else:
+                self._window.toast.show(
+                    "Switched to offline mode",
+                    ToastLevel.WARNING,
+                    duration_ms=4000,
+                )
 
     def _read_responses_aloud_enabled(self) -> bool:
         """Check the voice_core general.read_responses_aloud setting."""
