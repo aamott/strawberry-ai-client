@@ -60,6 +60,7 @@ class Icons:
     LOADING = "⏳"
 
     # Misc
+    COPY = "📋"
     WARNING = "⚠️"
     INFO = "ℹ️"
     DEVICE = "💻"
