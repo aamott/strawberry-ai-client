@@ -150,6 +150,11 @@ class MainWindow(QMainWindow):
         # Chat view
         self._chat_view.message_sent.connect(self._on_message_sent)
 
+        # Read-aloud on any message card → speak via VoiceService
+        self._chat_view.chat_area.read_aloud_requested.connect(
+            self._on_read_aloud_requested
+        )
+
     def _apply_theme(self) -> None:
         """Apply the current theme stylesheet."""
         stylesheet = self._theme.get_stylesheet()
@@ -329,14 +334,40 @@ class MainWindow(QMainWindow):
         logger.debug(f"Voice mode toggled: {enabled}")
         asyncio.ensure_future(self._voice_service.toggle_voice_mode(enabled))
 
+    def _on_read_aloud_requested(self, text: str) -> None:
+        """Handle read-aloud button click on any message card.
+
+        Speaks the text via VoiceService. If VoiceCore is not available,
+        shows a flash message instead.
+
+        Args:
+            text: The text content to speak aloud.
+        """
+        if not text:
+            return
+
+        if self._voice_service.is_available:
+            self._voice_service.speak(text)
+        else:
+            logger.warning("Read aloud requested but VoiceCore is not available")
+            self._status_bar.flash_message(
+                "Voice engine not available — cannot read aloud"
+            )
+
     def _on_voice_starting(self) -> None:
-        """Handle VoiceCore starting → show 'Starting...' in status bar."""
+        """Handle VoiceCore starting → show loading on voice buttons."""
         self.set_voice_status(VoiceStatus.STARTING)
+        self._chat_view.set_record_loading(True)
+        self._chat_view.set_voice_mode_loading(True)
         self._status_bar.flash_message("Starting voice engine...", duration=10000)
 
     def _on_voice_state_changed(self, old_state: str, new_state: str) -> None:
         """Handle VoiceCore state changes → update UI."""
         logger.debug(f"Voice state: {old_state} → {new_state}")
+
+        # Clear loading animations once voice engine has started
+        self._chat_view.set_record_loading(False)
+        self._chat_view.set_voice_mode_loading(False)
 
         # Update recording button state
         is_listening = new_state == "LISTENING"
@@ -362,6 +393,8 @@ class MainWindow(QMainWindow):
         logger.error(f"Voice error: {error_msg}")
         self._status_bar.flash_message(f"⚠️ {error_msg}", duration=5000)
         self._chat_view.set_recording_state(False)
+        self._chat_view.set_record_loading(False)
+        self._chat_view.set_voice_mode_loading(False)
         self.set_voice_status(VoiceStatus.ERROR)
 
     def _on_voice_mode_changed(self, active: bool) -> None:

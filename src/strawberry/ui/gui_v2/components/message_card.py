@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import List, Optional, Union
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -32,6 +32,9 @@ class MessageHeader(QWidget):
     # Emitted when the user clicks the read-aloud button
     read_aloud = Signal()
 
+    # Loading animation frames for the read-aloud button
+    _LOADING_FRAMES = ["🔊", "🔉", "🔈", "🔉"]
+
     def __init__(
         self,
         role: MessageRole,
@@ -41,6 +44,9 @@ class MessageHeader(QWidget):
         super().__init__(parent)
         self._role = role
         self._timestamp = timestamp
+        self._read_aloud_loading = False
+        self._loading_frame = 0
+        self._loading_timer: Optional[QTimer] = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -64,10 +70,10 @@ class MessageHeader(QWidget):
         # Read aloud button (speaker icon)
         self._read_aloud_btn = QToolButton()
         self._read_aloud_btn.setObjectName("ReadAloudButton")
-        self._read_aloud_btn.setText("🔊")
+        self._read_aloud_btn.setText(Icons.SPEAKER)
         self._read_aloud_btn.setToolTip("Read aloud")
         self._read_aloud_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._read_aloud_btn.clicked.connect(self.read_aloud.emit)
+        self._read_aloud_btn.clicked.connect(self._on_read_aloud_clicked)
         layout.addWidget(self._read_aloud_btn)
 
         # Timestamp
@@ -75,6 +81,41 @@ class MessageHeader(QWidget):
         self._timestamp_label = QLabel(time_str)
         self._timestamp_label.setObjectName("TimestampLabel")
         layout.addWidget(self._timestamp_label)
+
+    def _on_read_aloud_clicked(self) -> None:
+        """Handle read-aloud button click. Ignores clicks while loading."""
+        if not self._read_aloud_loading:
+            self.read_aloud.emit()
+
+    def set_read_aloud_loading(self, loading: bool) -> None:
+        """Set the read-aloud button to a loading/idle visual state.
+
+        Args:
+            loading: True to show a pulsing animation, False to reset.
+        """
+        self._read_aloud_loading = loading
+        self._read_aloud_btn.setProperty("loading", "true" if loading else "false")
+        self._read_aloud_btn.style().unpolish(self._read_aloud_btn)
+        self._read_aloud_btn.style().polish(self._read_aloud_btn)
+
+        if loading:
+            self._loading_frame = 0
+            self._loading_timer = QTimer(self)
+            self._loading_timer.setInterval(350)
+            self._loading_timer.timeout.connect(self._animate_loading)
+            self._loading_timer.start()
+            self._read_aloud_btn.setToolTip("Speaking...")
+        else:
+            if self._loading_timer:
+                self._loading_timer.stop()
+                self._loading_timer = None
+            self._read_aloud_btn.setText(Icons.SPEAKER)
+            self._read_aloud_btn.setToolTip("Read aloud")
+
+    def _animate_loading(self) -> None:
+        """Cycle through loading animation frames."""
+        self._read_aloud_btn.setText(self._LOADING_FRAMES[self._loading_frame])
+        self._loading_frame = (self._loading_frame + 1) % len(self._LOADING_FRAMES)
 
 
 class MessageCard(QFrame):
@@ -327,6 +368,14 @@ class MessageCard(QFrame):
         text = self.get_text_content()
         if text:
             self.read_aloud_requested.emit(text)
+
+    def set_read_aloud_loading(self, loading: bool) -> None:
+        """Set the read-aloud button to a loading/idle visual state.
+
+        Args:
+            loading: True to show a pulsing animation, False to reset.
+        """
+        self._header.set_read_aloud_loading(loading)
 
     def get_text_content(self) -> str:
         """Extract concatenated text from all TextSegments."""

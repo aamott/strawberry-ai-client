@@ -280,8 +280,8 @@ class SidebarRail(QFrame):
         for container in [
             self._chats_btn, self._new_chat_btn, self._skills_btn, self._settings_btn
         ]:
-            if hasattr(container, "_label"):
-                container._label.show()
+            if hasattr(container, "_label_widget"):
+                container._label_widget.show()
 
         # Animate width
         self._animation = QPropertyAnimation(self, b"minimumWidth")
@@ -313,8 +313,8 @@ class SidebarRail(QFrame):
         for container in [
             self._chats_btn, self._new_chat_btn, self._skills_btn, self._settings_btn
         ]:
-            if hasattr(container, "_label"):
-                container._label.hide()
+            if hasattr(container, "_label_widget"):
+                container._label_widget.hide()
 
         # Animate width
         self._animation = QPropertyAnimation(self, b"minimumWidth")

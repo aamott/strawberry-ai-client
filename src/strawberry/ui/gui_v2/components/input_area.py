@@ -80,6 +80,11 @@ class AutoResizingTextEdit(QTextEdit):
 _HOLD_THRESHOLD_MS = 300
 
 
+# Loading animation frames for buttons
+_RECORD_LOADING_FRAMES = [Icons.MICROPHONE, Icons.LOADING, Icons.MICROPHONE, Icons.LOADING]
+_VOICE_MODE_LOADING_FRAMES = [Icons.VOICE_MODE, Icons.LOADING, Icons.VOICE_MODE, Icons.LOADING]
+
+
 class InputArea(QFrame):
     """Message input area with voice and send controls.
 
@@ -118,6 +123,13 @@ class InputArea(QFrame):
         self._enabled = True
         self._recording = False
         self._press_time: Optional[float] = None  # Track press start for hold detection
+        # Loading state trackers
+        self._record_loading = False
+        self._voice_mode_loading = False
+        self._record_loading_timer: Optional[QTimer] = None
+        self._voice_mode_loading_timer: Optional[QTimer] = None
+        self._record_loading_frame = 0
+        self._voice_mode_loading_frame = 0
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -351,6 +363,83 @@ class InputArea(QFrame):
             text: Placeholder text to display
         """
         self._text_input.setPlaceholderText(text)
+
+    # -- Loading state for Record button ----------------------------------------
+
+    def set_record_loading(self, loading: bool) -> None:
+        """Set the record button to a loading/idle visual state.
+
+        Args:
+            loading: True to show a pulsing animation, False to reset.
+        """
+        self._record_loading = loading
+        self._record_btn.setProperty("loading", "true" if loading else "false")
+        self._record_btn.style().unpolish(self._record_btn)
+        self._record_btn.style().polish(self._record_btn)
+
+        if loading:
+            self._record_btn.setEnabled(False)
+            self._record_loading_frame = 0
+            self._record_loading_timer = QTimer(self)
+            self._record_loading_timer.setInterval(400)
+            self._record_loading_timer.timeout.connect(self._animate_record_loading)
+            self._record_loading_timer.start()
+            self._record_btn.setToolTip("Starting voice engine...")
+        else:
+            if self._record_loading_timer:
+                self._record_loading_timer.stop()
+                self._record_loading_timer = None
+            self._record_btn.setEnabled(True)
+            self._record_btn.setText(Icons.MICROPHONE)
+            self._record_btn.setToolTip("Record (tap to record, hold to push-to-talk)")
+
+    def _animate_record_loading(self) -> None:
+        """Cycle through record button loading animation frames."""
+        self._record_btn.setText(
+            _RECORD_LOADING_FRAMES[self._record_loading_frame]
+        )
+        self._record_loading_frame = (
+            (self._record_loading_frame + 1) % len(_RECORD_LOADING_FRAMES)
+        )
+
+    # -- Loading state for Voice Mode button -----------------------------------
+
+    def set_voice_mode_loading(self, loading: bool) -> None:
+        """Set the voice mode button to a loading/idle visual state.
+
+        Args:
+            loading: True to show a pulsing animation, False to reset.
+        """
+        self._voice_mode_loading = loading
+        self._voice_mode_btn.setProperty("loading", "true" if loading else "false")
+        self._voice_mode_btn.style().unpolish(self._voice_mode_btn)
+        self._voice_mode_btn.style().polish(self._voice_mode_btn)
+
+        if loading:
+            self._voice_mode_btn.setEnabled(False)
+            self._voice_mode_loading_frame = 0
+            self._voice_mode_loading_timer = QTimer(self)
+            self._voice_mode_loading_timer.setInterval(400)
+            self._voice_mode_loading_timer.timeout.connect(
+                self._animate_voice_mode_loading
+            )
+            self._voice_mode_loading_timer.start()
+            self._voice_mode_btn.setToolTip("Starting voice engine...")
+        else:
+            if self._voice_mode_loading_timer:
+                self._voice_mode_loading_timer.stop()
+                self._voice_mode_loading_timer = None
+            self._voice_mode_btn.setEnabled(True)
+            self._update_voice_mode_btn()
+
+    def _animate_voice_mode_loading(self) -> None:
+        """Cycle through voice mode button loading animation frames."""
+        self._voice_mode_btn.setText(
+            _VOICE_MODE_LOADING_FRAMES[self._voice_mode_loading_frame]
+        )
+        self._voice_mode_loading_frame = (
+            (self._voice_mode_loading_frame + 1) % len(_VOICE_MODE_LOADING_FRAMES)
+        )
 
     @property
     def is_voice_mode(self) -> bool:
