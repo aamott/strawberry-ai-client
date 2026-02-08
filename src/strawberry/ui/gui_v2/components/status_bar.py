@@ -49,6 +49,7 @@ class StatusBar(QFrame):
         # Connection status
         self._connection_label = QLabel()
         self._connection_label.setObjectName("ConnectionStatus")
+        self._connection_label.setToolTip("Hub connection status")
         self._update_connection_label()
         layout.addWidget(self._connection_label)
 
@@ -58,6 +59,7 @@ class StatusBar(QFrame):
         # Device name
         self._device_label = QLabel()
         self._device_label.setObjectName("DeviceName")
+        self._device_label.setToolTip("Current device name")
         self._update_device_label()
         layout.addWidget(self._device_label)
 
@@ -82,6 +84,7 @@ class StatusBar(QFrame):
         # Version
         self._version_label = QLabel(f"v{self._version}")
         self._version_label.setObjectName("VersionLabel")
+        self._version_label.setToolTip("App version")
         layout.addWidget(self._version_label)
 
     def _create_separator(self) -> QLabel:

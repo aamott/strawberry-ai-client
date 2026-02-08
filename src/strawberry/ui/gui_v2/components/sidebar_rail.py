@@ -44,6 +44,7 @@ class SessionItem(QFrame):
 
         # Session icon
         self._icon_label = QLabel(Icons.CHATS)
+        self._icon_label.setToolTip("Chat session")
         layout.addWidget(self._icon_label)
 
         # Session title
@@ -214,12 +215,16 @@ class SidebarRail(QFrame):
         label_widget = QLabel(label)
         label_widget.setObjectName(f"NavLabel_{nav_id}")
         label_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        label_widget.setToolTip(label)
         label_widget.hide()  # Hidden by default (collapsed)
         layout.addWidget(label_widget, 1)
 
-        # Store references
+        # Click label same as button
+        label_widget.mousePressEvent = lambda e: self._on_nav_clicked(nav_id)
+
+        # Attach references so callers can access them via the container
         container._icon_btn = btn
-        container._label = label_widget
+        container._label_widget = label_widget
         container._nav_id = nav_id
 
         # Make the whole container clickable

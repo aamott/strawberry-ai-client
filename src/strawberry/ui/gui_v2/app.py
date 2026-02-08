@@ -148,10 +148,12 @@ class IntegratedApp:
         spoke_core: "SpokeCore",
         loop: asyncio.AbstractEventLoop,
         voice_core: Optional["VoiceCore"] = None,
+        settings_manager: Optional["SettingsManager"] = None,
     ):
         self._window = window
         self._core = spoke_core
         self._voice = voice_core
+        self._settings_manager = settings_manager
         self._loop = loop
         self._subscription = None
         self._current_session_id: Optional[str] = None
@@ -169,6 +171,11 @@ class IntegratedApp:
         """Connect window signals to handlers."""
         self._window.message_submitted.connect(self._on_message_submitted)
         self._window.closing.connect(self._on_closing)
+
+        # Read-aloud button on any message card
+        self._window.chat_view.chat_area.read_aloud_requested.connect(
+            self._on_read_aloud_requested
+        )
 
     def _connect_voice_signals(self) -> None:
         """Connect VoiceCore events to handlers.
@@ -279,13 +286,11 @@ class IntegratedApp:
                     self._current_assistant_card.message.id
                 )
 
-                # Speak the response via TTS if the user used Voice Mode
-                if (
-                    self._last_message_source == MessageSource.VOICE_MODE
-                    and self._voice
-                    and event.content
-                ):
-                    self._voice.speak(event.content)
+                # Speak the response via TTS when appropriate.
+                # Voice Mode always speaks; the "read_responses_aloud"
+                # setting speaks for *all* sources (typed, record, voice).
+                # We only call speak() once to avoid double-playback.
+                self._maybe_speak_response(event.content)
 
                 self._current_assistant_card = None
 
@@ -317,6 +322,46 @@ class IntegratedApp:
 
         elif isinstance(event, ModeChanged):
             self._window.set_offline_mode(not event.online)
+
+    def _read_responses_aloud_enabled(self) -> bool:
+        """Check the voice_core general.read_responses_aloud setting."""
+        sm = self._settings_manager or self._window._settings_manager
+        if sm and sm.is_registered("voice_core"):
+            return bool(sm.get("voice_core", "general.read_responses_aloud", False))
+        return False
+
+    def _maybe_speak_response(self, content: str) -> None:
+        """Speak an assistant response via TTS if appropriate.
+
+        Called once per assistant message. Speaks if:
+        - The user used Voice Mode (always), OR
+        - The "read responses aloud" setting is enabled (any source).
+
+        Only calls speak() once to avoid double-playback.
+        """
+        if not self._voice or not content:
+            return
+
+        should_speak = (
+            self._last_message_source == MessageSource.VOICE_MODE
+            or self._read_responses_aloud_enabled()
+        )
+        if should_speak:
+            self._voice.speak(content)
+
+    def _on_read_aloud_requested(self, text: str) -> None:
+        """Handle read-aloud button click on any message card.
+
+        This is an explicit user action, so we always speak regardless
+        of settings or message source.
+        """
+        if self._voice and text:
+            self._voice.speak(text)
+        elif text:
+            logger.warning("Read aloud requested but VoiceCore is not available")
+            self._window.status_bar.flash_message(
+                "Voice engine not available — start it first"
+            )
 
     def _on_closing(self) -> None:
         """Handle window closing."""
@@ -479,7 +524,9 @@ def run_app_integrated(
     )
 
     # Create integrated app
-    integrated = IntegratedApp(window, spoke_core, loop, voice_core)
+    integrated = IntegratedApp(
+        window, spoke_core, loop, voice_core, settings_manager
+    )
 
     # Start SpokeCore after window is shown
     window.show()
