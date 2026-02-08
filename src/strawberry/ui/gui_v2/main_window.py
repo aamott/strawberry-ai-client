@@ -220,9 +220,6 @@ class MainWindow(QMainWindow):
 
         self._sidebar.highlight_session(session_id)
 
-        # Collapse sidebar after selection
-        self._sidebar.collapse()
-
     def _on_new_chat(self) -> None:
         """Handle new chat request."""
         logger.debug("New chat requested")
@@ -245,9 +242,6 @@ class MainWindow(QMainWindow):
         # Add to sidebar
         self._sidebar.add_session(session_id, "New Chat")
         self._sidebar.highlight_session(session_id)
-
-        # Collapse sidebar
-        self._sidebar.collapse()
 
         # Focus input
         self._chat_view.focus_input()
