@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 from ..loader import SkillLoader
 
 if TYPE_CHECKING:
-    from ...mcp.registry import MCPRegistry
     from ..remote import DeviceManager
 
 logger = logging.getLogger(__name__)
@@ -35,18 +34,15 @@ class Gatekeeper:
     def __init__(
         self,
         loader: SkillLoader,
-        mcp_registry: Optional["MCPRegistry"] = None,
         device_manager: Optional["DeviceManager"] = None,
     ):
         """Initialize gatekeeper.
 
         Args:
             loader: SkillLoader with registered skills
-            mcp_registry: Optional MCPRegistry for MCP server skills
             device_manager: Optional DeviceManager for remote calls
         """
         self.loader = loader
-        self.mcp_registry = mcp_registry
         self.device_manager = device_manager
         self._allow_list: Set[str] = set()
         self._update_allow_list()
@@ -63,7 +59,7 @@ class Gatekeeper:
         self.device_manager = device_manager
 
     def _update_allow_list(self):
-        """Rebuild allow-list from current skills (Python + MCP)."""
+        """Rebuild allow-list from current skills."""
         self._allow_list.clear()
 
         # Add Python skills
@@ -71,13 +67,6 @@ class Gatekeeper:
             for method in skill.methods:
                 path = f"{skill.name}.{method.name}"
                 self._allow_list.add(path)
-
-        # Add MCP skills
-        if self.mcp_registry:
-            for skill in self.mcp_registry.get_all_skills():
-                for method in skill.methods:
-                    path = f"{skill.name}.{method.name}"
-                    self._allow_list.add(path)
 
         logger.info(f"Gatekeeper allow-list updated: {len(self._allow_list)} methods")
         logger.debug(f"Allow-list: {sorted(self._allow_list)}")
@@ -145,11 +134,7 @@ class Gatekeeper:
 
         skill_name, method_name = parts
 
-        # Check if this is an MCP skill (ends with MCP suffix)
-        if skill_name.endswith("MCP") and self.mcp_registry:
-            return self._execute_mcp(skill_name, method_name, args, kwargs)
-
-        # Get skill info from Python loader
+        # Get skill info from loader
         skill_info = self.loader.get_skill(skill_name)
         if not skill_info:
             raise ValueError(f"Skill not found: {skill_name}")
@@ -172,55 +157,6 @@ class Gatekeeper:
         except Exception as e:
             logger.error(f"Skill execution error: {path} - {e}")
             # Re-raise with sanitized message
-            raise RuntimeError(self._sanitize_error(str(e)))
-
-    def _execute_mcp(
-        self,
-        skill_name: str,
-        method_name: str,
-        args: List[Any],
-        kwargs: Dict[str, Any],
-    ) -> Any:
-        """Execute an MCP tool call.
-
-        Args:
-            skill_name: MCP skill name (e.g., "BraveSearchMCP")
-            method_name: Tool name
-            args: Positional arguments (converted to kwargs)
-            kwargs: Keyword arguments
-
-        Returns:
-            Result from MCP tool execution
-        """
-        if not self.mcp_registry:
-            raise ValueError("MCP registry not configured")
-
-        logger.info(f"Executing MCP tool: {skill_name}.{method_name}(kwargs={kwargs})")
-
-        try:
-            # MCP tools use kwargs only, convert args if needed
-            if args:
-                # Get tool schema to map positional args to param names
-                skill_info = self.mcp_registry.get_skill(skill_name)
-                if skill_info:
-                    method_info = next(
-                        (m for m in skill_info.methods if m.name == method_name), None
-                    )
-                    if method_info:
-                        # Parse signature to get param names
-                        # This is a simplified approach - just use kwargs
-                        logger.warning(
-                            f"MCP tool {skill_name}.{method_name} called with positional "
-                            f"args {args}, converting to first kwarg"
-                        )
-
-            # Call through registry (sync wrapper)
-            result = self.mcp_registry.call_method(skill_name, method_name, **kwargs)
-            logger.debug(f"MCP tool result: {result!r}")
-            return result
-
-        except Exception as e:
-            logger.error(f"MCP tool execution error: {skill_name}.{method_name} - {e}")
             raise RuntimeError(self._sanitize_error(str(e)))
 
     def _execute_remote(self, path: str, args: List[Any], kwargs: Dict[str, Any]) -> Any:

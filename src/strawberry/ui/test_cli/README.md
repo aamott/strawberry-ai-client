@@ -1,3 +1,6 @@
+---
+description: Use this when going through items in a review and fixing or implementing them.
+---
 # Test CLI
 
 A simplified CLI for automated testing and debugging of Strawberry Spoke.
@@ -28,6 +31,7 @@ python -m strawberry.ui.test_cli "2+2?" --offline
 | `-i, --interactive` | Run as REPL |
 | `-j, --json` | Output JSON for parsing |
 | `-q, --quiet` | Only print final response |
+| `-c, --compact` | Truncate tool output for concise display |
 | `--offline` | Skip hub, force local mode |
 | `--show-logs` | Display debug logs |
 | `--timeout N` | Set timeout (default: 120s) |

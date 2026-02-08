@@ -109,6 +109,82 @@ class PlainFormatter:
         return "\n".join(lines)
 
 
+class CompactFormatter:
+    """Compact output formatter with truncated tool output.
+
+    Reduces verbosity by truncating tool arguments and results to
+    a configurable maximum length.
+    """
+
+    def __init__(self, max_arg_len: int = 80, max_result_len: int = 120):
+        """Initialize compact formatter.
+
+        Args:
+            max_arg_len: Maximum length for tool argument display.
+            max_result_len: Maximum length for tool result display.
+        """
+        self.max_arg_len = max_arg_len
+        self.max_result_len = max_result_len
+
+    def _truncate(self, text: str, max_len: int) -> str:
+        """Truncate text with ellipsis if too long."""
+        if len(text) <= max_len:
+            return text
+        return text[:max_len - 3] + "..."
+
+    def format_tool_call(self, name: str, arguments: dict) -> str:
+        """Format a tool call start with truncated arguments."""
+        # Compact single-line format
+        args_str = ", ".join(f"{k}={repr(v)}" for k, v in arguments.items())
+        args_str = self._truncate(args_str, self.max_arg_len)
+        return f"[tool] {name}({args_str})"
+
+    def format_tool_result(
+        self, name: str, success: bool, result: str | None, error: str | None
+    ) -> str:
+        """Format a tool call result with truncation."""
+        output = result if success else error
+        status = "OK" if success else "ERR"
+        if output:
+            # Remove newlines and truncate
+            output = output.replace("\n", " ").strip()
+            output = self._truncate(output, self.max_result_len)
+        return f"  -> [{status}] {output}"
+
+    def format_assistant(self, content: str) -> str:
+        """Format assistant response."""
+        return f"\n[assistant] {content}"
+
+    def format_error(self, error: str) -> str:
+        """Format an error message."""
+        return f"[error] {error}"
+
+    def format_system(self, message: str) -> str:
+        """Format a system message."""
+        return f"[system] {message}"
+
+    def format_result(self, result: "TestResult") -> str:
+        """Format a complete test result with compact output."""
+        lines = []
+
+        # Tool calls (compact)
+        for tc in result.tool_calls:
+            lines.append(self.format_tool_call(tc.name, tc.arguments))
+            lines.append(
+                self.format_tool_result(tc.name, tc.success, tc.result, tc.error)
+            )
+
+        # Assistant response
+        if result.response:
+            lines.append(self.format_assistant(result.response))
+
+        # Footer with metadata
+        status = "OK" if result.success else "FAIL"
+        lines.append(f"[{status}] {result.mode} {result.duration_ms}ms")
+
+        return "\n".join(lines)
+
+
 class JSONFormatter:
     """JSON output formatter for parsing in tests."""
 
