@@ -235,6 +235,22 @@ class ChatView(QWidget):
         """
         self._input_area.set_voice_available(available)
 
+    def set_record_loading(self, loading: bool) -> None:
+        """Set the record button to a loading/idle visual state.
+
+        Args:
+            loading: True to show a pulsing animation, False to reset.
+        """
+        self._input_area.set_record_loading(loading)
+
+    def set_voice_mode_loading(self, loading: bool) -> None:
+        """Set the voice mode button to a loading/idle visual state.
+
+        Args:
+            loading: True to show a pulsing animation, False to reset.
+        """
+        self._input_area.set_voice_mode_loading(loading)
+
     @property
     def chat_area(self) -> ChatArea:
         """Get the chat area component."""

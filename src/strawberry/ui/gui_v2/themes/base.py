@@ -68,9 +68,25 @@ class Theme:
                 font-size: 14px;
             }}
 
-            /* Button styling */
+            /* Button styling with hover/press animations */
             QPushButton, QToolButton {{
                 border: none;
+                border-radius: 6px;
+                padding: 4px 8px;
+                background-color: transparent;
+            }}
+
+            QPushButton:hover, QToolButton:hover {{
+                background-color: {self.bg_hover};
+            }}
+
+            QPushButton:pressed, QToolButton:pressed {{
+                background-color: {self.bg_selected};
+            }}
+
+            QPushButton:disabled, QToolButton:disabled {{
+                opacity: 0.5;
+                color: {self.text_muted};
             }}
 
             /* Sidebar - distinct shading with border */
@@ -99,6 +115,54 @@ class Theme:
                 border: 1px solid {self.border};
                 border-radius: 20px;
                 padding: 8px 12px;
+            }}
+
+            /* Input container buttons */
+            #InputContainer QToolButton {{
+                border-radius: 8px;
+                padding: 6px;
+                min-width: 32px;
+                min-height: 32px;
+            }}
+
+            /* Send button accent color on hover */
+            #SendButton:hover {{
+                background-color: {self.accent_primary};
+                color: white;
+            }}
+
+            /* Checked state for voice mode toggle */
+            #VoiceModeButton:checked {{
+                background-color: {self.accent_primary};
+                color: white;
+            }}
+
+            /* Recording state for record button */
+            #RecordButton[recording="true"] {{
+                background-color: {self.error};
+                color: white;
+            }}
+
+            /* Loading state for buttons (pulsing) */
+            #RecordButton[loading="true"],
+            #VoiceModeButton[loading="true"],
+            #ReadAloudButton[loading="true"] {{
+                background-color: {self.bg_selected};
+                color: {self.text_muted};
+            }}
+
+            /* Session items hover */
+            #SessionItem {{
+                border-radius: 8px;
+                padding: 4px;
+            }}
+
+            #SessionItem:hover {{
+                background-color: {self.bg_hover};
+            }}
+
+            #SessionItem[selected="true"] {{
+                background-color: {self.bg_selected};
             }}
 
             /* Message cards - rounded */

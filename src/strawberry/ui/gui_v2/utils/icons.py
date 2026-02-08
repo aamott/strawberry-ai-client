@@ -54,6 +54,11 @@ class Icons:
     VOICE_MODE_ACTIVE = "🟢"
     RECORD = "⏺"
 
+    # Read aloud
+    SPEAKER = "🔊"
+    SPEAKER_OFF = "🔇"
+    LOADING = "⏳"
+
     # Misc
     WARNING = "⚠️"
     INFO = "ℹ️"

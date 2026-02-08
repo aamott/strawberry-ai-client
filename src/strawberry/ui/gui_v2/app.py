@@ -171,11 +171,8 @@ class IntegratedApp:
         """Connect window signals to handlers."""
         self._window.message_submitted.connect(self._on_message_submitted)
         self._window.closing.connect(self._on_closing)
-
-        # Read-aloud button on any message card
-        self._window.chat_view.chat_area.read_aloud_requested.connect(
-            self._on_read_aloud_requested
-        )
+        # Note: read-aloud is handled by MainWindow._on_read_aloud_requested
+        # via VoiceService — no duplicate connection needed here.
 
     def _connect_voice_signals(self) -> None:
         """Connect VoiceCore events to handlers.
@@ -348,20 +345,6 @@ class IntegratedApp:
         )
         if should_speak:
             self._voice.speak(content)
-
-    def _on_read_aloud_requested(self, text: str) -> None:
-        """Handle read-aloud button click on any message card.
-
-        This is an explicit user action, so we always speak regardless
-        of settings or message source.
-        """
-        if self._voice and text:
-            self._voice.speak(text)
-        elif text:
-            logger.warning("Read aloud requested but VoiceCore is not available")
-            self._window.status_bar.flash_message(
-                "Voice engine not available — start it first"
-            )
 
     def _on_closing(self) -> None:
         """Handle window closing."""
