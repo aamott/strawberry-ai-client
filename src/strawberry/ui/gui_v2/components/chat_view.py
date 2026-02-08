@@ -1,5 +1,6 @@
 """Chat view component - main chat container."""
 
+import logging
 from typing import Optional
 
 from PySide6.QtCore import Signal
@@ -13,6 +14,8 @@ from PySide6.QtWidgets import (
 from ..models.message import Message
 from .chat_area import ChatArea
 from .input_area import InputArea
+
+logger = logging.getLogger(__name__)
 
 
 class OfflineBanner(QFrame):

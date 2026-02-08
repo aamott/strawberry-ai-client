@@ -3,7 +3,9 @@
 import asyncio
 import logging
 import sys
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional
+from uuid import uuid4
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
@@ -14,6 +16,7 @@ if TYPE_CHECKING:
     from ...voice import VoiceCore
 
 from .main_window import MainWindow
+from .models.message import Message, MessageRole, TextSegment
 from .models.state import ConnectionStatus, MessageSource, VoiceStatus
 
 logger = logging.getLogger(__name__)
@@ -159,6 +162,12 @@ class IntegratedApp:
         self._current_session_id: Optional[str] = None
         self._current_assistant_card = None
         self._pending_tool_calls: dict = {}
+        # Maps UI session UUIDs → SpokeCore session IDs so we can
+        # restore conversations when switching sessions.
+        self._ui_to_core_session: dict[str, str] = {}
+        # True when _on_new_chat already added a sidebar entry for the
+        # current (not-yet-created) SpokeCore session.
+        self._sidebar_entry_pending = False
         # Track how the last message was produced so we know whether to
         # speak the assistant response via TTS.
         self._last_message_source: MessageSource = MessageSource.TYPED
@@ -217,16 +226,48 @@ class IntegratedApp:
     def _on_session_changed(self, session_id: str) -> None:
         """Handle session change (new chat or sidebar session switch).
 
-        Resets conversation state so the next message starts a fresh session
-        instead of continuing the old one.
+        If the UI session has a corresponding SpokeCore session, restore
+        the SpokeCore session ID and reload its messages.  Otherwise
+        reset to a blank state (new chat).
 
         Args:
-            session_id: The new session ID.
+            session_id: The UI session UUID.
         """
         logger.debug("Session changed to %s — resetting conversation state", session_id)
-        self._current_session_id = None
         self._current_assistant_card = None
         self._pending_tool_calls.clear()
+
+        core_id = self._ui_to_core_session.get(session_id)
+        if core_id:
+            # Restore the existing SpokeCore session
+            self._current_session_id = core_id
+            self._sidebar_entry_pending = True
+            self._reload_session_messages(core_id)
+        else:
+            # Brand-new chat — no SpokeCore session yet
+            self._current_session_id = None
+            self._sidebar_entry_pending = True
+
+    def _reload_session_messages(self, core_session_id: str) -> None:
+        """Reload messages from a SpokeCore session into the chat view.
+
+        Args:
+            core_session_id: The SpokeCore session ID to reload.
+        """
+        session = self._core.get_session(core_session_id)
+        if not session:
+            logger.warning("SpokeCore session %s not found", core_session_id)
+            return
+
+        for msg in session.messages:
+            role = MessageRole.USER if msg.role == "user" else MessageRole.ASSISTANT
+            gui_msg = Message(
+                id=str(id(msg)),
+                role=role,
+                timestamp=datetime.now(),
+                segments=[TextSegment(content=msg.content)],
+            )
+            self._window.chat_view.chat_area.add_message(gui_msg)
 
     def _on_message_submitted(self, content: str, source: str = "typed") -> None:
         """Handle message submission from GUI.
@@ -240,15 +281,32 @@ class IntegratedApp:
             self._last_message_source = MessageSource(source)
         except ValueError:
             self._last_message_source = MessageSource.TYPED
-        asyncio.ensure_future(self._send_message(content), loop=self._loop)
+        asyncio.ensure_future(self._send_message(content))
 
     async def _send_message(self, content: str) -> None:
         """Send message to SpokeCore and handle response."""
+        # Ensure we have a UI session ID (used by the sidebar). When the app
+        # starts, no UI session exists until the first send; generate one here.
+        ui_session_id = self._window._state.current_session_id
+        if not ui_session_id:
+            ui_session_id = str(uuid4())
+            self._window._state.current_session_id = ui_session_id
+            # Add sidebar entry for the initial chat if none was added yet.
+            self._window.sidebar.add_session(ui_session_id, "New Chat")
+            self._window.sidebar.highlight_session(ui_session_id)
+            # Mark that the sidebar already has this UI session entry.
+            self._sidebar_entry_pending = True
+
         if not self._current_session_id:
             session = self._core.new_session()
             self._current_session_id = session.id
-            self._window.sidebar.add_session(session.id, "New Chat")
-            self._window.sidebar.highlight_session(session.id)
+            # Record the UI→Core mapping so we can restore on switch
+            self._ui_to_core_session[ui_session_id] = session.id
+            # Only add a sidebar entry if _on_new_chat didn't already.
+            if not self._sidebar_entry_pending:
+                self._window.sidebar.add_session(ui_session_id, "New Chat")
+                self._window.sidebar.highlight_session(ui_session_id)
+            self._sidebar_entry_pending = False
 
         # Create assistant message card for streaming
         self._current_assistant_card = self._window.add_assistant_message()
@@ -290,9 +348,14 @@ class IntegratedApp:
 
         elif isinstance(event, MessageAdded):
             if event.role == "assistant" and self._current_assistant_card:
-                # Only append text if there's no streaming card text yet
-                # (streaming deltas may have already populated it)
-                if not self._current_assistant_card.message.segments:
+                # Append the final text if streaming deltas haven't already
+                # provided it.  We check for existing *text* segments rather
+                # than any segment, because tool-call segments don't count.
+                has_text = any(
+                    isinstance(s, TextSegment)
+                    for s in self._current_assistant_card.message.segments
+                )
+                if not has_text and event.content:
                     self._current_assistant_card.append_text(event.content)
                 self._window.finish_assistant_message(
                     self._current_assistant_card.message.id
@@ -364,7 +427,7 @@ class IntegratedApp:
     def _on_closing(self) -> None:
         """Handle window closing."""
         # Schedule shutdown - the loop will process it before fully closing
-        asyncio.ensure_future(self._shutdown(), loop=self._loop)
+        asyncio.ensure_future(self._shutdown())
 
     async def _shutdown(self) -> None:
         """Shutdown SpokeCore and VoiceCore."""

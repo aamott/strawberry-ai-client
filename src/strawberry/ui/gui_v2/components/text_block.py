@@ -1,32 +1,50 @@
-"""Text block component for rendering markdown content."""
+"""
+Text block component for rendering markdown content.
+PySide6 supports Markdown natively through its
+QTextDocument and QTextBrowser
+"""
 
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QSizePolicy, QTextBrowser
 
-# Import markdown renderer from existing Qt UI if available
+# Import markdown renderer — try the project's Qt renderer first, then the
+# `markdown` library, then a minimal regex fallback.
 try:
-    from ...qt.markdown_renderer import markdown_to_html
+    from ...qt.markdown_renderer import (
+        markdown_to_html,  # TODO: Remove this if the library no longer exists. Dead code?
+    )
 except ImportError:
-    # Fallback: basic markdown conversion
-    import re
+    try:
+        import markdown as _md
 
-    def markdown_to_html(text: str) -> str:
-        """Basic markdown to HTML conversion."""
-        # Bold
-        text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-        text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
-        # Italic
-        text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
-        text = re.sub(r'_(.+?)_', r'<i>\1</i>', text)
-        # Code
-        text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
-        # Links
-        text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', text)
-        # Line breaks
-        text = text.replace('\n', '<br>')
-        return text
+        _md_instance = _md.Markdown(extensions=["fenced_code", "tables"])
+
+        def markdown_to_html(text: str) -> str:
+            """Convert markdown to HTML using the ``markdown`` library."""
+            _md_instance.reset()
+            return _md_instance.convert(text)
+
+    except ImportError:
+        # Last resort: basic regex conversion
+        import re
+
+        def markdown_to_html(text: str) -> str:  # type: ignore[misc]
+            """Minimal regex markdown to HTML conversion."""
+            # Bold
+            text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+            text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
+            # Italic
+            text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+            text = re.sub(r'_(.+?)_', r'<i>\1</i>', text)
+            # Code
+            text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+            # Links
+            text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', text)
+            # Line breaks
+            text = text.replace('\n', '<br>')
+            return text
 
 
 class TextBlock(QTextBrowser):

@@ -208,8 +208,17 @@ class MainWindow(QMainWindow):
             session_id: Selected session ID
         """
         logger.debug(f"Session selected: {session_id}")
+
+        # Clear current chat — message history loading is not yet implemented,
+        # so switching sessions shows a blank chat.
+        self._chat_view.clear_messages()
+        self._chat_view.set_typing(False)
+        self._chat_view.set_input_enabled(True)
+
         self._state.current_session_id = session_id
         self.session_changed.emit(session_id)
+
+        self._sidebar.highlight_session(session_id)
 
         # Collapse sidebar after selection
         self._sidebar.collapse()

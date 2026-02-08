@@ -28,8 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from strawberry.shared.settings import FieldType, SettingField
-
+from ....shared.settings import FieldType, SettingField
 from .field_base import BaseFieldWidget
 
 # Shared dark-theme input styling

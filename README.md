@@ -46,7 +46,7 @@ The full graphical interface with chat history and voice controls.
 # Run GUI
 strawberry-gui
 # Or via python
-python -m strawberry.ui.qt.app
+python -m strawberry.ui.gui_v2
 ```
 **Voice in GUI:** Click the microphone icon to toggle voice listening.
 
@@ -74,13 +74,6 @@ python -m strawberry.ui.test_cli --settings edit voice_core stt.order
 python -m strawberry.ui.test_cli --settings reset voice_core stt.backend
 ```
 
-### Settings GUI
-Open the Qt settings dialog for visual configuration.
-
-```bash
-# Launch GUI then open Settings from menu, or:
-python -c "from strawberry.ui.qt.settings import SettingsDialog; ..."
-```
 
 ### Tests
 ```bash

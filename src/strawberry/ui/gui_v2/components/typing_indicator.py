@@ -79,6 +79,8 @@ class TypingIndicator(QWidget):
         """Stop the typing animation and hide the indicator."""
         if self._timer:
             self._timer.stop()
+            self._timer.deleteLater()
+            self._timer = None
 
         self.hide()
 
