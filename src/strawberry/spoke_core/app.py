@@ -173,6 +173,11 @@ class SpokeCore:
                 logger.info(f"Hub setting changed ({field}), triggering reconnection")
                 self._schedule_hub_reconnection()
 
+            # Update system prompt at runtime when setting changes
+            if section == "llm" and field == "system_prompt" and self._skills:
+                self._skills.set_custom_system_prompt(value or None)
+                logger.info("Updated custom system prompt from settings")
+
     def _schedule_hub_reconnection(self) -> None:
         """Schedule hub reconnection after settings change."""
         self._hub_manager.schedule_reconnection()
@@ -247,11 +252,13 @@ class SpokeCore:
             device_name = self._get_setting("device.name", "Strawberry Spoke")
             allow_unsafe = self._get_setting("skills.allow_unsafe_exec", False)
 
+            custom_prompt = self._get_setting("llm.system_prompt", "")
             self._skills = SkillService(
                 skills_path=self._skills_path,
                 use_sandbox=use_sandbox,
                 device_name=device_name,
                 allow_unsafe_exec=allow_unsafe,
+                custom_system_prompt=custom_prompt or None,
             )
             self._skills.load_skills()
 

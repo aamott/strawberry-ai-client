@@ -51,14 +51,18 @@ class SkillService:
     - Parse and execute skill calls from LLM responses
     """
 
-    # System prompt template for skills
-    SYSTEM_PROMPT_TEMPLATE = (
+    # Default system prompt template for skills.
+    # Users can override this via the llm.system_prompt setting.
+    # The placeholder {skill_descriptions} is replaced at runtime with
+    # the full list of loaded skills and their methods.
+    DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
         "You are Strawberry, a helpful AI assistant with access to skills on this device.\n"
         "\n"
         "## Available Tools\n"
         "\n"
         "You have exactly 3 tools:\n"
-        "1. search_skills(query) - Find skills by keyword\n"
+        "1. search_skills(query) - Find skills by keyword "
+        "(searches method names and descriptions)\n"
         "2. describe_function(path) - Get full signature for a skill method\n"
         "3. python_exec(code) - Execute Python code that calls skills\n"
         "\n"
@@ -74,13 +78,21 @@ class SkillService:
         "- Weather: python_exec({{\"code\": \"print(device.WeatherSkill."
         "get_current_weather('Seattle'))\"}})\n"
         "- Calculate: python_exec({{\"code\": \"print(device.CalculatorSkill.add(a=5, b=3))\"}})\n"
+        "- Smart home: python_exec({{\"code\": \"print(device.HomeAssistantSkill."
+        "HassTurnOn(name='short lamp'))\"}})\n"
         "- Remote: python_exec({{\"code\": \"print(devices.living_room_pc."
         "MediaControlSkill.set_volume(level=20))\"}})\n"
         "\n"
-        "Example Flow (recommended):\n"
-        "1. search_skills({{\"query\": \"multiply\"}})\n"
-        "2. describe_function({{\"path\": \"CalculatorSkill.multiply\"}})\n"
-        "3. python_exec({{\"code\": \"print(device.CalculatorSkill.multiply(a=128, b=5))\"}})\n"
+        "## Searching Tips\n"
+        "\n"
+        "search_skills matches against method names and descriptions.\n"
+        "Search by **action** or **verb**, not by specific entity/object names.\n"
+        "- To turn on a lamp, search 'turn on' not 'lamp'.\n"
+        "- To set brightness, search 'light' or 'brightness'.\n"
+        "- To look up docs, search 'documentation' or 'query'.\n"
+        "\n"
+        "If you already see the right skill in Available Skills below, skip search_skills\n"
+        "and call describe_function or python_exec directly.\n"
         "\n"
         "## Available Skills\n"
         "\n"
@@ -96,7 +108,9 @@ class SkillService:
         "6. Do NOT rerun the same tool call to double-check; use the first result.\n"
         "7. After tool calls complete, ALWAYS provide a final natural-language answer.\n"
         "8. If a tool call fails with 'Unknown tool', immediately switch to python_exec "
-        "and proceed."
+        "and proceed.\n"
+        "9. For smart-home commands (turn on/off, lights, locks, media), look for "
+        "HomeAssistantSkill. Pass the device/entity name as the 'name' kwarg."
     )
 
     def __init__(
@@ -108,6 +122,7 @@ class SkillService:
         sandbox_config: Optional[SandboxConfig] = None,
         device_name: Optional[str] = None,
         allow_unsafe_exec: Optional[bool] = None,
+        custom_system_prompt: Optional[str] = None,
     ):
         """Initialize skill service.
 
@@ -119,6 +134,9 @@ class SkillService:
             sandbox_config: Sandbox configuration (optional)
             device_name: Name of this device (for Hub registration)
             allow_unsafe_exec: Allow direct execution outside sandbox
+            custom_system_prompt: Custom system prompt template. Must
+                contain ``{skill_descriptions}`` placeholder. If None
+                or empty, DEFAULT_SYSTEM_PROMPT_TEMPLATE is used.
         """
         self.skills_path = Path(skills_path)
         self.hub_client = hub_client
@@ -128,6 +146,7 @@ class SkillService:
         if allow_unsafe_exec is None:
             allow_unsafe_exec = True
         self.allow_unsafe_exec = allow_unsafe_exec
+        self._custom_system_prompt = custom_system_prompt
 
         self._loader = SkillLoader(skills_path)
         self._heartbeat_task: Optional[asyncio.Task] = None
@@ -373,10 +392,31 @@ class SkillService:
             descriptions.append("")
 
         skill_text = "\n".join(descriptions)
-        prompt = self.SYSTEM_PROMPT_TEMPLATE.format(skill_descriptions=skill_text)
+
+        # Use custom system prompt template if set, otherwise default.
+        template = self._custom_system_prompt or self.DEFAULT_SYSTEM_PROMPT_TEMPLATE
+        try:
+            prompt = template.format(skill_descriptions=skill_text)
+        except KeyError:
+            # User template is missing {skill_descriptions} — append skills.
+            logger.warning(
+                "Custom system prompt missing {skill_descriptions} placeholder; "
+                "appending skill list."
+            )
+            prompt = template + "\n\n## Available Skills\n\n" + skill_text
+
         if mode_preamble:
             return f"{mode_preamble}\n\n{prompt}"
         return prompt
+
+    def set_custom_system_prompt(self, prompt: Optional[str]) -> None:
+        """Update the custom system prompt template at runtime.
+
+        Args:
+            prompt: New template string (should contain
+                ``{skill_descriptions}``), or None to revert to default.
+        """
+        self._custom_system_prompt = prompt or None
 
     def parse_skill_calls(self, response: str) -> List[str]:
         """Parse skill calls from LLM response.
@@ -1004,6 +1044,11 @@ class _DeviceProxy:
     def search_skills(self, query: str = "", device_limit: int = 10) -> List[Dict[str, Any]]:
         """Search for skills by keyword.
 
+        Splits the query into words and matches if **any** word appears
+        in the method name, skill name, signature, or docstring.  This
+        makes multi-word queries like "react documentation" find results
+        that match on "documentation" alone.
+
         Args:
             query: Search term (matches name, signature, docstring)
             device_limit: Ignored for local-only mode
@@ -1012,29 +1057,47 @@ class _DeviceProxy:
             List of matching skills with path, signature, summary
         """
         results = []
+        query_words = query.lower().split() if query else []
+
+        # Collect all (skill, method) pairs with their searchable text
+        candidates: list[tuple] = []
         for skill in self._loader.get_all_skills():
             for method in skill.methods:
-                # Check if query matches
-                query_lower = query.lower() if query else ""
-                matches = (
-                    not query or
-                    query_lower in method.name.lower() or
-                    query_lower in skill.name.lower() or
-                    query_lower in method.signature.lower() or
-                    (method.docstring and query_lower in method.docstring.lower())
-                )
+                if not query_words:
+                    candidates.append((skill, method, True))
+                else:
+                    searchable = (
+                        f"{method.name} {skill.name} "
+                        f"{method.signature} "
+                        f"{method.docstring or ''}"
+                    ).lower()
+                    candidates.append((skill, method, searchable))
 
-                if matches:
-                    # Get first line of docstring as summary
-                    summary = ""
-                    if method.docstring:
-                        summary = method.docstring.split("\n")[0].strip()
+        # Try all-words first for precision, fall back to any-word.
+        if query_words:
+            matched = [
+                (s, m) for s, m, txt in candidates
+                if txt is True or all(w in txt for w in query_words)
+            ]
+            if not matched:
+                matched = [
+                    (s, m) for s, m, txt in candidates
+                    if txt is True or any(w in txt for w in query_words)
+                ]
+        else:
+            matched = [(s, m) for s, m, _ in candidates]
 
-                    results.append({
-                        "path": f"{skill.name}.{method.name}",
-                        "signature": method.signature,
-                        "summary": summary,
-                    })
+        for skill, method in matched:
+            # Get first line of docstring as summary
+            summary = ""
+            if method.docstring:
+                summary = method.docstring.split("\n")[0].strip()
+
+            results.append({
+                "path": f"{skill.name}.{method.name}",
+                "signature": method.signature,
+                "summary": summary,
+            })
         return results
 
     def describe_function(self, path: str) -> str:

@@ -1,5 +1,5 @@
 ---
-description: Use this when going through items in a review and fixing or implementing them.
+description: How to use the test CLI (a live chat interface for testing and debugging).
 ---
 # Test CLI
 
