@@ -738,8 +738,11 @@ class SkillService:
             logger.info(f"Executed {skill_name}.{method_name} -> {result}")
             return result
         except Exception as e:
-            logger.error(f"Skill execution failed: {skill_name}.{method_name} - {e}")
-            raise RuntimeError(f"Skill execution failed: {e}")
+            msg = str(e).strip() if str(e).strip() else f"{type(e).__name__} (no details)"
+            logger.error(f"Skill execution failed: {skill_name}.{method_name} - {msg}")
+            raise RuntimeError(
+                f"{skill_name}.{method_name} failed: {msg}"
+            ) from e
 
     # =========================================================================
     # TensorZero Tool Call Execution
