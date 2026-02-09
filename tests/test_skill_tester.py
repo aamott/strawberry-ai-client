@@ -128,7 +128,7 @@ class TestToolExecution:
         """search_skills with empty query returns all skills."""
         result = tester._execute_tool("search_skills", {"query": ""})
         assert "result" in result
-        # Result is a JSON string from _execute_search_skills
+        # Result is a text listing from _execute_search_skills
         assert "CalcSkill.add" in result["result"]
         assert "CalcSkill.multiply" in result["result"]
 
