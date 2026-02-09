@@ -112,6 +112,7 @@ QPushButton:disabled, QToolButton:disabled {{ color: {muted}; }}
 #SidebarRail QLabel {{ font-size: 13px; }}
 #NavButton {{ border-radius: 8px; }}
 #NavButton:hover {{ background-color: {hover}; }}
+#NavButton[selected="true"] {{ background-color: {sel}; }}
 #SessionEdit {{
     background-color: {self.bg_input};
     border: 1px solid {acc}; border-radius: 4px;
