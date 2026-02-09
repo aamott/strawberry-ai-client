@@ -6,6 +6,7 @@ from .input_area import InputArea
 from .message_card import MessageCard
 from .settings_window import SettingsWindow
 from .sidebar_rail import SidebarRail
+from .skills_panel import SkillsPanel
 from .status_bar import StatusBar
 from .text_block import TextBlock
 from .title_bar import TitleBar
@@ -25,6 +26,7 @@ __all__ = [
     "InputArea",
     "TypingIndicator",
     "SettingsWindow",
+    "SkillsPanel",
     "ToastManager",
     "ToastLevel",
 ]

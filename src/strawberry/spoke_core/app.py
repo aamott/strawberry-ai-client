@@ -16,6 +16,8 @@ from .events import (
     CoreEvent,
     CoreReady,
     MessageAdded,
+    SkillsLoaded,
+    SkillStatusChanged,
     ToolCallResult,
     ToolCallStarted,
 )
@@ -262,6 +264,12 @@ class SpokeCore:
             )
             self._skills.load_skills()
 
+            # Emit SkillsLoaded so the GUI can show toasts for failures
+            await self._emit(SkillsLoaded(
+                skills=self._skills.get_skill_summaries(),
+                failures=self._skills.get_load_failures(),
+            ))
+
             # Initialize agent runners
             self._hub_runner = HubAgentRunner(
                 get_hub_client=lambda: self._hub_manager.client,
@@ -484,6 +492,46 @@ class SpokeCore:
 
         await self._emit(CoreError(error="No agent runner available"))
         return None
+
+    def get_skill_summaries(self) -> List[Dict[str, Any]]:
+        """Get plain-dict summaries of all loaded skills.
+
+        Returns:
+            List of dicts with keys: name, method_count, enabled, source, methods.
+        """
+        if self._skills:
+            return self._skills.get_skill_summaries()
+        return []
+
+    def get_skill_load_failures(self) -> List[Dict[str, str]]:
+        """Get plain-dict list of skills that failed to load.
+
+        Returns:
+            List of dicts with keys: source, error.
+        """
+        if self._skills:
+            return self._skills.get_load_failures()
+        return []
+
+    async def set_skill_enabled(self, name: str, enabled: bool) -> bool:
+        """Enable or disable a skill and emit a status change event.
+
+        Args:
+            name: Skill class name.
+            enabled: True to enable, False to disable.
+
+        Returns:
+            True if the skill was found and status changed.
+        """
+        if not self._skills:
+            return False
+        if enabled:
+            ok = self._skills.enable_skill(name)
+        else:
+            ok = self._skills.disable_skill(name)
+        if ok:
+            await self._emit(SkillStatusChanged(skill_name=name, enabled=enabled))
+        return ok
 
     def get_system_prompt(self) -> str:
         """Get the current system prompt."""

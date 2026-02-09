@@ -13,6 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class SkillLoadFailure:
+    """Record of a skill that failed to load."""
+    source: str  # file path or repo name
+    error: str   # human-readable error message
+
+
+@dataclass
 class SkillMethod:
     """Information about a skill method."""
     name: str
@@ -91,6 +98,7 @@ class SkillLoader:
         self.skills_path = Path(skills_path)
         self._skills: Dict[str, SkillInfo] = {}
         self._instances: Dict[str, Any] = {}
+        self._failures: List[SkillLoadFailure] = []
 
         self._repo_namespace_root = "strawberry_skillrepos"
 
@@ -102,6 +110,7 @@ class SkillLoader:
         """
         self._skills.clear()
         self._instances.clear()
+        self._failures.clear()
 
         if not self.skills_path.exists():
             logger.warning(f"Skills directory does not exist: {self.skills_path}")
@@ -144,6 +153,10 @@ class SkillLoader:
                     )
             except Exception as e:
                 logger.error(f"Failed to load repo skill from {entrypoint}: {e}")
+                self._failures.append(SkillLoadFailure(
+                    source=str(repo_dir.name),
+                    error=str(e),
+                ))
 
         # Find all top-level Python files
         for py_file in self.skills_path.glob("*.py"):
@@ -170,6 +183,10 @@ class SkillLoader:
                     )
             except Exception as e:
                 logger.error(f"Failed to load {py_file}: {e}")
+                self._failures.append(SkillLoadFailure(
+                    source=py_file.name,
+                    error=str(e),
+                ))
 
         return list(self._skills.values())
 
@@ -342,6 +359,11 @@ class SkillLoader:
             if skill:
                 self._instances[skill_name] = skill.class_obj()
         return self._instances.get(skill_name)
+
+    @property
+    def failures(self) -> List[SkillLoadFailure]:
+        """Get the list of skill load failures from the last load_all()."""
+        return list(self._failures)
 
     def get_all_skills(self) -> List[SkillInfo]:
         """Get all loaded skills."""

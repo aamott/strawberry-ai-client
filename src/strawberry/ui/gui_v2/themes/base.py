@@ -230,6 +230,37 @@ QScrollBar::sub-line:vertical {{ height: 0; }}
 #ToastIcon {{ font-size: 15px; }}
 #ToastText {{ font-size: 13px; color: {fg}; }}
 
+/* Skills panel */
+#SkillsPanel {{
+    background-color: {bg};
+}}
+#SkillsPanelHeader {{
+    font-size: 18px; font-weight: bold; color: {fg};
+}}
+#SkillsPanelSummary {{
+    font-size: 12px; color: {muted};
+}}
+#SkillsSectionHeader {{
+    font-size: 13px; font-weight: bold; color: {sec};
+    padding: 6px 0 2px 0;
+}}
+#SkillCard {{
+    background-color: {self.bg_secondary};
+    border: 1px solid {bdr}; border-radius: 8px;
+}}
+#SkillCard:hover {{ border-color: {self.border_light}; }}
+#SkillCard[disabled_skill="true"] {{ opacity: 0.5; }}
+#SkillCardIcon {{ font-size: 18px; }}
+#SkillCardName {{ font-size: 14px; font-weight: bold; }}
+#SkillCardDetail {{ font-size: 12px; color: {muted}; }}
+#SkillCardHealthWarning {{ font-size: 12px; color: {self.warning}; }}
+#SkillFailureCard {{
+    background-color: {self.bg_secondary};
+    border: 1px solid {self.error}; border-radius: 8px;
+}}
+#SkillFailureName {{ font-size: 14px; font-weight: bold; color: {self.error}; }}
+#SkillFailureError {{ font-size: 12px; color: {muted}; }}
+
 /* Offline banner */
 #OfflineBanner {{
     background-color: {self.warning}; border-radius: 8px;
