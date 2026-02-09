@@ -86,7 +86,7 @@ async def test_python_exec_tool_returns_placeholder_when_no_output(
         "python_exec",
         {"code": "device.WeatherSkill.get_current_weather('Seattle')"},
     )
-    assert result == {"result": "'sunny in Seattle'"}
+    assert result == {"result": "sunny in Seattle"}
 
 
 @pytest.mark.asyncio

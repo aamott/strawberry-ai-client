@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     pass
 
 from ..hub import HubClient
-from .loader import SkillInfo, SkillLoader
+from .loader import SkillInfo, SkillLoader, SkillMethod
 from .sandbox.executor import SandboxConfig, SandboxExecutor
 from .sandbox.gatekeeper import Gatekeeper
 from .sandbox.proxy_gen import ProxyGenerator, SkillMode
@@ -774,7 +774,7 @@ class SkillService:
                 if result.success:
                     return {"result": result.result or "(no output)"}
                 else:
-                    return {"error": result.error}
+                    return {"error": _enrich_exec_error(result.error or "")}
 
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
@@ -788,7 +788,7 @@ class SkillService:
 
         If the last top-level statement is a bare expression (for example:
         `devices.new.InternetSearchSkill.search_web_detailed("bacon")`), rewrite
-        the code to evaluate the expression and print its repr(). This ensures
+        the code to evaluate the expression and print its str(). This ensures
         `python_exec` returns useful output even when the user/model forgets to
         wrap the expression in `print(...)`.
 
@@ -826,12 +826,15 @@ class SkillService:
             targets=[ast.Name(id=last_name, ctx=ast.Store())],
             value=expr_value,
         )
+        # Use str() instead of repr() for the auto-print so the LLM sees
+        # clean output (e.g. "Hello" not "'Hello'", and readable dicts
+        # instead of Python repr formatting).
         print_call = ast.Expr(
             value=ast.Call(
                 func=ast.Name(id="print", ctx=ast.Load()),
                 args=[
                     ast.Call(
-                        func=ast.Name(id="repr", ctx=ast.Load()),
+                        func=ast.Name(id="str", ctx=ast.Load()),
                         args=[ast.Name(id=last_name, ctx=ast.Load())],
                         keywords=[],
                     )
@@ -915,13 +918,11 @@ class SkillService:
                 query = arguments.get("query", "")
                 device_limit = int(arguments.get("device_limit", 10) or 10)
                 if mode == SkillMode.REMOTE and self.hub_client:
-                    import json
-
                     results = await self.hub_client.search_skills(
                         query=query,
                         device_limit=device_limit,
                     )
-                    return {"result": json.dumps(results, indent=2)}
+                    return {"result": self._format_search_results(results)}
 
                 result = self._execute_search_skills(query, device_limit=device_limit)
                 return {"result": result}
@@ -972,7 +973,7 @@ class SkillService:
                 if result.success:
                     return {"result": result.result or "(no output)"}
                 else:
-                    return {"error": result.error}
+                    return {"error": _enrich_exec_error(result.error or "")}
 
             else:
                 return {
@@ -989,6 +990,39 @@ class SkillService:
             import traceback
             return {"error": f"{type(e).__name__}: {e}\n{traceback.format_exc()}"}
 
+    @staticmethod
+    def _format_search_results(results: List[Dict[str, Any]]) -> str:
+        """Format search results as a compact text table for the LLM.
+
+        Produces one line per result instead of verbose JSON, saving tokens
+        and making it easier for the LLM to scan for the right skill.
+
+        Args:
+            results: List of dicts with path, signature, summary keys.
+
+        Returns:
+            Human/LLM-readable text listing.
+        """
+        if not results:
+            return "No results found."
+
+        lines = [f"Found {len(results)} result(s):"]
+        for r in results:
+            sig = r.get("signature", r.get("path", "?"))
+            summary = r.get("summary", "")
+            path = r.get("path", "")
+            # Include device info if present (online/Hub results)
+            devices = r.get("devices", [])
+            device_suffix = ""
+            if devices:
+                device_suffix = f"  [on: {', '.join(devices[:3])}]"
+            line = f"  {path} — {sig}"
+            if summary:
+                line += f" — {summary}"
+            line += device_suffix
+            lines.append(line)
+        return "\n".join(lines)
+
     def _execute_search_skills(self, query: str, device_limit: int = 10) -> str:
         """Execute search_skills tool.
 
@@ -997,17 +1031,15 @@ class SkillService:
             device_limit: Number of sample devices to return per skill (online mode)
 
         Returns:
-            JSON string of search results
+            Compact text listing of search results.
         """
-        import json
-
         self._ensure_skills_loaded()
 
         # Use device proxy for search (has the search_skills method)
         device = _DeviceProxy(self._loader)
         results = device.search_skills(query, device_limit=device_limit)
 
-        return json.dumps(results, indent=2)
+        return self._format_search_results(results)
 
     def _execute_describe_function(self, path: str) -> str:
         """Execute describe_function tool.
@@ -1022,6 +1054,141 @@ class SkillService:
 
         device = _DeviceProxy(self._loader)
         return device.describe_function(path)
+
+
+# Common English stop words to strip from search queries.
+# Prevents "turn on the lamp" from matching everything via "the" or "on".
+_SEARCH_STOP_WORDS = frozenset({
+    "a", "an", "the", "is", "to", "for", "of", "in", "on", "it",
+    "and", "or", "my", "me", "i", "do", "can", "you", "please",
+    "what", "how", "get", "set",
+})
+
+# Hints appended to common python_exec errors so the LLM can self-correct.
+_ERROR_HINTS: Dict[str, str] = {
+    "import": (
+        "\nHint: Imports are not allowed in python_exec. "
+        "All skill methods are available via device.<SkillName>.<method>()."
+    ),
+    "__import__": (
+        "\nHint: Imports are not allowed in python_exec. "
+        "All skill methods are available via device.<SkillName>.<method>()."
+    ),
+    "open": (
+        "\nHint: File I/O is not allowed in python_exec."
+    ),
+    "not found": (
+        "\nHint: Use search_skills to find available skills, "
+        "then describe_function to see the full signature."
+    ),
+    "not allowed": (
+        "\nHint: This operation is restricted for security. "
+        "Use device.<SkillName>.<method>() to call skills."
+    ),
+}
+
+
+def _enrich_exec_error(error: str) -> str:
+    """Append an actionable hint to a python_exec error message.
+
+    Scans the error text for known patterns and appends a short hint
+    so the LLM can self-correct without extra round-trips.
+
+    Args:
+        error: Raw error message string.
+
+    Returns:
+        Error string, possibly with an appended hint.
+    """
+    if not error:
+        return error
+    error_lower = error.lower()
+    for pattern, hint in _ERROR_HINTS.items():
+        if pattern in error_lower:
+            return error + hint
+    return error
+
+
+def _build_example_call(skill_name: str, method: SkillMethod) -> str:
+    """Build a ready-to-use python_exec example for a skill method.
+
+    Parses the method signature to generate placeholder arguments so the
+    LLM can copy-paste and fill in real values.
+
+    Args:
+        skill_name: Name of the skill class.
+        method: SkillMethod with signature info.
+
+    Returns:
+        Example code string, e.g.
+        ``print(device.CalcSkill.add(a=5, b=3))``
+    """
+    sig = method.signature  # e.g. "add(a: int, b: int) -> int"
+    # Extract the params portion between parens
+    match = re.search(r"\(([^)]*)\)", sig)
+    if not match:
+        return f"print(device.{skill_name}.{method.name}())"
+
+    params_str = match.group(1).strip()
+    if not params_str:
+        return f"print(device.{skill_name}.{method.name}())"
+
+    # Parse individual params
+    example_args: list[str] = []
+    for param in params_str.split(","):
+        param = param.strip()
+        if not param:
+            continue
+        # Skip **kwargs params (MCP skills)
+        if param.startswith("**"):
+            continue
+
+        # Extract name and optional default
+        # Formats: "name: type", "name: type = default", "name=default"
+        name = param.split(":")[0].split("=")[0].strip()
+
+        # Check for a default value
+        if "=" in param:
+            # Use the actual default
+            default = param.rsplit("=", 1)[1].strip()
+            example_args.append(f"{name}={default}")
+        else:
+            # Generate a placeholder based on type hint
+            type_hint = ""
+            if ":" in param:
+                type_hint = param.split(":", 1)[1].split("=")[0].strip().lower()
+
+            placeholder = _placeholder_for_type(type_hint)
+            example_args.append(f"{name}={placeholder}")
+
+    args_str = ", ".join(example_args)
+    return f"print(device.{skill_name}.{method.name}({args_str}))"
+
+
+def _placeholder_for_type(type_hint: str) -> str:
+    """Return a sensible placeholder value for a type hint.
+
+    Args:
+        type_hint: Lowercase type hint string.
+
+    Returns:
+        Placeholder value as a string.
+    """
+    if not type_hint:
+        return "..."
+    if "str" in type_hint:
+        return "'...'"
+    if "int" in type_hint:
+        return "0"
+    if "float" in type_hint:
+        return "0.0"
+    if "bool" in type_hint:
+        return "True"
+    if "list" in type_hint:
+        return "[]"
+    if "dict" in type_hint:
+        return "{}"
+    return "..."
 
 
 class _DeviceProxy:
@@ -1057,7 +1224,13 @@ class _DeviceProxy:
             List of matching skills with path, signature, summary
         """
         results = []
-        query_words = query.lower().split() if query else []
+        # Strip common stop words to improve search precision.
+        # "turn on the lamp" → ["turn", "lamp"] instead of matching "the" everywhere.
+        raw_words = query.lower().split() if query else []
+        query_words = [w for w in raw_words if w not in _SEARCH_STOP_WORDS]
+        # If stripping removed everything, fall back to original words
+        if not query_words and raw_words:
+            query_words = raw_words
 
         # Collect all (skill, method) pairs with their searchable text
         candidates: list[tuple] = []
@@ -1122,7 +1295,13 @@ class _DeviceProxy:
         for method in skill.methods:
             if method.name == method_name:
                 doc = method.docstring or "No description available"
-                return f"def {method.signature}:\n    \"\"\"\n    {doc}\n    \"\"\""
+                # Build a ready-to-use example call so the LLM doesn't
+                # have to figure out the python_exec invocation itself.
+                example = _build_example_call(skill_name, method)
+                result = f"def {method.signature}:\n    \"\"\"\n    {doc}\n    \"\"\""
+                if example:
+                    result += f"\n\nExample:\n  python_exec(code=\"{example}\")"
+                return result
 
         return f"Error: Method '{method_name}' not found in {skill_name}"
 
