@@ -234,6 +234,17 @@ class VoiceService(QObject):
         """Check if voice mode (wakeword listening) is active."""
         return self._voice_mode_active
 
+    async def ensure_running(self, reason: str = "") -> bool:
+        """Ensure VoiceCore is running, starting it if needed.
+
+        Args:
+            reason: Human-readable reason for starting (for logging).
+
+        Returns:
+            True if VoiceCore is running after this call.
+        """
+        return await self._ensure_started(reason)
+
     # TTS API
 
     def speak(self, text: str) -> None:

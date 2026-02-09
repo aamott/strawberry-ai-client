@@ -363,23 +363,37 @@ class MainWindow(QMainWindow):
         if not text:
             return
 
-        if self._voice_service.is_available:
-            if self._voice_service.is_running():
-                self._voice_service.speak(text)
-            else:
-                logger.warning(
-                    "Read aloud requested but VoiceCore is not running",
-                )
-                self._toast.show(
-                    "Voice engine not running — cannot read aloud",
-                    ToastLevel.WARNING,
-                )
-        else:
+        if not self._voice_service.is_available:
             logger.warning("Read aloud requested but VoiceCore is not available")
             self._toast.show(
                 "Voice engine not available — cannot read aloud",
                 ToastLevel.WARNING,
             )
+            return
+
+        async def _start_and_speak() -> None:
+            if not self._voice_service.is_running():
+                self._toast.show(
+                    "Starting Voice Service…",
+                    ToastLevel.INFO,
+                    duration_ms=3000,
+                )
+                started = await self._voice_service.ensure_running(
+                    reason="read-aloud request",
+                )
+                if not started:
+                    logger.warning(
+                        "VoiceCore failed to start for read-aloud request",
+                    )
+                    self._toast.show(
+                        "Could not start Voice Service",
+                        ToastLevel.ERROR,
+                        duration_ms=4000,
+                    )
+                    return
+            self._voice_service.speak(text)
+
+        asyncio.ensure_future(_start_and_speak())
 
     def _on_voice_starting(self) -> None:
         """Handle VoiceCore starting → show loading on voice buttons."""
