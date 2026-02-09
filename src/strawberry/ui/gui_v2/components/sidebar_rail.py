@@ -157,8 +157,6 @@ class NavButton(QFrame):
         self.icon_btn.setObjectName(f"NavIcon_{nav_id}")
         self.icon_btn.setText(icon)
         self.icon_btn.setToolTip(label)
-        self.icon_btn.setCheckable(True)
-        self.icon_btn.setAutoExclusive(False)
         self.icon_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.icon_btn.clicked.connect(lambda: self.clicked.emit(nav_id))
         layout.addWidget(self.icon_btn)
@@ -170,6 +168,12 @@ class NavButton(QFrame):
         self.label_widget.setToolTip(label)
         self.label_widget.hide()
         layout.addWidget(self.label_widget, 1)
+
+    def set_selected(self, selected: bool) -> None:
+        """Set the active/selected state for this nav button."""
+        self.setProperty("selected", "true" if selected else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def mousePressEvent(self, event) -> None:
         """Forward clicks on the entire container."""
@@ -230,9 +234,9 @@ class SidebarRail(QFrame):
         nav_layout.setContentsMargins(4, 0, 4, 0)
         nav_layout.setSpacing(4)
 
-        # Chats button
+        # Chats button (selected by default)
         self._chats_btn = self._create_nav_button(Icons.CHATS, "Chats", "chats")
-        self._chats_btn.icon_btn.setChecked(True)
+        self._chats_btn.set_selected(True)
         nav_layout.addWidget(self._chats_btn)
 
         # New chat button — entire row triggers new_chat_requested
@@ -298,18 +302,14 @@ class SidebarRail(QFrame):
 
     def _on_nav_clicked(self, nav_id: str) -> None:
         """Handle navigation button click."""
-        # Uncheck all nav buttons
-        for nav_btn in [self._chats_btn, self._skills_btn, self._settings_btn]:
-            nav_btn.icon_btn.setChecked(False)
-
-        # Check the clicked button
+        # Deselect all nav buttons, then select the active one
         btn_map = {
             "chats": self._chats_btn,
             "skills": self._skills_btn,
             "settings": self._settings_btn,
         }
-        if nav_id in btn_map:
-            btn_map[nav_id].icon_btn.setChecked(True)
+        for nid, nav_btn in btn_map.items():
+            nav_btn.set_selected(nid == nav_id)
 
         self._current_nav = nav_id
 
