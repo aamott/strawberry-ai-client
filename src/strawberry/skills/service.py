@@ -152,6 +152,7 @@ class SkillService:
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._registered = False
         self._skills_loaded = False
+        self._disabled_skills: set[str] = set()
 
         self._mode_override: Optional[SkillMode] = None
 
@@ -196,14 +197,120 @@ class SkillService:
         # For now, just delegate to sync loading
         return self.load_skills()
 
-    def get_all_skills(self) -> List[SkillInfo]:
+    def get_all_skills(self, *, include_disabled: bool = False) -> List[SkillInfo]:
         """Get all loaded skills.
 
+        Args:
+            include_disabled: If True, include disabled skills too.
+
         Returns:
-            List of all SkillInfo objects.
+            List of SkillInfo objects.
         """
         self._ensure_skills_loaded()
-        return self._loader.get_all_skills()
+        all_skills = self._loader.get_all_skills()
+        if include_disabled:
+            return all_skills
+        return [s for s in all_skills if s.name not in self._disabled_skills]
+
+    def get_skill_summaries(self) -> List[Dict[str, Any]]:
+        """Get plain-dict summaries of all loaded skills.
+
+        Returns dicts with keys: name, method_count, enabled, source,
+        methods, healthy, health_message.  If a skill class defines a
+        ``_health_check()`` method it is called to populate the health
+        fields; otherwise the skill is assumed healthy.
+
+        Suitable for passing to the GUI without coupling.
+        """
+        self._ensure_skills_loaded()
+        summaries = []
+        for skill in self._loader.get_all_skills():
+            health = self._run_health_check(skill)
+            summaries.append({
+                "name": skill.name,
+                "method_count": len(skill.methods),
+                "enabled": skill.name not in self._disabled_skills,
+                "source": str(skill.module_path) if skill.module_path else "unknown",
+                "methods": [
+                    {"name": m.name, "signature": m.signature, "docstring": m.docstring}
+                    for m in skill.methods
+                ],
+                "healthy": health.get("healthy", True),
+                "health_message": health.get("message", ""),
+            })
+        return summaries
+
+    @staticmethod
+    def _run_health_check(skill: SkillInfo) -> Dict[str, Any]:
+        """Run a skill's ``_health_check`` if it defines one.
+
+        Returns:
+            Dict with at least ``healthy`` (bool).  Falls back to
+            ``{"healthy": True}`` when no check is defined or if the
+            check itself raises an exception.
+        """
+        if skill.instance is None:
+            msg = "Skill failed to instantiate"
+            logger.warning("Health check failed for %s: %s", skill.name, msg)
+            return {"healthy": False, "message": msg}
+        checker = getattr(skill.instance, "_health_check", None)
+        if not callable(checker):
+            return {"healthy": True}
+        try:
+            result = checker() or {"healthy": True}
+            if not result.get("healthy", True):
+                logger.warning(
+                    "Health check failed for %s: %s",
+                    skill.name,
+                    result.get("message", "unknown issue"),
+                )
+            return result
+        except Exception as exc:
+            logger.warning("Health check for %s raised: %s", skill.name, exc)
+            return {"healthy": False, "message": f"Health check error: {exc}"}
+
+    def get_load_failures(self) -> List[Dict[str, str]]:
+        """Get plain-dict list of skills that failed to load.
+
+        Returns dicts with keys: source, error.
+        """
+        return [{"source": f.source, "error": f.error} for f in self._loader.failures]
+
+    def disable_skill(self, name: str) -> bool:
+        """Disable a skill (excluded from prompt and execution).
+
+        Args:
+            name: Skill class name.
+
+        Returns:
+            True if the skill was found and disabled.
+        """
+        skill = self._loader.get_skill(name)
+        if not skill:
+            return False
+        self._disabled_skills.add(name)
+        logger.info("Disabled skill: %s", name)
+        return True
+
+    def enable_skill(self, name: str) -> bool:
+        """Re-enable a previously disabled skill.
+
+        Args:
+            name: Skill class name.
+
+        Returns:
+            True if the skill was found and re-enabled.
+        """
+        skill = self._loader.get_skill(name)
+        if not skill:
+            return False
+        self._disabled_skills.discard(name)
+        logger.info("Enabled skill: %s", name)
+        return True
+
+    def is_skill_enabled(self, name: str) -> bool:
+        """Check if a skill is enabled."""
+        return name not in self._disabled_skills
 
     def _ensure_skills_loaded(self) -> None:
         """Ensure skills are loaded before access.

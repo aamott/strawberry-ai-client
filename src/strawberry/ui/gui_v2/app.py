@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from ...spoke_core import SpokeCore
     from ...voice import VoiceCore
 
+from ...spoke_core.events import SkillsLoaded
 from .components.toast import ToastLevel
 from .main_window import MainWindow
 from .models.message import Message, MessageRole, TextSegment
@@ -181,6 +182,7 @@ class IntegratedApp:
         """Connect window signals to handlers."""
         self._window.message_submitted.connect(self._on_message_submitted)
         self._window.session_changed.connect(self._on_session_changed)
+        self._window.skill_toggled.connect(self._on_skill_toggled)
         self._window.closing.connect(self._on_closing)
         # Note: read-aloud is handled by MainWindow._on_read_aloud_requested
         # via VoiceService — no duplicate connection needed here.
@@ -330,6 +332,8 @@ class IntegratedApp:
             CoreReady,
             MessageAdded,
             ModeChanged,
+            SkillsLoaded,
+            SkillStatusChanged,
             StreamingDelta,
             ToolCallResult,
             ToolCallStarted,
@@ -406,6 +410,49 @@ class IntegratedApp:
                     duration_ms=5000,
                 )
 
+        elif isinstance(event, SkillsLoaded):
+            # Queue toasts to ensure the window is ready before showing them
+            toast_payloads = []
+
+            # Load failures (errors)
+            for failure in event.failures:
+                toast_payloads.append(
+                    (
+                        f"Skill failed to load: {failure['source']}\n{failure['error']}",
+                        ToastLevel.ERROR,
+                    )
+                )
+
+            # Loaded but unhealthy (warnings)
+            for skill in event.skills:
+                if not skill.get("healthy", True):
+                    msg = skill.get("health_message", "Unknown issue")
+                    toast_payloads.append(
+                        (
+                            f"{skill['name']}: {msg}",
+                            ToastLevel.WARNING,
+                        )
+                    )
+
+            if toast_payloads:
+                logger.info("Emitting skill health/load toasts: %s", toast_payloads)
+
+                def _show_startup_toasts(payloads=toast_payloads):
+                    for text, level in payloads:
+                        self._window.toast.show(text, level, duration_ms=6000)
+
+                # Show immediately; hub toasts already prove UI is ready.
+                _show_startup_toasts()
+
+            # Feed skill data to the skills panel
+            self._window.set_skills_data(event.skills, event.failures)
+
+        elif isinstance(event, SkillStatusChanged):
+            # Refresh skills panel with updated data
+            summaries = self._core.get_skill_summaries()
+            failures = self._core.get_skill_load_failures()
+            self._window.set_skills_data(summaries, failures)
+
         elif isinstance(event, ModeChanged):
             self._window.set_offline_mode(not event.online)
             if event.online:
@@ -445,6 +492,15 @@ class IntegratedApp:
         if should_speak:
             self._voice.speak(content)
 
+    def _on_skill_toggled(self, name: str, enabled: bool) -> None:
+        """Handle skill enable/disable from the skills panel.
+
+        Args:
+            name: Skill class name.
+            enabled: New enabled state.
+        """
+        asyncio.ensure_future(self._core.set_skill_enabled(name, enabled))
+
     def _on_closing(self) -> None:
         """Handle window closing."""
         # Schedule shutdown - the loop will process it before fully closing
@@ -476,6 +532,12 @@ class IntegratedApp:
 
         # Subscribe to events after core is started (event bus has loop set)
         self._subscribe_to_core_events()
+
+        # We may have missed the initial SkillsLoaded emitted during
+        # core.start(); manually dispatch once so the GUI sees health/toasts.
+        summaries = self._core.get_skill_summaries()
+        failures = self._core.get_skill_load_failures()
+        self._on_core_event(SkillsLoaded(skills=summaries, failures=failures))
 
         # Set up VoiceCore (response handler) regardless of autostart
         if self._voice:

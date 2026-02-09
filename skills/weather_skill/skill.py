@@ -71,6 +71,42 @@ class WeatherSkill:
             "DC",
         }
 
+    def _health_check(self) -> Dict[str, Any]:
+        """Check if the Weather skill is properly configured.
+
+        Returns:
+            Dict with 'healthy' bool and optional 'message' str.
+        """
+        api_key = os.environ.get("WEATHER_API_KEY")
+        if not api_key:
+            return {
+                "healthy": False,
+                "message": "WEATHER_API_KEY not set in environment",
+            }
+
+        # Try a lightweight geocode call to validate the key
+        try:
+            resp = requests.get(
+                f"{self._geo_url}/direct",
+                params={"q": "London", "limit": 1, "appid": api_key},
+                timeout=5,
+            )
+            if resp.status_code in (401, 403):
+                return {
+                    "healthy": False,
+                    "message": "WEATHER_API_KEY is invalid or expired",
+                }
+            # Any other HTTP error is treated as a transient issue, not
+            # a configuration problem — the key itself may be fine.
+        except (requests.ConnectionError, requests.Timeout):
+            # Network unavailable — don't mark as unhealthy since the
+            # key is present and may be perfectly valid.
+            logger.debug("Weather health check: network unavailable, assuming OK")
+        except Exception as e:
+            logger.debug("Weather health check: unexpected error: %s", e)
+
+        return {"healthy": True}
+
     def _get_api_key(self) -> str:
         api_key = os.environ.get("WEATHER_API_KEY")
         if not api_key:

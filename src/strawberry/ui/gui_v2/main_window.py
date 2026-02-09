@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -18,6 +19,7 @@ from .components import (
     ChatView,
     MessageCard,
     SidebarRail,
+    SkillsPanel,
     StatusBar,
     TitleBar,
     ToastLevel,
@@ -51,6 +53,7 @@ class MainWindow(QMainWindow):
     closing = Signal()
     message_submitted = Signal(str, str)  # content, source (MessageSource value)
     session_changed = Signal(str)
+    skill_toggled = Signal(str, bool)  # skill_name, enabled
 
     # Default window size
     DEFAULT_WIDTH = 1000
@@ -126,9 +129,17 @@ class MainWindow(QMainWindow):
         self._sidebar = SidebarRail()
         content_layout.addWidget(self._sidebar)
 
-        # Chat view
+        # Stacked content area (chat view + skills panel)
+        self._content_stack = QStackedWidget()
+        self._content_stack.setObjectName("ContentStack")
+
         self._chat_view = ChatView()
-        content_layout.addWidget(self._chat_view, 1)
+        self._content_stack.addWidget(self._chat_view)  # index 0
+
+        self._skills_panel = SkillsPanel()
+        self._content_stack.addWidget(self._skills_panel)  # index 1
+
+        content_layout.addWidget(self._content_stack, 1)
 
         main_layout.addWidget(content, 1)
 
@@ -151,6 +162,9 @@ class MainWindow(QMainWindow):
         self._sidebar.navigation_changed.connect(self._on_navigation_changed)
         self._sidebar.session_selected.connect(self._on_session_selected)
         self._sidebar.new_chat_requested.connect(self._on_new_chat)
+
+        # Skills panel
+        self._skills_panel.skill_toggled.connect(self.skill_toggled)
 
         # Chat view
         self._chat_view.message_sent.connect(self._on_message_sent)
@@ -186,11 +200,12 @@ class MainWindow(QMainWindow):
         """
         logger.debug(f"Navigation changed to: {nav_id}")
 
-        if nav_id == "settings":
-            self._open_settings()
+        if nav_id == "chats":
+            self._content_stack.setCurrentWidget(self._chat_view)
         elif nav_id == "skills":
-            # TODO: Open skills panel
-            self._status_bar.flash_message("Skills panel coming soon")
+            self._content_stack.setCurrentWidget(self._skills_panel)
+        elif nav_id == "settings":
+            self._open_settings()
 
     def _open_settings(self) -> None:
         """Open the settings window."""
@@ -530,6 +545,19 @@ class MainWindow(QMainWindow):
         """
         self._state.offline_mode = offline
         self._chat_view.set_offline_mode(offline)
+
+    def set_skills_data(
+        self,
+        skills: list,
+        failures: list,
+    ) -> None:
+        """Update the skills panel with current skill data.
+
+        Args:
+            skills: List of skill summary dicts.
+            failures: List of failure dicts.
+        """
+        self._skills_panel.set_data(skills, failures)
 
     def set_sessions(self, sessions: list) -> None:
         """Update the session list in the sidebar.

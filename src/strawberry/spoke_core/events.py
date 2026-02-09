@@ -83,6 +83,24 @@ class ModeChanged(CoreEvent):
     message: str = ""
 
 
+@dataclass
+class SkillsLoaded(CoreEvent):
+    """Skills have been loaded (or reloaded).
+
+    Carries plain-dict summaries so the GUI never needs to import
+    SkillInfo or SkillLoadFailure.
+    """
+    skills: List[Dict[str, Any]] = field(default_factory=list)
+    failures: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class SkillStatusChanged(CoreEvent):
+    """A skill's enabled/disabled status changed."""
+    skill_name: str
+    enabled: bool
+
+
 # Alias for backward compatibility
 CoreSettingsChanged = SettingsChanged
 
