@@ -280,7 +280,18 @@ class HubConnectionManager:
                 ))
                 # Re-register skills after reconnection
                 if self._skill_service:
-                    await self._register_skills(self._skill_service)
+                    # Hub may still be starting up; retry a few times before giving up
+                    for attempt in range(3):
+                        success = await self._register_skills(self._skill_service)
+                        if success:
+                            break
+                        logger.warning(
+                            "Skill re-registration failed on reconnect (attempt %d/3)",
+                            attempt + 1,
+                        )
+                        await asyncio.sleep(2)
+                    else:
+                        logger.error("Skill re-registration failed after hub reconnect")
         else:
             # WebSocket dropped — hub went offline
             if self._hub_connected:
