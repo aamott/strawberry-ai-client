@@ -1,5 +1,6 @@
 """Tests for the MCP skill repo: class_builder, naming, and loader integration."""
 
+import inspect
 import tempfile
 from pathlib import Path
 from typing import Any, Dict
@@ -142,6 +143,32 @@ class TestBuildSkillClass:
         # Missing required 'x'
         with pytest.raises(ValueError, match="Missing required argument 'x'"):
             instance.do_thing(y=42)
+
+    def test_method_rejects_unknown_arguments(self) -> None:
+        """Extra/unknown kwargs should raise ValueError, not be silently ignored."""
+        info = _make_server_info()
+        mock_fn = _make_fake_call_tool()
+        cls = build_skill_class(info, mock_fn)
+        instance = cls()
+        # 'bogus' is not in the inputSchema properties
+        with pytest.raises(ValueError, match="Unknown argument"):
+            instance.do_thing(x="hello", bogus="oops")
+        # Ensure the tool was NOT called
+        mock_fn.assert_not_called()
+
+    def test_method_has_proper_signature(self) -> None:
+        """inspect.signature() should show real param names, not **kwargs."""
+        info = _make_server_info()
+        cls = build_skill_class(info, _make_fake_call_tool())
+        sig = inspect.signature(cls.do_thing)
+        param_names = list(sig.parameters.keys())
+        # 'self' is first, then the schema params
+        assert "self" in param_names
+        assert "x" in param_names
+        assert "y" in param_names
+        # 'x' is required (no default), 'y' is optional (has default)
+        assert sig.parameters["x"].default is inspect.Parameter.empty
+        assert sig.parameters["y"].default is None
 
     def test_method_calls_tool_fn(self) -> None:
         """Method delegates to the call_tool_fn with correct args."""

@@ -4,6 +4,7 @@ Each MCP server becomes a separate Skill class (e.g. HomeAssistantSkill),
 and each MCP tool becomes a method on that class.
 """
 
+import inspect
 import logging
 import re
 from typing import Any, Callable, Dict, List, Type
@@ -129,6 +130,9 @@ def _build_method_for_tool(
     The generated method accepts keyword arguments matching the tool's input
     schema, then delegates to `call_tool_fn` for the actual MCP call.
 
+    Extra/unknown arguments are **rejected** with a clear ValueError so the
+    LLM can self-correct instead of silently sending invalid params.
+
     Args:
         tool: MCP tool definition.
         call_tool_fn: Async function(tool_name, arguments) -> result.
@@ -140,14 +144,27 @@ def _build_method_for_tool(
     docstring = _build_tool_docstring(tool)
     properties = tool.input_schema.get("properties", {})
     required_params = set(tool.input_schema.get("required", []))
+    known_params = set(properties.keys())
 
     def method(self: Any, **kwargs: Any) -> Any:
         """Placeholder — real docstring set below."""
+        # Reject unknown arguments so the LLM gets clear feedback
+        # instead of silently passing invalid params to the MCP server.
+        unknown = set(kwargs.keys()) - known_params
+        if unknown:
+            sorted_unknown = sorted(unknown)
+            sorted_known = sorted(known_params) if known_params else ["(none)"]
+            raise ValueError(
+                f"Unknown argument(s) {sorted_unknown} for MCP tool '{tool_name}'. "
+                f"Valid arguments: {sorted_known}"
+            )
+
         # Validate required params
         for param in required_params:
             if param not in kwargs:
                 raise ValueError(
-                    f"Missing required argument '{param}' for MCP tool '{tool_name}'"
+                    f"Missing required argument '{param}' for MCP tool '{tool_name}'. "
+                    f"Required: {sorted(required_params)}"
                 )
 
         # call_tool_fn is synchronous — it dispatches to the persistent
@@ -160,7 +177,32 @@ def _build_method_for_tool(
     method.__qualname__ = py_name
     method.__doc__ = docstring
 
-    # Build a proper signature with annotations for introspection
+    # Build a proper inspect.Signature with named parameters so that
+    # inspect.signature() (used by SkillLoader) shows real param names
+    # instead of `(**kwargs) -> Any`.
+    sig_params = [inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD)]
+    for prop_name, prop_schema in properties.items():
+        py_type = _json_schema_type_to_python(prop_schema.get("type", "any"))
+        # Required params have no default; optional params default to None.
+        if prop_name in required_params:
+            sig_params.append(inspect.Parameter(
+                prop_name,
+                inspect.Parameter.KEYWORD_ONLY,
+                annotation=py_type,
+            ))
+        else:
+            sig_params.append(inspect.Parameter(
+                prop_name,
+                inspect.Parameter.KEYWORD_ONLY,
+                default=None,
+                annotation=py_type,
+            ))
+    method.__signature__ = inspect.Signature(
+        parameters=sig_params,
+        return_annotation=Any,
+    )
+
+    # Also set __annotations__ for completeness
     annotations: Dict[str, Any] = {"return": Any}
     for prop_name, prop_schema in properties.items():
         py_type = _json_schema_type_to_python(prop_schema.get("type", "any"))

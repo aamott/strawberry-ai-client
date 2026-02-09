@@ -1139,8 +1139,8 @@ def _build_example_call(skill_name: str, method: SkillMethod) -> str:
         param = param.strip()
         if not param:
             continue
-        # Skip **kwargs params (MCP skills)
-        if param.startswith("**"):
+        # Skip **kwargs params and the bare '*' keyword-only separator
+        if param.startswith("**") or param == "*":
             continue
 
         # Extract name and optional default
@@ -1149,8 +1149,13 @@ def _build_example_call(skill_name: str, method: SkillMethod) -> str:
 
         # Check for a default value
         if "=" in param:
-            # Use the actual default
             default = param.rsplit("=", 1)[1].strip()
+            # None defaults are unhelpful for the LLM — use a type placeholder
+            if default == "None":
+                type_hint = ""
+                if ":" in param:
+                    type_hint = param.split(":", 1)[1].split("=")[0].strip().lower()
+                default = _placeholder_for_type(type_hint)
             example_args.append(f"{name}={default}")
         else:
             # Generate a placeholder based on type hint
