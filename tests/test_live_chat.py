@@ -19,7 +19,8 @@ from dotenv import load_dotenv
 _project_root = Path(__file__).parent.parent
 load_dotenv(_project_root / ".env")
 
-# Provide dummy HUB_DEVICE_TOKEN if not set (TensorZero validates all providers at startup)
+# Provide dummy HUB_DEVICE_TOKEN if not set
+# (TensorZero validates all providers at startup)
 if not os.environ.get("HUB_DEVICE_TOKEN"):
     os.environ["HUB_DEVICE_TOKEN"] = "dummy-for-testing"
 
@@ -219,9 +220,8 @@ if __name__ == "__main__":
 
     async def main():
         print("Running live chat tests...")
-        print(
-            f"GOOGLE_AI_STUDIO_API_KEY set: {bool(os.environ.get('GOOGLE_AI_STUDIO_API_KEY'))}"
-        )
+        api_key_set = bool(os.environ.get('GOOGLE_AI_STUDIO_API_KEY'))
+        print(f"GOOGLE_AI_STUDIO_API_KEY set: {api_key_set}")
         print(f"HUB_DEVICE_TOKEN set: {bool(os.environ.get('HUB_DEVICE_TOKEN'))}")
 
         config_path = str(Path(__file__).parent.parent / "config" / "tensorzero.toml")

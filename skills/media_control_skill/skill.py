@@ -88,6 +88,23 @@ class MediaControlSkill:
             "position": "1:23",
         }
 
+    # Windows SendKeys media key mappings
+    _WIN_MEDIA_KEYS: dict[str, str] = {
+        "play": "{MEDIA_PLAY_PAUSE}",
+        "pause": "{MEDIA_PLAY_PAUSE}",
+        "stop": "{MEDIA_STOP}",
+        "next": "{MEDIA_NEXT_TRACK}",
+        "previous": "{MEDIA_PREV_TRACK}",
+    }
+
+    # macOS AppleScript verb mappings
+    _MAC_MEDIA_VERBS: dict[str, str] = {
+        "play": "play",
+        "pause": "pause",
+        "next": "next track",
+        "previous": "previous track",
+    }
+
     def _send_media_command(self, command: str) -> str:
         """Send media control command to the system."""
         system = platform.system()
@@ -96,99 +113,26 @@ class MediaControlSkill:
             if command.startswith("volume"):
                 parts = command.split()
                 if len(parts) == 2 and parts[1].isdigit():
-                    volume = int(parts[1])
-                    self._set_system_volume(volume)
+                    self._set_system_volume(int(parts[1]))
                 return f"Media command '{command}' executed"
 
             if system == "Windows":
-                # Windows media control commands
-                if command == "play":
-                    subprocess.run(
-                        [
-                            "powershell",
-                            (
-                                "(New-Object -ComObject WScript.Shell).SendKeys"
-                                "('{MEDIA_PLAY_PAUSE}')"
-                            ),
-                        ]
+                key = self._WIN_MEDIA_KEYS.get(command)
+                if key:
+                    script = (
+                        "(New-Object -ComObject"
+                        f" WScript.Shell).SendKeys('{key}')"
                     )
-                elif command == "pause":
-                    subprocess.run(
-                        [
-                            "powershell",
-                            (
-                                "(New-Object -ComObject WScript.Shell).SendKeys"
-                                "('{MEDIA_PLAY_PAUSE}')"
-                            ),
-                        ]
-                    )
-                elif command == "stop":
-                    subprocess.run(
-                        [
-                            "powershell",
-                            (
-                                "(New-Object -ComObject WScript.Shell).SendKeys"
-                                "('{MEDIA_STOP}')"
-                            ),
-                        ]
-                    )
-                elif command == "next":
-                    subprocess.run(
-                        [
-                            "powershell",
-                            (
-                                "(New-Object -ComObject WScript.Shell).SendKeys"
-                                "('{MEDIA_NEXT_TRACK}')"
-                            ),
-                        ]
-                    )
-                elif command == "previous":
-                    subprocess.run(
-                        [
-                            "powershell",
-                            (
-                                "(New-Object -ComObject WScript.Shell).SendKeys"
-                                "('{MEDIA_PREV_TRACK}')"
-                            ),
-                        ]
-                    )
-            elif system == "Darwin":  # macOS
-                # macOS uses AppleScript for media control
-                player_app = self._get_macos_player_app()
-                if command == "play":
-                    subprocess.run(
-                        [
-                            "osascript",
-                            "-e",
-                            f'tell application "{player_app}" to play',
-                        ]
-                    )
-                elif command == "pause":
-                    subprocess.run(
-                        [
-                            "osascript",
-                            "-e",
-                            f'tell application "{player_app}" to pause',
-                        ]
-                    )
-                elif command == "next":
-                    subprocess.run(
-                        [
-                            "osascript",
-                            "-e",
-                            f'tell application "{player_app}" to next track',
-                        ]
-                    )
-                elif command == "previous":
-                    subprocess.run(
-                        [
-                            "osascript",
-                            "-e",
-                            f'tell application "{player_app}" to previous track',
-                        ]
-                    )
+                    subprocess.run(["powershell", script])
+            elif system == "Darwin":
+                verb = self._MAC_MEDIA_VERBS.get(command)
+                if verb:
+                    app = self._get_macos_player_app()
+                    subprocess.run([
+                        "osascript", "-e",
+                        f'tell application "{app}" to {verb}',
+                    ])
             elif system == "Linux":
-                # Linux uses playerctl or dbus
                 subprocess.run(["playerctl", command])
 
             return f"Media command '{command}' executed"
@@ -330,12 +274,17 @@ class MediaControlSkill:
                     "Guid eventContext);"
                 ),
                 (
-                    "    int SetChannelVolumeLevelScalar(uint channelNumber, float level, "
+                    "    int SetChannelVolumeLevelScalar("
+                    "uint channelNumber, float level, "
                     "Guid eventContext);"
                 ),
-                "    int GetChannelVolumeLevel(uint channelNumber, out float level);",
-                "    int GetChannelVolumeLevelScalar(uint channelNumber, out float level);",
-                "    int SetMute([MarshalAs(UnmanagedType.Bool)] bool isMuted, Guid eventContext);",
+                "    int GetChannelVolumeLevel(",
+                "uint channelNumber, out float level);",
+                "    int GetChannelVolumeLevelScalar(",
+                "uint channelNumber, out float level);",
+                "    int SetMute(",
+                "[MarshalAs(UnmanagedType.Bool)]",
+                " bool isMuted, Guid eventContext);",
                 "    int GetMute(out bool isMuted);",
                 "  }",
                 '  [Guid("D666063F-1587-4E43-81F1-B948E807363F"), ',
@@ -348,7 +297,9 @@ class MediaControlSkill:
                 "InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
                 "  interface IMMDeviceEnumerator {",
                 "    int NotImpl1();",
-                "    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice device);",
+                "    int GetDefaultAudioEndpoint(",
+                "int dataFlow, int role,",
+                " out IMMDevice device);",
                 "  }",
                 '  [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]',
                 "  class MMDeviceEnumerator {}",

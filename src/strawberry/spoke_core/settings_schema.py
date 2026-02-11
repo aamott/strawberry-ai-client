@@ -117,7 +117,10 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         label="Allow Unsafe Skill Execution",
         type=FieldType.CHECKBOX,
         default=False,
-        description="Allow skills to run code directly outside the sandbox (security risk)",
+        description=(
+            "Allow skills to run code directly outside"
+            " the sandbox (security risk)"
+        ),
         group="skills",
     ),
     SettingField(

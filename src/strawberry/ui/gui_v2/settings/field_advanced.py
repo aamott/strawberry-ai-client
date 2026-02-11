@@ -486,7 +486,9 @@ class ColorFieldWidget(BaseFieldWidget):
         """Update button background and hex label."""
         hex_name = self._current_color.name()
         self._color_btn.setStyleSheet(
-            f"background-color: {hex_name}; border: 1px solid #3a3a5a; border-radius: 6px;"
+            f"background-color: {hex_name};"
+            " border: 1px solid #3a3a5a;"
+            " border-radius: 6px;"
         )
         self._hex_label.setText(hex_name)
 

@@ -288,14 +288,17 @@ class TestVoiceCoreSettingsReload:
         # Ensure the initial order reflects the settings override.
         assert core.component_manager.tts_backend_names == ["mock"]
 
-        # Change fallback order while running; VoiceCore should pick it up without a restart.
+        # Change fallback order while running;
+        # VoiceCore should pick it up without a restart.
         settings_manager.set("voice_core", "tts.order", "mock,orca")
 
-        # The change callback runs synchronously; backend name list should update immediately.
+        # The change callback runs synchronously;
+        # backend name list should update immediately.
         # Note: In the new architecture, SettingsHelper updates config, but
         # ComponentManager parses it on reinit/init.
         # SettingsHelper updates VoiceConfig directly. VoiceComponentManager reads it.
-        # But ComponentManager parses backend names in `initialize` or `reinitialize_pending`.
+        # But ComponentManager parses backend names in
+        # `initialize` or `reinitialize_pending`.
         # So we need to ensure reinit happens.
         # The test relies on `settings_manager.set` triggering the callback
         # which triggers `_on_component_settings_changed`.
@@ -335,7 +338,8 @@ class TestNoSpeechEvent:
 
         # Simulate the state reached after wake word / PTT.
         core._pipeline.listener.start_listening()
-        core._start_recording()  # Emits VoiceListening and resets VADProcessor  # noqa: SLF001
+        # Emits VoiceListening and resets VADProcessor
+        core._start_recording()  # noqa: SLF001
 
         # Simulate buffered audio (silence). We intentionally do not call
         # _handle_listening() so VAD never sees speech.
@@ -453,7 +457,8 @@ class TestInterruptibleSpeech:
     """Tests for interruptible speech (pause/resume)."""
 
     def test_interruption_buffers_speech(self):
-        """Wake word during speaking should move current and pending speech to resume buffer."""
+        """Wake word during speaking should move current
+        and pending speech to resume buffer."""
         from strawberry.voice.wakeword.backends.mock import (
             MockWakeWordDetector as MockWakeWord,
         )

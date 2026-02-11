@@ -490,11 +490,13 @@ LOCAL_MODE_PROMPT = (
 )
 
 SWITCHED_TO_REMOTE_PROMPT = """<system>
-Automated Message: The device switched to online mode and now has access to skills on other devices.
+Automated Message: The device switched to online mode
+and now has access to skills on other devices.
 
 The available tools have changed:
 - device_manager.search_skills(query) - Search skills across all devices
-- device_manager.describe_function(path) - Get function details (path: DeviceName.SkillClass.method)
+- device_manager.describe_function(path) - Get function
+  details (path: DeviceName.SkillClass.method)
 - device_manager.DeviceName.SkillClass.method() - Call remote skill
 </system>"""
 

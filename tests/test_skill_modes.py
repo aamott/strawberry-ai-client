@@ -132,7 +132,8 @@ async def test_local_device_works_without_sandbox(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_local_device_via_devices_syntax_in_remote_mode(tmp_path: Path) -> None:
-    """Local device calls via devices.<local_device>.* should execute locally, not via Hub."""
+    """Local device calls via devices.<local_device>.*
+    should execute locally, not via Hub."""
     skills_dir = tmp_path / "skills"
     _write_min_skill(skills_dir)
 

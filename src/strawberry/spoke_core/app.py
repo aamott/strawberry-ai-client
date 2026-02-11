@@ -395,7 +395,8 @@ class SpokeCore:
                     )
                     session.add_message("user", tool_msg)
 
-                # If the user explicitly requires python_exec and provides a device.* call,
+                # If the user explicitly requires python_exec
+                # and provides a device.* call,
                 # run it immediately to make tool-use deterministic.
                 normalized = text.lower()
                 requested_python_exec = (

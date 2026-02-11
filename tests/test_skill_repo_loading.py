@@ -194,7 +194,8 @@ class DuplicateSkill:
 
         assert loader.call_method("DuplicateSkill", "repo") == "repo"
 
-        # Top-level method should not be available since the top-level duplicate is skipped.
+        # Top-level method should not be available since
+        # the top-level duplicate is skipped.
         try:
             loader.call_method("DuplicateSkill", "top")
         except ValueError as e:

@@ -272,7 +272,8 @@ class InternetSearchSkill:
                 "domain": "github.com",
                 "title_pattern": f"{query} on GitHub",
                 "snippet_pattern": (
-                    f"Explore {query} projects, repositories, and code examples on GitHub."
+                    f"Explore {query} projects, repositories,"
+                    " and code examples on GitHub."
                 ),
             },
             {
@@ -317,9 +318,13 @@ class InternetSearchSkill:
                     },
                     {
                         "title": f"Python {display_query} - Real Python",
-                        "url": f"https://realpython.com/{query.replace(' ', '-').lower()}/",
+                        "url": (
+                            f"https://realpython.com/"
+                            f"{query.replace(' ', '-').lower()}/"
+                        ),
                         "snippet": (
-                            f"Comprehensive guide to {query} in Python with practical examples, "
+                            f"Comprehensive guide to {query}"
+                            " in Python with practical examples, "
                             "best practices, and code samples."
                         ),
                         "display_link": "realpython.com",
@@ -331,8 +336,9 @@ class InternetSearchSkill:
                             f"{query.replace(' ', '-').lower()}/"
                         ),
                         "snippet": (
-                            f"Python {query} tutorial with code examples, explanations, and common use "
-                            "cases for developers."
+                            f"Python {query} tutorial with code"
+                            " examples, explanations, and"
+                            " common use cases for developers."
                         ),
                         "display_link": "geeksforgeeks.org",
                     },
@@ -346,10 +352,15 @@ class InternetSearchSkill:
                         "title": "Schrödinger equation - Wikipedia",
                         "url": "https://en.wikipedia.org/wiki/Schr%C3%B6dinger_equation",
                         "snippet": (
-                            "The Schrödinger equation is a linear partial differential equation that "
-                            "governs the wave function of a quantum-mechanical system. The basic form "
-                            "is iħ∂ψ/∂t = Ĥψ where i is the imaginary unit, ħ is the reduced Planck "
-                            "constant, ψ is the wave function, t is time, and Ĥ is the Hamiltonian "
+                            "The Schrödinger equation is a linear"
+                            " partial differential equation that "
+                            "governs the wave function of a"
+                            " quantum-mechanical system. The basic"
+                            " form is iħ∂ψ/∂t = Ĥψ where i is the"
+                            " imaginary unit, ħ is the reduced"
+                            " Planck constant, ψ is the wave"
+                            " function, t is time, and Ĥ is the"
+                            " Hamiltonian "
                             "operator."
                         ),
                         "display_link": "en.wikipedia.org",
@@ -358,9 +369,13 @@ class InternetSearchSkill:
                         "title": "Schrödinger Equation Formula and Explanation",
                         "url": "https://www.physicsclassroom.com/class/quantum/Schrödinger-Equation",
                         "snippet": (
-                            "The Schrödinger equation is iħ∂ψ/∂t = Ĥψ where i is the imaginary unit, "
-                            "ħ is the reduced Planck constant, ψ is the wave function, t is time, and "
-                            "Ĥ is the Hamiltonian operator. This fundamental equation describes how "
+                            "The Schrödinger equation is"
+                            " iħ∂ψ/∂t = Ĥψ where i is the"
+                            " imaginary unit, ħ is the reduced"
+                            " Planck constant, ψ is the wave"
+                            " function, t is time, and Ĥ is the"
+                            " Hamiltonian operator. This"
+                            " fundamental equation describes how "
                             "quantum systems evolve over time."
                         ),
                         "display_link": "physicsclassroom.com",
@@ -369,8 +384,10 @@ class InternetSearchSkill:
                         "title": "Quantum Mechanics: Schrödinger Equation - Khan Academy",
                         "url": "https://www.khanacademy.org/science/physics/quantum-physics",
                         "snippet": (
-                            "Learn about the Schrödinger equation and its role in quantum mechanics. "
-                            "The equation iħ∂ψ/∂t = Ĥψ is fundamental to understanding quantum "
+                            "Learn about the Schrödinger equation"
+                            " and its role in quantum mechanics. "
+                            "The equation iħ∂ψ/∂t = Ĥψ is"
+                            " fundamental to understanding quantum "
                             "behavior. "
                             "Video lessons and interactive exercises."
                         ),
@@ -387,14 +404,18 @@ class InternetSearchSkill:
                         "title": f"{query} - Wikipedia",
                         "url": f"https://en.wikipedia.org/wiki/{query.replace(' ', '_')}",
                         "snippet": (
-                            f"Wikipedia article about {query} with comprehensive information, "
+                            f"Wikipedia article about {query}"
+                            " with comprehensive information, "
                             "history, and references."
                         ),
                         "display_link": "en.wikipedia.org",
                     },
                     {
                         "title": f"What is {query}? - Complete Guide",
-                        "url": f"https://www.example.com/what-is-{query.replace(' ', '-')}",
+                        "url": (
+                            "https://www.example.com/what-is-"
+                            f"{query.replace(' ', '-')}"
+                        ),
                         "snippet": (
                             f"Detailed explanation of {query} including its features, "
                             "benefits, and applications."
@@ -403,9 +424,13 @@ class InternetSearchSkill:
                     },
                     {
                         "title": f"{query} Tutorial for Beginners",
-                        "url": f"https://www.tutorialspoint.com/{query.replace(' ', '-')}-tutorial",
+                        "url": (
+                            "https://www.tutorialspoint.com/"
+                            f"{query.replace(' ', '-')}-tutorial"
+                        ),
                         "snippet": (
-                            f"Step-by-step tutorial on {query} for beginners with examples "
+                            f"Step-by-step tutorial on {query}"
+                            " for beginners with examples "
                             "and practical exercises."
                         ),
                         "display_link": "tutorialspoint.com",

@@ -463,7 +463,8 @@ class LocalSessionDB:
 
         # Get next sequence number
         cursor.execute(
-            "SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM local_messages WHERE session_id = ?",
+            "SELECT COALESCE(MAX(sequence_number), 0) + 1"
+            " FROM local_messages WHERE session_id = ?",
             (session_id,),
         )
         seq_num = cursor.fetchone()[0]
@@ -471,7 +472,9 @@ class LocalSessionDB:
         now = _utc_now()
         cursor.execute(
             """
-            INSERT INTO local_messages (session_id, role, content, created_at, sequence_number)
+            INSERT INTO local_messages
+                (session_id, role, content,
+                 created_at, sequence_number)
             VALUES (?, ?, ?, ?, ?)
             """,
             (session_id, role, content, now.isoformat(), seq_num),
@@ -547,17 +550,22 @@ class LocalSessionDB:
 
         # Get next sequence number
         cursor.execute(
-            "SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM local_messages WHERE session_id = ?",
+            "SELECT COALESCE(MAX(sequence_number), 0) + 1"
+            " FROM local_messages WHERE session_id = ?",
             (session_id,),
         )
         seq_num = cursor.fetchone()[0]
 
-        created_at_dt = _parse_datetime(remote.get("created_at", _utc_now().isoformat()))
+        created_at_dt = _parse_datetime(
+            remote.get("created_at", _utc_now().isoformat())
+        )
 
         cursor.execute(
             """
             INSERT INTO local_messages
-                (session_id, hub_message_id, role, content, created_at, is_synced, sequence_number)
+                (session_id, hub_message_id, role,
+                 content, created_at, is_synced,
+                 sequence_number)
             VALUES (?, ?, ?, ?, ?, TRUE, ?)
             """,
             (

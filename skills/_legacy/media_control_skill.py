@@ -67,90 +67,45 @@ class MediaControlSkill:
             "position": "1:23",
         }
 
+    # Windows SendKeys media key mappings
+    _WIN_MEDIA_KEYS: dict[str, str] = {
+        "play": "{MEDIA_PLAY_PAUSE}",
+        "pause": "{MEDIA_PLAY_PAUSE}",
+        "stop": "{MEDIA_STOP}",
+        "next": "{MEDIA_NEXT_TRACK}",
+        "previous": "{MEDIA_PREV_TRACK}",
+    }
+
+    # macOS AppleScript verb mappings
+    _MAC_MEDIA_VERBS: dict[str, str] = {
+        "play": "play",
+        "pause": "pause",
+        "next": "next track",
+        "previous": "previous track",
+    }
+
     def _send_media_command(self, command: str) -> str:
         """Send media control command to the system."""
         system = platform.system()
 
         try:
             if system == "Windows":
-                # Windows media control commands
-                if command == "play":
-                    subprocess.run(
-                        [
-                            "powershell",
-                            (
-                                "(New-Object -ComObject WScript.Shell).SendKeys"
-                                "('{MEDIA_PLAY_PAUSE}')"
-                            ),
-                        ]
+                key = self._WIN_MEDIA_KEYS.get(command)
+                if key:
+                    script = (
+                        "(New-Object -ComObject"
+                        f" WScript.Shell).SendKeys('{key}')"
                     )
-                elif command == "pause":
-                    subprocess.run(
-                        [
-                            "powershell",
-                            (
-                                "(New-Object -ComObject WScript.Shell).SendKeys"
-                                "('{MEDIA_PLAY_PAUSE}')"
-                            ),
-                        ]
-                    )
-                elif command == "stop":
-                    subprocess.run(
-                        [
-                            "powershell",
-                            (
-                                "(New-Object -ComObject WScript.Shell).SendKeys"
-                                "('{MEDIA_STOP}')"
-                            ),
-                        ]
-                    )
-                elif command == "next":
-                    subprocess.run(
-                        [
-                            "powershell",
-                            (
-                                "(New-Object -ComObject WScript.Shell).SendKeys"
-                                "('{MEDIA_NEXT_TRACK}')"
-                            ),
-                        ]
-                    )
-                elif command == "previous":
-                    subprocess.run(
-                        [
-                            "powershell",
-                            (
-                                "(New-Object -ComObject WScript.Shell).SendKeys"
-                                "('{MEDIA_PREV_TRACK}')"
-                            ),
-                        ]
-                    )
-                elif command.startswith("volume"):
-                    # Volume control would require more complex implementation
-                    pass
-            elif system == "Darwin":  # macOS
-                # macOS uses AppleScript for media control
-                if command == "play":
-                    subprocess.run(
-                        ["osascript", "-e", 'tell application "Spotify" to play']
-                    )
-                elif command == "pause":
-                    subprocess.run(
-                        ["osascript", "-e", 'tell application "Spotify" to pause']
-                    )
-                elif command == "next":
-                    subprocess.run(
-                        ["osascript", "-e", 'tell application "Spotify" to next track']
-                    )
-                elif command == "previous":
-                    subprocess.run(
-                        [
-                            "osascript",
-                            "-e",
-                            'tell application "Spotify" to previous track',
-                        ]
-                    )
+                    subprocess.run(["powershell", script])
+            elif system == "Darwin":
+                verb = self._MAC_MEDIA_VERBS.get(command)
+                if verb:
+                    subprocess.run([
+                        "osascript", "-e",
+                        f'tell application "Spotify"'
+                        f' to {verb}',
+                    ])
             elif system == "Linux":
-                # Linux uses playerctl or dbus
                 subprocess.run(["playerctl", command])
 
             return f"Media command '{command}' executed"

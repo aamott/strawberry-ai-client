@@ -89,7 +89,10 @@ class SystemControlSkill:
             In production, it would require admin privileges.
         """
         # Always simulate for safety
-        return "System restart command sent (simulated for safety - requires admin privileges)"
+        return (
+            "System restart command sent"
+            " (simulated for safety - requires admin privileges)"
+        )
 
     def shutdown_system(self) -> str:
         """Shut down the system.
@@ -99,7 +102,10 @@ class SystemControlSkill:
             In production, it would require admin privileges.
         """
         # Always simulate for safety
-        return "System shutdown command sent (simulated for safety - requires admin privileges)"
+        return (
+            "System shutdown command sent"
+            " (simulated for safety - requires admin privileges)"
+        )
 
 
 class DisplayControlSkill:

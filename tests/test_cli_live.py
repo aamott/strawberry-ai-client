@@ -279,9 +279,8 @@ if __name__ == "__main__":
 
     async def main():
         print("Running CLI live integration tests...")
-        print(
-            f"GOOGLE_AI_STUDIO_API_KEY set: {bool(os.environ.get('GOOGLE_AI_STUDIO_API_KEY'))}"
-        )
+        api_key_set = bool(os.environ.get('GOOGLE_AI_STUDIO_API_KEY'))
+        print(f"GOOGLE_AI_STUDIO_API_KEY set: {api_key_set}")
 
         from strawberry.spoke_core import (
             MessageAdded,

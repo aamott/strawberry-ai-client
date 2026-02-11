@@ -24,13 +24,17 @@ class VoiceService(QObject):
         state_changed: Emitted when voice state changes (str: old_state, str: new_state)
         wake_word_detected: Emitted when wake word is detected (str: keyword)
         listening_started: Emitted when listening for speech starts
-        transcription_received: Emitted when speech is transcribed (str: text, bool: is_final)
-        speaking_started: Emitted when TTS starts (str: text)
+        transcription_received: Emitted when speech is transcribed
+            (str: text, bool: is_final)
+        speaking_started: Emitted when TTS starts
+            (str: text)
         speaking_finished: Emitted when TTS finishes
         error_occurred: Emitted on voice errors (str: error_message)
         voice_mode_changed: Emitted when voice mode is toggled (bool: active)
-        availability_changed: Emitted when VoiceCore is set or cleared (bool: available)
-        starting: Emitted when VoiceCore is about to be started (for UI "Starting..." state)
+        availability_changed: Emitted when VoiceCore is
+            set or cleared (bool: available)
+        starting: Emitted when VoiceCore is about to be
+            started (for UI "Starting..." state)
     """
 
     state_changed = Signal(str, str)  # old_state, new_state

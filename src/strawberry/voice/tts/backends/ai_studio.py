@@ -61,7 +61,8 @@ class AIStudioTTS(TTSEngine):
 
         if not api_key:
             raise ValueError(
-                "GOOGLE_AI_STUDIO_API_KEY required. Set it in .env or pass api_key parameter."
+                "GOOGLE_AI_STUDIO_API_KEY required."
+                " Set it in .env or pass api_key parameter."
             )
 
         if genai is None or types is None:

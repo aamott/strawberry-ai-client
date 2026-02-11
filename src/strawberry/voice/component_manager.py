@@ -325,7 +325,8 @@ class VoiceComponentManager:
             self.stt_backend_names = self._parse_backend_names(self._config.stt_backend)
             # Try to re-init current or fallback
             try:
-                # If current still in list, try to keep it (or re-init it with new settings)
+                # If current still in list, try to keep it
+                # (or re-init it with new settings)
                 target = self.active_stt_backend
                 if not target or target not in self.stt_backend_names:
                     target = self.stt_backend_names[0] if self.stt_backend_names else None

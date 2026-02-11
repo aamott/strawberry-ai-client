@@ -92,7 +92,8 @@ class SkillService:
     # The placeholder {skill_descriptions} is replaced at runtime with
     # the full list of loaded skills and their methods.
     DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
-        "You are Strawberry, a helpful AI assistant with access to skills on this device.\n"
+        "You are Strawberry, a helpful AI assistant"
+        " with access to skills on this device.\n"
         "\n"
         "## Available Tools\n"
         "\n"
@@ -111,9 +112,11 @@ class SkillService:
         "\n"
         "Examples:\n"
         '- Time: python_exec({{"code": "print(device.TimeSkill.get_current_time())"}})\n'
-        '- Weather: python_exec({{"code": "print(device.WeatherSkill.'
-        "get_current_weather('Seattle'))\"}})\n"
-        '- Calculate: python_exec({{"code": "print(device.CalculatorSkill.add(a=5, b=3))"}})\n'
+        '- Weather: python_exec({{"code": "print('
+        '  device.WeatherSkill'
+        ".get_current_weather('Seattle'))\"}})\n"
+        '- Calculate: python_exec({{"code": "print('
+        '  device.CalculatorSkill.add(a=5, b=3))"}})\n'
         '- Smart home: python_exec({{"code": "print(device.HomeAssistantSkill.'
         "HassTurnOn(name='short lamp'))\"}})\n"
         '- Remote: python_exec({{"code": "print(devices.living_room_pc.'
@@ -127,7 +130,8 @@ class SkillService:
         "- To set brightness, search 'light' or 'brightness'.\n"
         "- To look up docs, search 'documentation' or 'query'.\n"
         "\n"
-        "If you already see the right skill in Available Skills below, skip search_skills\n"
+        "If you already see the right skill in Available"
+        " Skills below, skip search_skills\n"
         "and call describe_function or python_exec directly.\n"
         "\n"
         "## Available Skills\n"
@@ -136,13 +140,17 @@ class SkillService:
         "\n"
         "## Rules\n"
         "\n"
-        "1. Use python_exec to call skills - do NOT call skill methods directly as tools.\n"
+        "1. Use python_exec to call skills - do NOT call"
+        " skill methods directly as tools.\n"
         "2. Do NOT output code blocks or ```tool_outputs``` - use actual tool calls.\n"
         "3. Keep responses concise and friendly.\n"
-        "4. If you need a skill result, call python_exec with the appropriate code.\n"
-        "5. Do NOT ask the user for permission to use skills/tools. Use them when needed.\n"
+        "4. If you need a skill result, call python_exec"
+        " with the appropriate code.\n"
+        "5. Do NOT ask the user for permission to use"
+        " skills/tools. Use them when needed.\n"
         "6. Do NOT rerun the same tool call to double-check; use the first result.\n"
-        "7. After tool calls complete, ALWAYS provide a final natural-language answer.\n"
+        "7. After tool calls complete, ALWAYS provide a"
+        " final natural-language answer.\n"
         "8. If a tool call fails with 'Unknown tool', immediately switch to python_exec "
         "and proceed.\n"
         "9. For smart-home commands (turn on/off, lights, locks, media), look for "
@@ -502,7 +510,8 @@ class SkillService:
             mode_lines.extend(
                 [
                     "Runtime mode: OFFLINE/LOCAL.",
-                    "- Use only the local device proxy: device.<SkillName>.<method>(...) ",
+                    "- Use only the local device proxy:"
+                    " device.<SkillName>.<method>(...) ",
                     "- Do NOT use devices.* or device_manager.* (they are unavailable).",
                 ]
             )
@@ -510,7 +519,9 @@ class SkillService:
             mode_lines.extend(
                 [
                     "Runtime mode: ONLINE (Hub).",
-                    "- Use the remote devices proxy: devices.<Device>.<SkillName>.<method>(...) ",
+                    "- Use the remote devices proxy:"
+                    " devices.<Device>.<SkillName>"
+                    ".<method>(...) ",
                     "- You may also use device_manager.* as a legacy alias.",
                 ]
             )
@@ -592,7 +603,7 @@ class SkillService:
             if mode == SkillMode.REMOTE:
                 allowed_roots = ("device", "devices", "device_manager")
 
-            # Match lines that look like: print(device.Something...) or device.Something...
+            # Match lines like: print(device.X...) or device.X...
             bare_pattern = (
                 r"^[\s]*((?:print\s*\()?\s*(?:" + "|".join(allowed_roots) + r")\."
                 r"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\)?)"
@@ -749,8 +760,9 @@ class SkillService:
         # it's a remote call
         if local_pattern in code:
             # Contains local device reference - check if there are OTHER device references
-            # For now, conservatively allow if local device is referenced
-            # (A more sophisticated check would parse the AST to find all device references)
+            # For now, conservatively allow if local
+            # device is referenced (a more sophisticated
+            # check would parse the AST)
             return False
 
         # Contains devices. but not our local device - must be remote
@@ -1073,8 +1085,10 @@ class SkillService:
                         f"Unknown tool: {tool_name}. "
                         "Use one of the available tools: search_skills, "
                         "describe_function, python_exec. "
-                        "To call a skill method like multiply, use python_exec with code like: "
-                        "print(device.CalculatorSkill.multiply(a=5, b=3))"
+                        "To call a skill method like multiply,"
+                        " use python_exec with code like: "
+                        "print(device.CalculatorSkill"
+                        ".multiply(a=5, b=3))"
                     )
                 }
 
@@ -1745,7 +1759,11 @@ class _DeviceManagerProxy:
 
             return f"Error: Function '{path}' not found"
 
-        return f"Error: Invalid path '{path}'. Use 'SkillName.method' or 'device.SkillName.method'"
+        return (
+            f"Error: Invalid path '{path}'."
+            " Use 'SkillName.method' or"
+            " 'device.SkillName.method'"
+        )
 
     def _describe_local_method(self, skill_name: str, method_name: str) -> str:
         """Describe a method from the local skill loader."""

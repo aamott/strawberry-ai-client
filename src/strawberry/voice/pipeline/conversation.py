@@ -336,7 +336,10 @@ class ConversationPipeline:
                 self._emit(
                     EventType.ERROR,
                     {
-                        "error": f"Processing timeout after {self.config.processing_timeout}s",
+                        "error": (
+                            f"Processing timeout after"
+                            f" {self.config.processing_timeout}s"
+                        ),
                         "stage": "processing",
                     },
                 )

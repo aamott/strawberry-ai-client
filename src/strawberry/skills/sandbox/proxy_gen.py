@@ -90,10 +90,10 @@ class ProxyGenerator:
         skill_names = [s.name for s in self.skills]
 
         # Generate the proxy code
-        code = f'''# ============================================================================
+        code = f'''# =========================================================
 # Auto-generated proxy code for Strawberry AI Sandbox
 # DO NOT EDIT - This code is injected at runtime
-# ============================================================================
+# =========================================================
 
 import json
 from pyodide.ffi import to_js
@@ -171,7 +171,9 @@ class _DeviceProxy:
             return self._skills[name]
 
         available = ', '.join(self._skills.keys()) or 'None'
-        raise AttributeError(f"Skill '{{name}}' not found. Available skills: {{available}}")
+        raise AttributeError(
+            f"Skill '{{name}}' not found."
+            f" Available skills: {{available}}")
 
     def search_skills(self, query: str = "") -> list:
         """Search for skills by keyword.
@@ -192,7 +194,8 @@ class _DeviceProxy:
                     query_lower in skill["name"].lower() or
                     query_lower in method["docstring"].lower()):
 
-                    summary = method["docstring"].split("\\n")[0] if method["docstring"] else ""
+                    doc = method["docstring"]
+                    summary = doc.split("\\n")[0] if doc else ""
                     results.append({{
                         "path": f"{{skill['name']}}.{{method['name']}}",
                         "signature": method["signature"],
@@ -259,10 +262,10 @@ del json
             device_manager.describe_function("TV.MediaSkill.set_volume")
         """
         # Remote mode doesn't need local skill metadata - all calls go to host
-        code = '''# ============================================================================
-# Auto-generated proxy code for Strawberry AI Sandbox (REMOTE MODE)
+        code = '''# =========================================================
+# Auto-generated proxy - Strawberry AI Sandbox (REMOTE)
 # DO NOT EDIT - This code is injected at runtime
-# ============================================================================
+# =========================================================
 
 from pyodide.ffi import to_js
 
