@@ -2,22 +2,13 @@
 
 import asyncio
 import logging
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Add shared module to path
-_project_root = Path(__file__).parent.parent.parent.parent.parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
-from shared.timeouts import Timeouts  # noqa: E402
-
-from .bridge import BridgeClient, BridgeError  # noqa: E402
-from .gatekeeper import Gatekeeper  # noqa: E402
-from .process import DenoNotFoundError, DenoProcessManager  # noqa: E402
-from .proxy_gen import ProxyGenerator  # noqa: E402
+from .bridge import BridgeClient, BridgeError
+from .gatekeeper import Gatekeeper
+from .process import DenoNotFoundError, DenoProcessManager
+from .proxy_gen import ProxyGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +24,10 @@ class ExecutionResult:
 
 @dataclass
 class SandboxConfig:
-    """Sandbox configuration.
+    """Sandbox configuration."""
 
-    Timeout defaults come from shared.Timeouts for consistency.
-    """
-
-    timeout_seconds: float = Timeouts.SANDBOX_EXECUTION
+    # Hard-kill with no cleanup grace period (seconds)
+    timeout_seconds: float = 5.0
     memory_limit_mb: int = 128
     deno_path: str = "deno"
     enabled: bool = True  # Can disable for development
