@@ -143,8 +143,7 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         ],
         default="hey barista",
         description=(
-            "The phrase that activates the assistant"
-            " (Porcupine built-in keywords)"
+            "The phrase that activates the assistant (Porcupine built-in keywords)"
         ),
         group="wakeword",
     ),

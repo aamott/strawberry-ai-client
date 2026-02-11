@@ -113,7 +113,7 @@ class SkillService:
         "Examples:\n"
         '- Time: python_exec({{"code": "print(device.TimeSkill.get_current_time())"}})\n'
         '- Weather: python_exec({{"code": "print('
-        '  device.WeatherSkill'
+        "  device.WeatherSkill"
         ".get_current_weather('Seattle'))\"}})\n"
         '- Calculate: python_exec({{"code": "print('
         '  device.CalculatorSkill.add(a=5, b=3))"}})\n'

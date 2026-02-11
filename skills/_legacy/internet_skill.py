@@ -319,8 +319,7 @@ class InternetSearchSkill:
                     {
                         "title": f"Python {display_query} - Real Python",
                         "url": (
-                            f"https://realpython.com/"
-                            f"{query.replace(' ', '-').lower()}/"
+                            f"https://realpython.com/{query.replace(' ', '-').lower()}/"
                         ),
                         "snippet": (
                             f"Comprehensive guide to {query}"
@@ -413,8 +412,7 @@ class InternetSearchSkill:
                     {
                         "title": f"What is {query}? - Complete Guide",
                         "url": (
-                            "https://www.example.com/what-is-"
-                            f"{query.replace(' ', '-')}"
+                            f"https://www.example.com/what-is-{query.replace(' ', '-')}"
                         ),
                         "snippet": (
                             f"Detailed explanation of {query} including its features, "

@@ -118,8 +118,7 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         type=FieldType.CHECKBOX,
         default=False,
         description=(
-            "Allow skills to run code directly outside"
-            " the sandbox (security risk)"
+            "Allow skills to run code directly outside the sandbox (security risk)"
         ),
         group="skills",
     ),

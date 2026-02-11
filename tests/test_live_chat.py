@@ -220,7 +220,7 @@ if __name__ == "__main__":
 
     async def main():
         print("Running live chat tests...")
-        api_key_set = bool(os.environ.get('GOOGLE_AI_STUDIO_API_KEY'))
+        api_key_set = bool(os.environ.get("GOOGLE_AI_STUDIO_API_KEY"))
         print(f"GOOGLE_AI_STUDIO_API_KEY set: {api_key_set}")
         print(f"HUB_DEVICE_TOKEN set: {bool(os.environ.get('HUB_DEVICE_TOKEN'))}")
 

@@ -337,8 +337,7 @@ class ConversationPipeline:
                     EventType.ERROR,
                     {
                         "error": (
-                            f"Processing timeout after"
-                            f" {self.config.processing_timeout}s"
+                            f"Processing timeout after {self.config.processing_timeout}s"
                         ),
                         "stage": "processing",
                     },

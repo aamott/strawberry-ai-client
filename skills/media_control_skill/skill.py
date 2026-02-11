@@ -119,19 +119,19 @@ class MediaControlSkill:
             if system == "Windows":
                 key = self._WIN_MEDIA_KEYS.get(command)
                 if key:
-                    script = (
-                        "(New-Object -ComObject"
-                        f" WScript.Shell).SendKeys('{key}')"
-                    )
+                    script = f"(New-Object -ComObject WScript.Shell).SendKeys('{key}')"
                     subprocess.run(["powershell", script])
             elif system == "Darwin":
                 verb = self._MAC_MEDIA_VERBS.get(command)
                 if verb:
                     app = self._get_macos_player_app()
-                    subprocess.run([
-                        "osascript", "-e",
-                        f'tell application "{app}" to {verb}',
-                    ])
+                    subprocess.run(
+                        [
+                            "osascript",
+                            "-e",
+                            f'tell application "{app}" to {verb}',
+                        ]
+                    )
             elif system == "Linux":
                 subprocess.run(["playerctl", command])
 

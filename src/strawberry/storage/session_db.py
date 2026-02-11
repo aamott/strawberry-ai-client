@@ -556,9 +556,7 @@ class LocalSessionDB:
         )
         seq_num = cursor.fetchone()[0]
 
-        created_at_dt = _parse_datetime(
-            remote.get("created_at", _utc_now().isoformat())
-        )
+        created_at_dt = _parse_datetime(remote.get("created_at", _utc_now().isoformat()))
 
         cursor.execute(
             """
