@@ -63,7 +63,7 @@ all = [
 [project.scripts]
 strawberry = "strawberry.main:main"
 strawberry-cli = "strawberry.ui.cli.main:main"
-strawberry-gui = "strawberry.ui.app:main"
+strawberry-gui = "strawberry.ui.gui_v2:main"
 strawberry-voice = "strawberry.ui.voice_interface:main"
 strawberry-test = "strawberry.testing.runner:main"
 

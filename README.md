@@ -125,9 +125,9 @@ ai-pc-spoke/
 
 
 
-# TODO
+# Notes
 
-- [ ] Add more skills
-- [ ] Test deleting the config and loading from scratch (automatically recreate config.yaml and .env)
-- [x] Make a unified settings GUI, make it easier to configure tensorzero models, fallback models, and API keys.
-- [ ] Move `SYSTEM_PROMPT_TEMPLATE` from service.py to config.yaml (with fallback).
+- Validate config/.env regeneration flows (create examples only; never ship secrets).
+- Ensure system prompt is configurable via settings (`settings_schema.py`).
+- Confirm skills re-register after brief Hub disconnects.
+- Allow user-provided MCP tool descriptions in `mcp_config.json`.
