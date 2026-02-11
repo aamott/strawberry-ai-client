@@ -5,6 +5,7 @@ This eliminates the need for a separate gateway process while still providing
 automatic fallback between Hub and local Ollama providers.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -243,11 +244,23 @@ class TensorZeroClient:
         """
         await self._get_gateway()
 
-    async def close(self) -> None:
-        """Close the embedded gateway."""
+    async def close(self, timeout: float = 5.0) -> None:
+        """Close the embedded gateway.
+
+        Args:
+            timeout: Max seconds to wait for the gateway to shut down.
+                     Prevents hanging when the Rust runtime doesn't exit cleanly.
+        """
         if self._gateway is not None:
             try:
-                await self._gateway.__aexit__(None, None, None)
+                await asyncio.wait_for(
+                    self._gateway.__aexit__(None, None, None),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "TensorZero gateway shutdown timed out after %.1fs", timeout
+                )
             except Exception:
                 pass
             self._gateway = None

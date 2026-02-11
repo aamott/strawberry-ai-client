@@ -62,9 +62,24 @@ class TestSpokeCoreToolExecution:
         core._settings_manager.set("spoke_core", "testing.deterministic_tool_hooks", True)
         await core.start()
         yield core
-        await core.stop()
+        # Teardown: force-close each component with its own timeout so one
+        # hanging component can't block the entire suite.
+        if core._llm:
+            try:
+                await asyncio.wait_for(core._llm.close(), timeout=5.0)
+            except (asyncio.TimeoutError, Exception):
+                pass
+            core._llm = None
+        if core._skill_mgr:
+            try:
+                await asyncio.wait_for(core._skill_mgr.shutdown(), timeout=3.0)
+            except (asyncio.TimeoutError, Exception):
+                pass
+            core._skill_mgr = None
+        core._started = False
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)
     async def test_core_starts_and_loads_skills(self, core):
         """Test that SpokeCore can start and load skills."""
         # Core should have a system prompt with skill info
@@ -73,6 +88,7 @@ class TestSpokeCoreToolExecution:
         assert len(prompt) > 50, "System prompt should have content"
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(45)
     async def test_simple_message_response(self, core):
         """Test that a simple message gets a response."""
         session = core.new_session()
@@ -104,6 +120,7 @@ class TestSpokeCoreToolExecution:
             subscription.cancel()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(45)
     async def test_tool_call_search_skills(self, core):
         """Test that search_skills tool is called for capability queries.
 
@@ -156,6 +173,7 @@ class TestSpokeCoreToolExecution:
             subscription.cancel()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(45)
     async def test_calculator_tool_execution(self, core):
         """Test that math queries can use calculator skill."""
         session = core.new_session()

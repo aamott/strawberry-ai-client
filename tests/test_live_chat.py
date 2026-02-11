@@ -40,6 +40,7 @@ class TestLiveTensorZeroChat:
         return str(Path(__file__).parent.parent / "config" / "tensorzero.toml")
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)
     async def test_tensorzero_gateway_initialization(self, config_path: str):
         """Test that TensorZero gateway can be initialized."""
         from strawberry.llm.tensorzero_client import TensorZeroClient
@@ -53,6 +54,7 @@ class TestLiveTensorZeroChat:
         await client.close()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(45)
     async def test_simple_chat_message(self, config_path: str):
         """Test sending a simple chat message and getting a response."""
         from strawberry.llm.tensorzero_client import ChatMessage, TensorZeroClient
@@ -81,6 +83,7 @@ class TestLiveTensorZeroChat:
             await client.close()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(45)
     async def test_chat_with_system_prompt(self, config_path: str):
         """Test chat with a system prompt."""
         from strawberry.llm.tensorzero_client import ChatMessage, TensorZeroClient
@@ -112,6 +115,7 @@ class TestLiveTensorZeroChat:
             await client.close()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(60)
     async def test_chat_conversation(self, config_path: str):
         """Test a multi-turn conversation."""
         from strawberry.llm.tensorzero_client import ChatMessage, TensorZeroClient
@@ -163,6 +167,7 @@ class TestLiveHubChat:
         return os.environ.get("HUB_DEVICE_TOKEN", "")
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(15)
     async def test_hub_health(self, hub_url: str):
         """Test Hub health endpoint."""
         import httpx
@@ -178,6 +183,7 @@ class TestLiveHubChat:
                 pytest.skip(f"Hub not running at {hub_url}")
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(45)
     async def test_hub_chat_completions(self, hub_url: str, hub_token: str):
         """Test Hub chat completions endpoint directly."""
         import httpx
