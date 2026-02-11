@@ -3,23 +3,42 @@ spoke_core:
     name: Strawberry Spoke
   hub:
     url: http://localhost:8000
+    connect: null
+    log_ping_pong: false
   local_llm:
     model: llama3.2:3b
     enabled: true
   skills:
     allow_unsafe_exec: true
+    path: skills
   ui:
     theme: dark
+    start_minimized: false
+    show_waveform: true
+  storage:
+    db_path: data/sessions.db
+  tensorzero:
+    enabled: true
+  llm:
+    temperature: 0.7
+    system_prompt: ''
+  conversation:
+    max_history: 20
+  testing:
+    deterministic_tool_hooks: true
 voice_core:
   stt:
     order: leopard
+    enabled: true
   tts:
     order:
     - pocket
     - orca
     - ai_studio
+    enabled: true
   vad:
     order: cobra,silero
+    enabled: true
   wakeword:
     order: porcupine
     phrase: jarvis
@@ -28,6 +47,9 @@ voice_core:
   audio:
     sample_rate: '48000'
     feedback_enabled: true
+  general:
+    autostart: false
+    read_responses_aloud: false
 mcp:
   servers:
   - name: context7
@@ -42,3 +64,41 @@ mcp:
   mcp:
     enabled: true
   config_path: config/mcp_config.json
+  enabled: true
+_meta:
+  schema_versions:
+    voice_core: 1
+    voice.stt.leopard: 1
+    voice.tts.ai_studio: 1
+    voice.tts.orca: 1
+    voice.tts.pocket: 1
+    voice.tts.soprano: 1
+    voice.tts.sopro: 1
+    voice.vad.cobra: 1
+    voice.vad.ten_vad: 1
+    voice.wakeword.porcupine: 1
+    spoke_core: 1
+voice.stt.leopard:
+  model_path: ''
+voice.tts.ai_studio:
+  model: gemini-2.5-flash-preview-tts
+  voice: Kore
+voice.tts.orca:
+  model_path: ''
+voice.tts.pocket:
+  voice_prompt_path: alba
+voice.tts.soprano:
+  backend: auto
+  device: cuda
+voice.tts.sopro:
+  device: cpu
+  ref_audio_path: ''
+  temperature: 1.0
+  top_p: 0.95
+  style_strength: 1.0
+voice.vad.cobra:
+  threshold: 0.5
+voice.vad.ten_vad:
+  threshold: 0.5
+  hop_size: '256'
+voice.wakeword.porcupine: {}
