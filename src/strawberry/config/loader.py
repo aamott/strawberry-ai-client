@@ -42,6 +42,46 @@ def _expand_env_vars(obj):
     return obj
 
 
+def _load_yaml_config(config_path: Path) -> dict:
+    """Load and parse a YAML config file, returning an empty dict on failure."""
+    if not config_path.exists():
+        logger.warning("Config file not found at %s, using defaults", config_path)
+        return {}
+
+    try:
+        with open(config_path) as f:
+            return yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        logger.warning(
+            "Config file is invalid YAML at %s: %s. Using defaults",
+            config_path, e,
+        )
+        return {}
+
+
+def _apply_hub_env_overrides(config_data: dict) -> None:
+    """Apply Hub-related environment variable overrides in-place.
+
+    Checks ``STRAWBERRY_HUB_URL``, ``STRAWBERRY_DEVICE_TOKEN``,
+    ``HUB_DEVICE_TOKEN``, and ``HUB_TOKEN`` (in that priority order).
+    """
+    config_data.setdefault("hub", {})
+
+    if "STRAWBERRY_HUB_URL" in os.environ:
+        config_data["hub"]["url"] = os.environ["STRAWBERRY_HUB_URL"]
+
+    if "STRAWBERRY_DEVICE_TOKEN" in os.environ:
+        config_data["hub"]["token"] = os.environ["STRAWBERRY_DEVICE_TOKEN"]
+
+    if not config_data["hub"].get("token"):
+        env_token = (
+            os.environ.get("HUB_DEVICE_TOKEN")
+            or os.environ.get("HUB_TOKEN")
+        )
+        if env_token:
+            config_data["hub"]["token"] = env_token
+
+
 def load_config(
     config_path: Optional[Path] = None,
     env_path: Optional[Path] = None,
@@ -70,63 +110,21 @@ def load_config(
 
     # Load .env file if it exists
     if env_path is None:
-        # Default to the ai-pc-spoke project root
         from ..utils.paths import get_project_root
         env_path = get_project_root() / ".env"
     if env_path.exists():
         load_dotenv(env_path, override=True)
 
-    # Load config.yaml
-    config_data = {}
+    # Resolve default config path
     if config_path is None:
-        # Default to ai-pc-spoke/src/config/config.yaml
         from ..utils.paths import get_project_root
         config_path = get_project_root() / "src" / "config" / "config.yaml"
 
-    if config_path.exists():
-        try:
-            with open(config_path) as f:
-                config_data = yaml.safe_load(f) or {}
-        except yaml.YAMLError as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Config file is invalid YAML at {config_path}: {e}. Using defaults")
-            config_data = {}
-    else:
-        # Log warning if config file not found
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(f"Config file not found at {config_path}, using defaults")
-
-    # Expand environment variables
+    config_data = _load_yaml_config(config_path)
     config_data = _expand_env_vars(config_data)
+    _apply_hub_env_overrides(config_data)
 
-    # Allow direct overrides via STRAWBERRY_HUB_URL and STRAWBERRY_DEVICE_TOKEN
-    # regardless of config.yaml content
-    if "STRAWBERRY_HUB_URL" in os.environ:
-        if "hub" not in config_data:
-            config_data["hub"] = {}
-        config_data["hub"]["url"] = os.environ["STRAWBERRY_HUB_URL"]
-
-    if "STRAWBERRY_DEVICE_TOKEN" in os.environ:
-        if "hub" not in config_data:
-            config_data["hub"] = {}
-        config_data["hub"]["token"] = os.environ["STRAWBERRY_DEVICE_TOKEN"]
-
-    if "hub" not in config_data:
-        config_data["hub"] = {}
-
-    if not config_data["hub"].get("token"):
-        env_token = (
-            os.environ.get("HUB_DEVICE_TOKEN")
-            or os.environ.get("HUB_TOKEN")
-        )
-        if env_token:
-            config_data["hub"]["token"] = env_token
-
-    # Create settings
     _settings = Settings(**config_data)
-
     return _settings
 
 

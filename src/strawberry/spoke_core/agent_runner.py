@@ -224,6 +224,19 @@ class LocalAgentRunner(AgentRunner):
         self._get_mode_notice = get_mode_notice
         self._clear_mode_notice = clear_mode_notice
 
+    async def _emit_assistant_message(
+        self, session: "ChatSession", content: str,
+    ) -> None:
+        """Add an assistant message to the session and emit the event."""
+        session.add_message("assistant", content)
+        await self._emit(
+            MessageAdded(
+                session_id=session.id,
+                role="assistant",
+                content=content,
+            )
+        )
+
     async def run(
         self,
         session: "ChatSession",
@@ -241,11 +254,8 @@ class LocalAgentRunner(AgentRunner):
 
         final_content: Optional[str] = None
         for iteration in range(max_iterations):
-            # Build messages for LLM (skip system messages, use system_prompt param)
-            messages = []
-            for msg in session.messages:
-                if msg.role != "system":
-                    messages.append(msg)
+            # Build messages for LLM (skip system messages)
+            messages = [msg for msg in session.messages if msg.role != "system"]
 
             # Get LLM response with system prompt passed explicitly
             response = await self._llm.chat(
@@ -257,51 +267,28 @@ class LocalAgentRunner(AgentRunner):
             # Check for native tool calls first
             if response.tool_calls:
                 if response.content:
-                    session.add_message("assistant", response.content)
-                    await self._emit(
-                        MessageAdded(
-                            session_id=session.id,
-                            role="assistant",
-                            content=response.content,
-                        )
-                    )
+                    await self._emit_assistant_message(session, response.content)
 
                 should_abort = await self._handle_tool_calls(
                     session, response.tool_calls, seen_tool_calls
                 )
                 if should_abort:
                     return None
-
-                # Continue loop for more tool calls
                 continue
 
-            # Check for legacy code blocks (models that don't use native tool calls)
-            legacy_code_blocks = self._extract_legacy_code_blocks(response.content or "")
+            # Check for legacy code blocks (models without native tool calls)
+            legacy_code_blocks = self._extract_legacy_code_blocks(
+                response.content or ""
+            )
             if legacy_code_blocks:
                 if response.content:
-                    session.add_message("assistant", response.content)
-                    await self._emit(
-                        MessageAdded(
-                            session_id=session.id,
-                            role="assistant",
-                            content=response.content,
-                        )
-                    )
-
+                    await self._emit_assistant_message(session, response.content)
                 await self._handle_legacy_code_blocks(session, legacy_code_blocks)
-                # Continue loop for more iterations
                 continue
 
             # No tool calls - final response
             if response.content:
-                session.add_message("assistant", response.content)
-                await self._emit(
-                    MessageAdded(
-                        session_id=session.id,
-                        role="assistant",
-                        content=response.content,
-                    )
-                )
+                await self._emit_assistant_message(session, response.content)
                 final_content = response.content
             break
 
@@ -312,14 +299,7 @@ class LocalAgentRunner(AgentRunner):
         ):
             error = "Agent loop hit max iterations without producing a final response."
             await self._emit(CoreError(error=error))
-            session.add_message("assistant", error)
-            await self._emit(
-                MessageAdded(
-                    session_id=session.id,
-                    role="assistant",
-                    content=error,
-                )
-            )
+            await self._emit_assistant_message(session, error)
             final_content = error
 
         return final_content

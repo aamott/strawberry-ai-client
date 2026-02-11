@@ -102,6 +102,32 @@ class SkillLoader:
 
         self._repo_namespace_root = "strawberry_skillrepos"
 
+    def _register_loaded_skills(
+        self, skills: list, source_label: str,
+    ) -> None:
+        """Register loaded skills, skipping duplicates.
+
+        Args:
+            skills: List of SkillInfo objects to register.
+            source_label: Label for log messages (e.g. file path).
+        """
+        for skill in skills:
+            if skill.name in self._skills:
+                logger.error(
+                    "Duplicate skill class name '%s' found in %s; "
+                    "already loaded from %s. Skipping duplicate.",
+                    skill.name,
+                    source_label,
+                    str(self._skills[skill.name].module_path),
+                )
+                continue
+            self._skills[skill.name] = skill
+            logger.info(
+                "Loaded skill: %s (%d methods)",
+                skill.name,
+                len(skill.methods),
+            )
+
     def load_all(self) -> List[SkillInfo]:
         """Load all skills from the skills directory.
 
@@ -124,9 +150,7 @@ class SkillLoader:
         for repo_dir in self.skills_path.iterdir():
             if not repo_dir.is_dir():
                 continue
-            if repo_dir.name.startswith("."):
-                continue
-            if repo_dir.name == "__pycache__":
+            if repo_dir.name.startswith(".") or repo_dir.name == "__pycache__":
                 continue
 
             entrypoint = self._find_repo_entrypoint(repo_dir)
@@ -135,22 +159,7 @@ class SkillLoader:
 
             try:
                 skills = self._load_repo_entrypoint(repo_dir, entrypoint)
-                for skill in skills:
-                    if skill.name in self._skills:
-                        logger.error(
-                            "Duplicate skill class name '%s' found in %s; "
-                            "already loaded from %s. Skipping duplicate.",
-                            skill.name,
-                            str(entrypoint),
-                            str(self._skills[skill.name].module_path),
-                        )
-                        continue
-                    self._skills[skill.name] = skill
-                    logger.info(
-                        "Loaded repo skill: %s (%d methods)",
-                        skill.name,
-                        len(skill.methods),
-                    )
+                self._register_loaded_skills(skills, str(entrypoint))
             except Exception as e:
                 logger.error(f"Failed to load repo skill from {entrypoint}: {e}")
                 self._failures.append(SkillLoadFailure(
@@ -165,22 +174,7 @@ class SkillLoader:
 
             try:
                 skills = self._load_file(py_file)
-                for skill in skills:
-                    if skill.name in self._skills:
-                        logger.error(
-                            "Duplicate skill class name '%s' found in %s; "
-                            "already loaded from %s. Skipping duplicate.",
-                            skill.name,
-                            str(py_file),
-                            str(self._skills[skill.name].module_path),
-                        )
-                        continue
-                    self._skills[skill.name] = skill
-                    logger.info(
-                        "Loaded skill: %s (%d methods)",
-                        skill.name,
-                        len(skill.methods),
-                    )
+                self._register_loaded_skills(skills, str(py_file))
             except Exception as e:
                 logger.error(f"Failed to load {py_file}: {e}")
                 self._failures.append(SkillLoadFailure(

@@ -339,132 +339,133 @@ class IntegratedApp:
             ToolCallStarted,
         )
 
-        if isinstance(event, CoreReady):
-            logger.info("SpokeCore ready")
+        # Dispatch table: event type → handler method
+        dispatch = {
+            CoreReady: self._handle_core_ready,
+            CoreError: self._handle_core_error,
+            StreamingDelta: self._handle_streaming_delta,
+            MessageAdded: self._handle_message_added,
+            ToolCallStarted: self._handle_tool_call_started,
+            ToolCallResult: self._handle_tool_call_result,
+            ConnectionChanged: self._handle_connection_changed,
+            SkillsLoaded: self._handle_skills_loaded,
+            SkillStatusChanged: self._handle_skill_status_changed,
+            ModeChanged: self._handle_mode_changed,
+        }
 
-        elif isinstance(event, CoreError):
-            logger.error(f"Core error: {event.error}")
-            self._window.status_bar.flash_message(f"Error: {event.error}")
-            self._window.chat_view.set_typing(False)
-            self._window.chat_view.set_input_enabled(True)
+        handler = dispatch.get(type(event))
+        if handler:
+            handler(event)
 
-        elif isinstance(event, StreamingDelta):
-            # Append streaming text chunk to the current assistant card
-            if self._current_assistant_card:
-                self._current_assistant_card.append_text(event.delta)
+    # -- Per-event handlers ---------------------------------------------------
 
-        elif isinstance(event, MessageAdded):
-            if event.role == "assistant" and self._current_assistant_card:
-                # Append the final text if streaming deltas haven't already
-                # provided it.  We check for existing *text* segments rather
-                # than any segment, because tool-call segments don't count.
-                has_text = any(
-                    isinstance(s, TextSegment)
-                    for s in self._current_assistant_card.message.segments
-                )
-                if not has_text and event.content:
-                    self._current_assistant_card.append_text(event.content)
-                self._window.finish_assistant_message(
-                    self._current_assistant_card.message.id
-                )
+    def _handle_core_ready(self, event) -> None:
+        logger.info("SpokeCore ready")
 
-                # Speak the response via TTS when appropriate.
-                # Voice Mode always speaks; the "read_responses_aloud"
-                # setting speaks for *all* sources (typed, record, voice).
-                # We only call speak() once to avoid double-playback.
-                self._maybe_speak_response(event.content)
+    def _handle_core_error(self, event) -> None:
+        logger.error("Core error: %s", event.error)
+        self._window.status_bar.flash_message(f"Error: {event.error}")
+        self._window.chat_view.set_typing(False)
+        self._window.chat_view.set_input_enabled(True)
 
-                self._current_assistant_card = None
+    def _handle_streaming_delta(self, event) -> None:
+        if self._current_assistant_card:
+            self._current_assistant_card.append_text(event.delta)
 
-        elif isinstance(event, ToolCallStarted):
-            if self._current_assistant_card:
-                idx = self._current_assistant_card.add_tool_call(
-                    tool_name=event.tool_name,
-                    arguments=event.arguments,
-                )
-                self._pending_tool_calls[event.tool_name] = idx
+    def _handle_message_added(self, event) -> None:
+        if event.role != "assistant" or not self._current_assistant_card:
+            return
+        # Append final text if streaming deltas haven't already provided it
+        has_text = any(
+            isinstance(s, TextSegment)
+            for s in self._current_assistant_card.message.segments
+        )
+        if not has_text and event.content:
+            self._current_assistant_card.append_text(event.content)
+        self._window.finish_assistant_message(
+            self._current_assistant_card.message.id
+        )
+        self._maybe_speak_response(event.content)
+        self._current_assistant_card = None
 
-        elif isinstance(event, ToolCallResult):
-            if self._current_assistant_card:
-                result = event.result if event.success else event.error
-                self._current_assistant_card.update_tool_call(
-                    tool_name=event.tool_name,
-                    result=result if event.success else None,
-                    error=result if not event.success else None,
-                )
+    def _handle_tool_call_started(self, event) -> None:
+        if self._current_assistant_card:
+            idx = self._current_assistant_card.add_tool_call(
+                tool_name=event.tool_name,
+                arguments=event.arguments,
+            )
+            self._pending_tool_calls[event.tool_name] = idx
 
-        elif isinstance(event, ConnectionChanged):
-            if event.connected:
-                self._window.set_connection_status(ConnectionStatus.CONNECTED)
-                self._window.toast.show(
-                    "Hub connected", ToastLevel.SUCCESS, duration_ms=2500,
-                )
-            else:
-                self._window.set_connection_status(
-                    ConnectionStatus.DISCONNECTED,
-                    event.error,
-                )
-                self._window.toast.show(
-                    event.error or "Hub disconnected",
+    def _handle_tool_call_result(self, event) -> None:
+        if self._current_assistant_card:
+            result = event.result if event.success else event.error
+            self._current_assistant_card.update_tool_call(
+                tool_name=event.tool_name,
+                result=result if event.success else None,
+                error=result if not event.success else None,
+            )
+
+    def _handle_connection_changed(self, event) -> None:
+        if event.connected:
+            self._window.set_connection_status(ConnectionStatus.CONNECTED)
+            self._window.toast.show(
+                "Hub connected", ToastLevel.SUCCESS, duration_ms=2500,
+            )
+        else:
+            self._window.set_connection_status(
+                ConnectionStatus.DISCONNECTED,
+                event.error,
+            )
+            self._window.toast.show(
+                event.error or "Hub disconnected",
+                ToastLevel.WARNING,
+                duration_ms=5000,
+            )
+
+    def _handle_skills_loaded(self, event) -> None:
+        toast_payloads = []
+
+        # Load failures (errors)
+        for failure in event.failures:
+            toast_payloads.append((
+                f"Skill failed to load: {failure['source']}\n{failure['error']}",
+                ToastLevel.ERROR,
+            ))
+
+        # Loaded but unhealthy (warnings)
+        for skill in event.skills:
+            if not skill.get("healthy", True):
+                msg = skill.get("health_message", "Unknown issue")
+                toast_payloads.append((
+                    f"{skill['name']}: {msg}",
                     ToastLevel.WARNING,
-                    duration_ms=5000,
-                )
+                ))
 
-        elif isinstance(event, SkillsLoaded):
-            # Queue toasts to ensure the window is ready before showing them
-            toast_payloads = []
+        if toast_payloads:
+            logger.info("Emitting skill health/load toasts: %s", toast_payloads)
+            for text, level in toast_payloads:
+                self._window.toast.show(text, level, duration_ms=6000)
 
-            # Load failures (errors)
-            for failure in event.failures:
-                toast_payloads.append(
-                    (
-                        f"Skill failed to load: {failure['source']}\n{failure['error']}",
-                        ToastLevel.ERROR,
-                    )
-                )
+        # Feed skill data to the skills panel
+        self._window.set_skills_data(event.skills, event.failures)
 
-            # Loaded but unhealthy (warnings)
-            for skill in event.skills:
-                if not skill.get("healthy", True):
-                    msg = skill.get("health_message", "Unknown issue")
-                    toast_payloads.append(
-                        (
-                            f"{skill['name']}: {msg}",
-                            ToastLevel.WARNING,
-                        )
-                    )
+    def _handle_skill_status_changed(self, event) -> None:
+        summaries = self._core.get_skill_summaries()
+        failures = self._core.get_skill_load_failures()
+        self._window.set_skills_data(summaries, failures)
 
-            if toast_payloads:
-                logger.info("Emitting skill health/load toasts: %s", toast_payloads)
-
-                def _show_startup_toasts(payloads=toast_payloads):
-                    for text, level in payloads:
-                        self._window.toast.show(text, level, duration_ms=6000)
-
-                # Show immediately; hub toasts already prove UI is ready.
-                _show_startup_toasts()
-
-            # Feed skill data to the skills panel
-            self._window.set_skills_data(event.skills, event.failures)
-
-        elif isinstance(event, SkillStatusChanged):
-            # Refresh skills panel with updated data
-            summaries = self._core.get_skill_summaries()
-            failures = self._core.get_skill_load_failures()
-            self._window.set_skills_data(summaries, failures)
-
-        elif isinstance(event, ModeChanged):
-            self._window.set_offline_mode(not event.online)
-            if event.online:
-                self._window.toast.show(
-                    "Online mode restored", ToastLevel.SUCCESS, duration_ms=2500,
-                )
-            else:
-                self._window.toast.show(
-                    "Switched to offline mode",
-                    ToastLevel.WARNING,
-                    duration_ms=4000,
-                )
+    def _handle_mode_changed(self, event) -> None:
+        self._window.set_offline_mode(not event.online)
+        if event.online:
+            self._window.toast.show(
+                "Online mode restored", ToastLevel.SUCCESS, duration_ms=2500,
+            )
+        else:
+            self._window.toast.show(
+                "Switched to offline mode",
+                ToastLevel.WARNING,
+                duration_ms=4000,
+            )
 
     def _read_responses_aloud_enabled(self) -> bool:
         """Check the voice_core general.read_responses_aloud setting."""

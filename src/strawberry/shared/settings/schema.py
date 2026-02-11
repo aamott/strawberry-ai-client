@@ -140,52 +140,68 @@ class SettingField:
         Returns:
             Error message if invalid, None if valid.
         """
-        # Type-specific validation
         if self.type in (FieldType.NUMBER, FieldType.SLIDER) and value is not None:
-            try:
-                num_value = float(value)
-                if self.min_value is not None and num_value < self.min_value:
-                    return f"{self.label} must be at least {self.min_value}"
-                if self.max_value is not None and num_value > self.max_value:
-                    return f"{self.label} must be at most {self.max_value}"
-            except (TypeError, ValueError):
-                return f"{self.label} must be a number"
+            err = self._validate_numeric(value)
+            if err:
+                return err
 
         if self.type == FieldType.SELECT and self.options:
             if value is not None and value not in self.options:
                 return f"{self.label} must be one of: {', '.join(self.options)}"
 
-        # List validation
         if self.type == FieldType.LIST and value is not None:
-            items = value if isinstance(value, list) else []
-            if self.min_items is not None and len(items) < self.min_items:
-                return f"{self.label} requires at least {self.min_items} item(s)"
-            if self.max_items is not None and len(items) > self.max_items:
-                return f"{self.label} allows at most {self.max_items} item(s)"
-            # Validate item types if specified
-            if self.list_item_type == "number":
-                for i, item in enumerate(items):
-                    try:
-                        float(item)
-                    except (TypeError, ValueError):
-                        return f"{self.label} item {i + 1} must be a number"
-            # Validate against options if not allowing custom values
-            if not self.allow_custom and self.options:
-                for item in items:
-                    if item not in self.options:
-                        return f"{self.label} item '{item}' not in allowed options"
+            err = self._validate_list(value)
+            if err:
+                return err
 
-        # Custom validation
         if self.validation and value is not None:
-            try:
-                result = self.validation(value)
-                if isinstance(result, str):
-                    return result
-                if not result:
-                    return f"Invalid value for {self.label}"
-            except Exception as e:
-                return str(e)
+            return self._validate_custom(value)
 
+        return None
+
+    def _validate_numeric(self, value: Any) -> Optional[str]:
+        """Validate a numeric (NUMBER/SLIDER) field value."""
+        try:
+            num_value = float(value)
+            if self.min_value is not None and num_value < self.min_value:
+                return f"{self.label} must be at least {self.min_value}"
+            if self.max_value is not None and num_value > self.max_value:
+                return f"{self.label} must be at most {self.max_value}"
+        except (TypeError, ValueError):
+            return f"{self.label} must be a number"
+        return None
+
+    def _validate_list(self, value: Any) -> Optional[str]:
+        """Validate a LIST field value (item count, types, and allowed options)."""
+        items = value if isinstance(value, list) else []
+        if self.min_items is not None and len(items) < self.min_items:
+            return f"{self.label} requires at least {self.min_items} item(s)"
+        if self.max_items is not None and len(items) > self.max_items:
+            return f"{self.label} allows at most {self.max_items} item(s)"
+        # Validate item types if specified
+        if self.list_item_type == "number":
+            for i, item in enumerate(items):
+                try:
+                    float(item)
+                except (TypeError, ValueError):
+                    return f"{self.label} item {i + 1} must be a number"
+        # Validate against options if not allowing custom values
+        if not self.allow_custom and self.options:
+            for item in items:
+                if item not in self.options:
+                    return f"{self.label} item '{item}' not in allowed options"
+        return None
+
+    def _validate_custom(self, value: Any) -> Optional[str]:
+        """Run custom validation callable."""
+        try:
+            result = self.validation(value)
+            if isinstance(result, str):
+                return result
+            if not result:
+                return f"Invalid value for {self.label}"
+        except Exception as e:
+            return str(e)
         return None
 
 

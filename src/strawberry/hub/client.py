@@ -710,19 +710,35 @@ class HubClient:
             await self._websocket.close()
             self._websocket = None
 
-    async def _websocket_loop(self):
+    async def _notify_disconnected(self) -> None:
+        """Notify the connection callback that we disconnected."""
+        if self._connection_callback:
+            try:
+                await self._connection_callback(False)
+            except Exception as cb_err:
+                logger.error("Error in connection callback: %s", cb_err)
+
+    async def _reconnect_backoff(self) -> None:
+        """Wait with exponential backoff, then double the delay (max 60s)."""
+        logger.info("Reconnecting in %ss...", self._reconnect_delay)
+        await asyncio.sleep(self._reconnect_delay)
+        self._reconnect_delay = min(self._reconnect_delay * 2, 60.0)
+
+    async def _websocket_loop(self) -> None:
         """Main WebSocket connection loop with reconnection."""
         while True:
             try:
                 # Build WebSocket URL
-                ws_url = self.config.url.replace("http://", "ws://").replace("https://", "wss://")
+                ws_url = self.config.url.replace(
+                    "http://", "ws://"
+                ).replace("https://", "wss://")
                 ws_url = f"{ws_url}/ws/device?token={self.config.token}"
 
-                logger.info(f"Connecting to WebSocket: {ws_url}")
+                logger.info("Connecting to WebSocket: %s", ws_url)
 
                 async with websockets.connect(ws_url) as websocket:
                     self._websocket = websocket
-                    self._reconnect_delay = 1.0  # Reset delay on successful connection
+                    self._reconnect_delay = 1.0
                     logger.info("WebSocket connected")
 
                     # Notify connected
@@ -730,55 +746,31 @@ class HubClient:
                         try:
                             await self._connection_callback(True)
                         except Exception as e:
-                            logger.error(f"Error in connection callback: {e}")
+                            logger.error("Error in connection callback: %s", e)
 
                     # Handle incoming messages
                     async for message in websocket:
                         try:
-                            import json
                             data = json.loads(message)
                             await self._handle_websocket_message(data)
                         except Exception as e:
-                            logger.error(f"Error handling WebSocket message: {e}")
+                            logger.error("Error handling WebSocket message: %s", e)
 
-                # If we exit the async-with cleanly (server closed connection),
-                # fall through to the reconnect logic below.
+                # Server closed connection cleanly
                 logger.warning("WebSocket closed by server")
                 self._websocket = None
-
-                if self._connection_callback:
-                    try:
-                        await self._connection_callback(False)
-                    except Exception as cb_err:
-                        logger.error(f"Error in connection callback: {cb_err}")
-
-                logger.info(f"Reconnecting in {self._reconnect_delay}s...")
-                await asyncio.sleep(self._reconnect_delay)
-                self._reconnect_delay = min(
-                    self._reconnect_delay * 2, 60.0,
-                )
+                await self._notify_disconnected()
+                await self._reconnect_backoff()
 
             except asyncio.CancelledError:
                 logger.info("WebSocket connection cancelled")
                 break
 
             except Exception as e:
-                logger.error(f"WebSocket connection error: {e}")
+                logger.error("WebSocket connection error: %s", e)
                 self._websocket = None
-
-                # Notify disconnected
-                if self._connection_callback:
-                    try:
-                        await self._connection_callback(False)
-                    except Exception as cb_err:
-                        logger.error(f"Error in connection callback: {cb_err}")
-
-                # Exponential backoff for reconnection
-                logger.info(f"Reconnecting in {self._reconnect_delay}s...")
-                await asyncio.sleep(self._reconnect_delay)
-                self._reconnect_delay = min(
-                    self._reconnect_delay * 2, 60.0,
-                )
+                await self._notify_disconnected()
+                await self._reconnect_backoff()
 
     async def _handle_websocket_message(self, message: dict):
         """Handle incoming WebSocket message from Hub.
