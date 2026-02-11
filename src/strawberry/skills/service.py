@@ -6,74 +6,26 @@ import ast
 import asyncio
 import logging
 import re
-import unicodedata
-from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
-
-if TYPE_CHECKING:
-    pass
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..hub import HubClient
-from .loader import SkillInfo, SkillLoader, SkillMethod
+from .loader import SkillInfo, SkillLoader
+from .prompt import DEFAULT_SYSTEM_PROMPT_TEMPLATE, build_system_prompt
+from .proxies import (
+    DeviceProxy,
+    SkillCallResult,
+    normalize_device_name,
+)
 from .sandbox.executor import SandboxConfig, SandboxExecutor
 from .sandbox.gatekeeper import Gatekeeper
 from .sandbox.proxy_gen import ProxyGenerator, SkillMode
+from .tool_dispatch import enrich_exec_error, format_search_results
 
 logger = logging.getLogger(__name__)
 
-
-def normalize_device_name(name: str) -> str:
-    """Normalize a device name for consistent routing.
-
-    Transforms device names into a canonical form:
-    - Lowercased
-    - Spaces/hyphens converted to underscores
-    - Special characters removed
-    - Unicode normalized to ASCII equivalents
-
-    This implementation must stay in sync with the Hub's
-    ``hub.utils.normalize_device_name``.  The canonical test vectors
-    live in ``docs/test-fixtures/normalize_device_name.json``.
-
-    Args:
-        name: Raw device name (display name).
-
-    Returns:
-        Normalized name suitable for routing.
-    """
-    if not name:
-        return ""
-
-    # Normalize unicode (é -> e, ü -> u, etc.)
-    normalized = unicodedata.normalize("NFKD", name)
-    normalized = normalized.encode("ascii", "ignore").decode("ascii")
-
-    # Lowercase
-    normalized = normalized.lower()
-
-    # Replace spaces and hyphens with underscores
-    normalized = re.sub(r"[\s\-]+", "_", normalized)
-
-    # Remove non-alphanumeric characters (except underscores)
-    normalized = re.sub(r"[^a-z0-9_]", "", normalized)
-
-    # Collapse multiple underscores
-    normalized = re.sub(r"_+", "_", normalized)
-
-    # Strip leading/trailing underscores
-    normalized = normalized.strip("_")
-
-    return normalized
-
-
-@dataclass
-class SkillCallResult:
-    """Result of executing a skill call."""
-
-    success: bool
-    result: Any = None
-    error: Optional[str] = None
+# Re-export for backward compatibility
+__all__ = ["SkillService", "SkillCallResult", "normalize_device_name"]
 
 
 class SkillService:
@@ -87,75 +39,8 @@ class SkillService:
     - Parse and execute skill calls from LLM responses
     """
 
-    # Default system prompt template for skills.
-    # Users can override this via the llm.system_prompt setting.
-    # The placeholder {skill_descriptions} is replaced at runtime with
-    # the full list of loaded skills and their methods.
-    DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
-        "You are Strawberry, a helpful AI assistant"
-        " with access to skills on this device.\n"
-        "\n"
-        "## Available Tools\n"
-        "\n"
-        "You have exactly 3 tools:\n"
-        "1. search_skills(query) - Find skills by keyword "
-        "(searches method names and descriptions)\n"
-        "2. describe_function(path) - Get full signature for a skill method\n"
-        "3. python_exec(code) - Execute Python code that calls skills\n"
-        "\n"
-        "## How to Call Skills\n"
-        "\n"
-        "To execute a local skill, use python_exec with code that calls\n"
-        "device.<SkillName>.<method>().\n"
-        "When connected to the Hub, remote skills are available via "
-        "devices.<Device>.<SkillName>.<method>().\n"
-        "\n"
-        "Examples:\n"
-        '- Time: python_exec({{"code": "print(device.TimeSkill.get_current_time())"}})\n'
-        '- Weather: python_exec({{"code": "print('
-        "  device.WeatherSkill"
-        ".get_current_weather('Seattle'))\"}})\n"
-        '- Calculate: python_exec({{"code": "print('
-        '  device.CalculatorSkill.add(a=5, b=3))"}})\n'
-        '- Smart home: python_exec({{"code": "print(device.HomeAssistantSkill.'
-        "HassTurnOn(name='short lamp'))\"}})\n"
-        '- Remote: python_exec({{"code": "print(devices.living_room_pc.'
-        'MediaControlSkill.set_volume(level=20))"}})\n'
-        "\n"
-        "## Searching Tips\n"
-        "\n"
-        "search_skills matches against method names and descriptions.\n"
-        "Search by **action** or **verb**, not by specific entity/object names.\n"
-        "- To turn on a lamp, search 'turn on' not 'lamp'.\n"
-        "- To set brightness, search 'light' or 'brightness'.\n"
-        "- To look up docs, search 'documentation' or 'query'.\n"
-        "\n"
-        "If you already see the right skill in Available"
-        " Skills below, skip search_skills\n"
-        "and call describe_function or python_exec directly.\n"
-        "\n"
-        "## Available Skills\n"
-        "\n"
-        "{skill_descriptions}\n"
-        "\n"
-        "## Rules\n"
-        "\n"
-        "1. Use python_exec to call skills - do NOT call"
-        " skill methods directly as tools.\n"
-        "2. Do NOT output code blocks or ```tool_outputs``` - use actual tool calls.\n"
-        "3. Keep responses concise and friendly.\n"
-        "4. If you need a skill result, call python_exec"
-        " with the appropriate code.\n"
-        "5. Do NOT ask the user for permission to use"
-        " skills/tools. Use them when needed.\n"
-        "6. Do NOT rerun the same tool call to double-check; use the first result.\n"
-        "7. After tool calls complete, ALWAYS provide a"
-        " final natural-language answer.\n"
-        "8. If a tool call fails with 'Unknown tool', immediately switch to python_exec "
-        "and proceed.\n"
-        "9. For smart-home commands (turn on/off, lights, locks, media), look for "
-        "HomeAssistantSkill. Pass the device/entity name as the 'name' kwarg."
-    )
+    # Re-export from prompt module for backward compatibility
+    DEFAULT_SYSTEM_PROMPT_TEMPLATE = DEFAULT_SYSTEM_PROMPT_TEMPLATE
 
     def __init__(
         self,
@@ -488,84 +373,21 @@ class SkillService:
     def get_system_prompt(self, *, mode_notice: Optional[str] = None) -> str:
         """Generate the system prompt with skill descriptions.
 
+        Delegates to :func:`prompt.build_system_prompt`.
+
         Returns:
             System prompt string for LLM
         """
         self._ensure_skills_loaded()
-
-        # Get all loaded skills
         skills = self.get_all_skills()
-
-        if not skills:
-            return "You are Strawberry, a helpful AI assistant."
-
         mode = self._get_effective_mode()
-
-        mode_lines: list[str] = []
-        if mode_notice:
-            mode_lines.append(mode_notice.strip())
-            mode_lines.append("")
-
-        if mode == SkillMode.LOCAL:
-            mode_lines.extend(
-                [
-                    "Runtime mode: OFFLINE/LOCAL.",
-                    "- Use only the local device proxy:"
-                    " device.<SkillName>.<method>(...) ",
-                    "- Do NOT use devices.* or device_manager.* (they are unavailable).",
-                ]
-            )
-        else:
-            mode_lines.extend(
-                [
-                    "Runtime mode: ONLINE (Hub).",
-                    "- Use the remote devices proxy:"
-                    " devices.<Device>.<SkillName>"
-                    ".<method>(...) ",
-                    "- You may also use device_manager.* as a legacy alias.",
-                ]
-            )
-
-        mode_preamble = "\n".join(mode_lines).strip()
-
-        # Build skill descriptions
-        descriptions = []
-        for skill in skills:
-            descriptions.append(f"### {skill.name}")
-            if skill.class_obj.__doc__:
-                descriptions.append(skill.class_obj.__doc__.strip())
-            descriptions.append("")
-
-            for method in skill.methods:
-                prefix = "device"
-                if mode == SkillMode.REMOTE:
-                    prefix = "devices.{device_name}".format(
-                        device_name=normalize_device_name(self.device_name)
-                    )
-                descriptions.append(f"- `{prefix}.{skill.name}.{method.signature}`")
-                if method.docstring:
-                    # Just first line of docstring
-                    first_line = method.docstring.split("\n")[0].strip()
-                    descriptions.append(f"  {first_line}")
-            descriptions.append("")
-
-        skill_text = "\n".join(descriptions)
-
-        # Use custom system prompt template if set, otherwise default.
-        template = self._custom_system_prompt or self.DEFAULT_SYSTEM_PROMPT_TEMPLATE
-        try:
-            prompt = template.format(skill_descriptions=skill_text)
-        except KeyError:
-            # User template is missing {skill_descriptions} — append skills.
-            logger.warning(
-                "Custom system prompt missing {skill_descriptions} placeholder; "
-                "appending skill list."
-            )
-            prompt = template + "\n\n## Available Skills\n\n" + skill_text
-
-        if mode_preamble:
-            return f"{mode_preamble}\n\n{prompt}"
-        return prompt
+        return build_system_prompt(
+            skills=skills,
+            mode=mode,
+            device_name=self.device_name,
+            custom_template=self._custom_system_prompt,
+            mode_notice=mode_notice,
+        )
 
     def set_custom_system_prompt(self, prompt: Optional[str]) -> None:
         """Update the custom system prompt template at runtime.
@@ -720,7 +542,7 @@ class SkillService:
             )
 
         # Create device proxy for local skills
-        device = _DeviceProxy(self._loader)
+        device = DeviceProxy(self._loader)
 
         # Prepare device manager for remote calls (if Hub is connected)
         device_manager = self._build_device_manager()
@@ -934,7 +756,7 @@ class SkillService:
                 if result.success:
                     return {"result": result.result or "(no output)"}
                 else:
-                    return {"error": _enrich_exec_error(result.error or "")}
+                    return {"error": enrich_exec_error(result.error or "")}
 
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
@@ -1110,7 +932,7 @@ class SkillService:
                 query=query,
                 device_limit=device_limit,
             )
-            return {"result": self._format_search_results(results)}
+            return {"result": format_search_results(results)}
 
         result = self._execute_search_skills(query, device_limit=device_limit)
         return {"result": result}
@@ -1161,40 +983,7 @@ class SkillService:
         if result.success:
             return {"result": result.result or "(no output)"}
         else:
-            return {"error": _enrich_exec_error(result.error or "")}
-
-    @staticmethod
-    def _format_search_results(results: List[Dict[str, Any]]) -> str:
-        """Format search results as a compact text table for the LLM.
-
-        Produces one line per result instead of verbose JSON, saving tokens
-        and making it easier for the LLM to scan for the right skill.
-
-        Args:
-            results: List of dicts with path, signature, summary keys.
-
-        Returns:
-            Human/LLM-readable text listing.
-        """
-        if not results:
-            return "No results found."
-
-        lines = [f"Found {len(results)} result(s):"]
-        for r in results:
-            sig = r.get("signature", r.get("path", "?"))
-            summary = r.get("summary", "")
-            path = r.get("path", "")
-            # Include device info if present (online/Hub results)
-            devices = r.get("devices", [])
-            device_suffix = ""
-            if devices:
-                device_suffix = f"  [on: {', '.join(devices[:3])}]"
-            line = f"  {path} — {sig}"
-            if summary:
-                line += f" — {summary}"
-            line += device_suffix
-            lines.append(line)
-        return "\n".join(lines)
+            return {"error": enrich_exec_error(result.error or "")}
 
     def _execute_search_skills(self, query: str, device_limit: int = 10) -> str:
         """Execute search_skills tool.
@@ -1209,10 +998,10 @@ class SkillService:
         self._ensure_skills_loaded()
 
         # Use device proxy for search (has the search_skills method)
-        device = _DeviceProxy(self._loader)
+        device = DeviceProxy(self._loader)
         results = device.search_skills(query, device_limit=device_limit)
 
-        return self._format_search_results(results)
+        return format_search_results(results)
 
     def _execute_describe_function(self, path: str) -> str:
         """Execute describe_function tool.
@@ -1225,703 +1014,5 @@ class SkillService:
         """
         self._ensure_skills_loaded()
 
-        device = _DeviceProxy(self._loader)
+        device = DeviceProxy(self._loader)
         return device.describe_function(path)
-
-
-# Common English stop words to strip from search queries.
-# Prevents "turn on the lamp" from matching everything via "the" or "on".
-_SEARCH_STOP_WORDS = frozenset(
-    {
-        "a",
-        "an",
-        "the",
-        "is",
-        "to",
-        "for",
-        "of",
-        "in",
-        "on",
-        "it",
-        "and",
-        "or",
-        "my",
-        "me",
-        "i",
-        "do",
-        "can",
-        "you",
-        "please",
-        "what",
-        "how",
-        "get",
-        "set",
-    }
-)
-
-# Hints appended to common python_exec errors so the LLM can self-correct.
-_ERROR_HINTS: Dict[str, str] = {
-    "import": (
-        "\nHint: Imports are not allowed in python_exec. "
-        "All skill methods are available via device.<SkillName>.<method>()."
-    ),
-    "__import__": (
-        "\nHint: Imports are not allowed in python_exec. "
-        "All skill methods are available via device.<SkillName>.<method>()."
-    ),
-    "open": ("\nHint: File I/O is not allowed in python_exec."),
-    "not found": (
-        "\nHint: Use search_skills to find available skills, "
-        "then describe_function to see the full signature."
-    ),
-    "not allowed": (
-        "\nHint: This operation is restricted for security. "
-        "Use device.<SkillName>.<method>() to call skills."
-    ),
-}
-
-
-def _enrich_exec_error(error: str) -> str:
-    """Append an actionable hint to a python_exec error message.
-
-    Scans the error text for known patterns and appends a short hint
-    so the LLM can self-correct without extra round-trips.
-
-    Args:
-        error: Raw error message string.
-
-    Returns:
-        Error string, possibly with an appended hint.
-    """
-    if not error:
-        return error
-    error_lower = error.lower()
-    for pattern, hint in _ERROR_HINTS.items():
-        if pattern in error_lower:
-            return error + hint
-    return error
-
-
-def _build_example_call(skill_name: str, method: SkillMethod) -> str:
-    """Build a ready-to-use python_exec example for a skill method.
-
-    Parses the method signature to generate placeholder arguments so the
-    LLM can copy-paste and fill in real values.
-
-    Args:
-        skill_name: Name of the skill class.
-        method: SkillMethod with signature info.
-
-    Returns:
-        Example code string, e.g.
-        ``print(device.CalcSkill.add(a=5, b=3))``
-    """
-    sig = method.signature  # e.g. "add(a: int, b: int) -> int"
-    # Extract the params portion between parens
-    match = re.search(r"\(([^)]*)\)", sig)
-    if not match:
-        return f"print(device.{skill_name}.{method.name}())"
-
-    params_str = match.group(1).strip()
-    if not params_str:
-        return f"print(device.{skill_name}.{method.name}())"
-
-    # Parse individual params
-    example_args: list[str] = []
-    for param in params_str.split(","):
-        param = param.strip()
-        if not param:
-            continue
-        # Skip **kwargs params and the bare '*' keyword-only separator
-        if param.startswith("**") or param == "*":
-            continue
-
-        # Extract name and optional default
-        # Formats: "name: type", "name: type = default", "name=default"
-        name = param.split(":")[0].split("=")[0].strip()
-
-        # Check for a default value
-        if "=" in param:
-            default = param.rsplit("=", 1)[1].strip()
-            # None defaults are unhelpful for the LLM — use a type placeholder
-            if default == "None":
-                type_hint = ""
-                if ":" in param:
-                    type_hint = param.split(":", 1)[1].split("=")[0].strip().lower()
-                default = _placeholder_for_type(type_hint)
-            example_args.append(f"{name}={default}")
-        else:
-            # Generate a placeholder based on type hint
-            type_hint = ""
-            if ":" in param:
-                type_hint = param.split(":", 1)[1].split("=")[0].strip().lower()
-
-            placeholder = _placeholder_for_type(type_hint)
-            example_args.append(f"{name}={placeholder}")
-
-    args_str = ", ".join(example_args)
-    return f"print(device.{skill_name}.{method.name}({args_str}))"
-
-
-def _placeholder_for_type(type_hint: str) -> str:
-    """Return a sensible placeholder value for a type hint.
-
-    Args:
-        type_hint: Lowercase type hint string.
-
-    Returns:
-        Placeholder value as a string.
-    """
-    if not type_hint:
-        return "..."
-    if "str" in type_hint:
-        return "'...'"
-    if "int" in type_hint:
-        return "0"
-    if "float" in type_hint:
-        return "0.0"
-    if "bool" in type_hint:
-        return "True"
-    if "list" in type_hint:
-        return "[]"
-    if "dict" in type_hint:
-        return "{}"
-    return "..."
-
-
-class _DeviceProxy:
-    """Proxy object for accessing skills from LLM-generated code.
-
-    Provides:
-    - device.search_skills("query") - Find skills by keyword
-    - device.describe_function("SkillName.method") - Get function details
-    - device.SkillName.method_name(args) - Call a skill
-    """
-
-    def __init__(self, loader: SkillLoader):
-        """Initialize the device proxy.
-
-        Args:
-            loader: Skill loader used to resolve skills.
-        """
-        self._loader = loader
-
-    def search_skills(
-        self, query: str = "", device_limit: int = 10
-    ) -> List[Dict[str, Any]]:
-        """Search for skills by keyword.
-
-        Splits the query into words and matches if **any** word appears
-        in the method name, skill name, signature, or docstring.  This
-        makes multi-word queries like "react documentation" find results
-        that match on "documentation" alone.
-
-        Args:
-            query: Search term (matches name, signature, docstring)
-            device_limit: Ignored for local-only mode
-
-        Returns:
-            List of matching skills with path, signature, summary
-        """
-        query_words = self._parse_query_words(query)
-        candidates = self._build_search_candidates(query_words)
-        matched = self._match_candidates(candidates, query_words)
-
-        results = []
-        for skill, method in matched:
-            summary = ""
-            if method.docstring:
-                summary = method.docstring.split("\n")[0].strip()
-            results.append(
-                {
-                    "path": f"{skill.name}.{method.name}",
-                    "signature": method.signature,
-                    "summary": summary,
-                }
-            )
-        return results
-
-    @staticmethod
-    def _parse_query_words(query: str) -> list[str]:
-        """Parse a query into search words, stripping stop words."""
-        raw_words = query.lower().split() if query else []
-        query_words = [w for w in raw_words if w not in _SEARCH_STOP_WORDS]
-        # Fall back to original words if stop-word stripping removed everything
-        if not query_words and raw_words:
-            query_words = raw_words
-        return query_words
-
-    def _build_search_candidates(
-        self,
-        query_words: list[str],
-    ) -> list[tuple]:
-        """Build (skill, method, searchable_text) triples."""
-        candidates: list[tuple] = []
-        for skill in self._loader.get_all_skills():
-            for method in skill.methods:
-                if not query_words:
-                    candidates.append((skill, method, True))
-                else:
-                    searchable = (
-                        f"{method.name} {skill.name} "
-                        f"{method.signature} "
-                        f"{method.docstring or ''}"
-                    ).lower()
-                    candidates.append((skill, method, searchable))
-        return candidates
-
-    @staticmethod
-    def _match_candidates(
-        candidates: list[tuple],
-        query_words: list[str],
-    ) -> list[tuple]:
-        """Match candidates against query words (all-words first, then any-word)."""
-        if not query_words:
-            return [(s, m) for s, m, _ in candidates]
-
-        matched = [
-            (s, m)
-            for s, m, txt in candidates
-            if txt is True or all(w in txt for w in query_words)
-        ]
-        if not matched:
-            matched = [
-                (s, m)
-                for s, m, txt in candidates
-                if txt is True or any(w in txt for w in query_words)
-            ]
-        return matched
-
-    def describe_function(self, path: str) -> str:
-        """Get full function details including docstring.
-
-        Args:
-            path: "SkillName.method_name"
-
-        Returns:
-            Full function signature with docstring
-        """
-        parts = path.split(".")
-        if len(parts) != 2:
-            return f"Error: Invalid path '{path}'. Use format 'SkillName.method_name'"
-
-        skill_name, method_name = parts
-        skill = self._loader.get_skill(skill_name)
-
-        if not skill:
-            return f"Error: Skill '{skill_name}' not found"
-
-        for method in skill.methods:
-            if method.name == method_name:
-                doc = method.docstring or "No description available"
-                example = _build_example_call(skill_name, method)
-                result = f'def {method.signature}:\n    """\n    {doc}\n    """'
-                if example:
-                    result += f'\n\nExample:\n  python_exec(code="{example}")'
-                return result
-
-        return f"Error: Method '{method_name}' not found in {skill_name}"
-
-    def __getattr__(self, name: str):
-        """Get a skill class by name for direct calls."""
-        # Don't intercept private attributes
-        if name.startswith("_"):
-            raise AttributeError(name)
-
-        skill = self._loader.get_skill(name)
-        if skill is None:
-            # Get list of available skills for helpful error
-            available = [s.name for s in self._loader.get_all_skills()]
-            available_str = ", ".join(available) if available else "none loaded"
-            raise AttributeError(
-                f"Skill '{name}' not found. "
-                f"Available skills: {available_str}. "
-                f"Use device.search_skills() to search."
-            )
-        return _SkillProxy(self._loader, name)
-
-
-class _SkillProxy:
-    """Proxy for a specific skill class."""
-
-    def __init__(self, loader: SkillLoader, skill_name: str):
-        """Initialize a proxy for a single skill.
-
-        Args:
-            loader: Skill loader used to resolve methods.
-            skill_name: Skill class name.
-        """
-        self._loader = loader
-        self._skill_name = skill_name
-
-    def __getattr__(self, name: str):
-        """Get a method that calls the actual skill."""
-
-        def method_wrapper(*args, **kwargs):
-            return self._loader.call_method(self._skill_name, name, *args, **kwargs)
-
-        return method_wrapper
-
-
-class _DeviceManagerProxy:
-    """Proxy object for accessing skills across multiple devices (online mode).
-
-    Provides:
-    - device_manager.search_skills("query") - Find skills across all devices
-    - device_manager.describe_function("device.SkillName.method") - Get function details
-    - device_manager.device_name.SkillName.method(args) - Call skill on specific device
-
-    Uses __getattr__ for dynamic device access so devices can connect/disconnect
-    during a chat session.
-    """
-
-    def __init__(
-        self,
-        local_loader: SkillLoader,
-        hub_client: Optional[HubClient] = None,
-        connected_devices: Optional[Dict[str, Dict[str, Any]]] = None,
-        local_device_name: Optional[str] = None,
-    ):
-        """Initialize device manager proxy.
-
-        Args:
-            local_loader: Local skill loader for this device
-            hub_client: Hub client for remote skill calls
-            connected_devices: Dict mapping device_name -> device_info with skills
-            local_device_name: Name of the local device (will be normalized)
-        """
-        self._local_loader = local_loader
-        self._hub_client = hub_client
-        self._connected_devices: Dict[str, Dict[str, Any]] = connected_devices or {}
-        self._local_device_name = (
-            normalize_device_name(local_device_name) if local_device_name else "local"
-        )
-
-    def set_local_device_name(self, name: str) -> None:
-        """Set the name of the local device."""
-        self._local_device_name = normalize_device_name(name)
-
-    def update_connected_devices(self, devices: Dict[str, Dict[str, Any]]) -> None:
-        """Update the list of connected devices and their skills.
-
-        Args:
-            devices: Dict mapping device_name -> {"skills": [...], "online": bool}
-        """
-        self._connected_devices = {
-            normalize_device_name(k): v for k, v in devices.items()
-        }
-
-    def search_skills(
-        self, query: str = "", device_limit: int = 10
-    ) -> List[Dict[str, Any]]:
-        """Search for skills across all connected devices.
-
-        Args:
-            query: Search term (matches name, signature, docstring)
-
-        Returns:
-            List of skills with path, signature, summary, and devices list
-        """
-        device_limit = max(1, min(int(device_limit or 10), 100))
-        skill_map: Dict[str, Dict[str, Any]] = {}
-
-        self._add_local_skills(query, skill_map)
-        self._add_remote_skills(query, skill_map, device_limit)
-
-        return list(skill_map.values())
-
-    def _add_local_skills(
-        self,
-        query: str,
-        skill_map: Dict[str, Dict[str, Any]],
-    ) -> None:
-        """Add matching local skills to the skill map."""
-        query_lower = query.lower() if query else ""
-        for skill in self._local_loader.get_all_skills():
-            for method in skill.methods:
-                if not self._skill_matches(
-                    query_lower,
-                    method.name,
-                    skill.name,
-                    method.signature,
-                    method.docstring or "",
-                ):
-                    continue
-                key = f"{skill.name}.{method.name}"
-                summary = (method.docstring or "").split("\n")[0].strip()
-                if key not in skill_map:
-                    skill_map[key] = {
-                        "path": key,
-                        "signature": method.signature,
-                        "summary": summary,
-                        "devices": [],
-                        "device_count": 0,
-                    }
-                if self._local_device_name not in skill_map[key]["devices"]:
-                    skill_map[key]["devices"].append(self._local_device_name)
-                skill_map[key]["device_count"] += 1
-
-    def _add_remote_skills(
-        self,
-        query: str,
-        skill_map: Dict[str, Dict[str, Any]],
-        device_limit: int,
-    ) -> None:
-        """Add matching remote device skills to the skill map."""
-        query_lower = query.lower() if query else ""
-        for device_name, device_info in self._connected_devices.items():
-            if not device_info.get("online", False):
-                continue
-            for skill_data in device_info.get("skills", []):
-                skill_name = skill_data.get("class_name", "")
-                method_name = skill_data.get("function_name", "")
-                signature = skill_data.get("signature", "")
-                docstring = skill_data.get("docstring", "")
-                if not self._skill_matches(
-                    query_lower,
-                    method_name,
-                    skill_name,
-                    signature,
-                    docstring,
-                ):
-                    continue
-                key = f"{skill_name}.{method_name}"
-                summary = docstring.split("\n")[0].strip() if docstring else ""
-                if key not in skill_map:
-                    skill_map[key] = {
-                        "path": key,
-                        "signature": signature,
-                        "summary": summary,
-                        "devices": [],
-                        "device_count": 0,
-                    }
-                skill_map[key]["device_count"] += 1
-                if (
-                    device_name not in skill_map[key]["devices"]
-                    and len(skill_map[key]["devices"]) < device_limit
-                ):
-                    skill_map[key]["devices"].append(device_name)
-
-    @staticmethod
-    def _skill_matches(
-        query_lower: str,
-        method_name: str,
-        skill_name: str,
-        signature: str,
-        docstring: str,
-    ) -> bool:
-        """Return True if a skill method matches the search query."""
-        if not query_lower:
-            return True
-        return (
-            query_lower in method_name.lower()
-            or query_lower in skill_name.lower()
-            or query_lower in signature.lower()
-            or query_lower in docstring.lower()
-        )
-
-    def describe_function(self, path: str) -> str:
-        """Get full function details including docstring.
-
-        Args:
-            path: "device_name.SkillName.method_name" or "SkillName.method_name"
-
-        Returns:
-            Full function signature with docstring
-        """
-        parts = path.split(".")
-
-        if len(parts) == 2:
-            skill_name, method_name = parts
-            return self._describe_local_method(skill_name, method_name)
-
-        elif len(parts) == 3:
-            device_name, skill_name, method_name = parts
-            device_name = normalize_device_name(device_name)
-
-            # Local device
-            if device_name == self._local_device_name:
-                result = self._describe_local_method(skill_name, method_name)
-                if not result.startswith("Error:"):
-                    return result
-
-            # Remote devices
-            device_info = self._connected_devices.get(device_name)
-            if device_info:
-                for skill_data in device_info.get("skills", []):
-                    if (
-                        skill_data.get("class_name") == skill_name
-                        and skill_data.get("function_name") == method_name
-                    ):
-                        sig = skill_data.get("signature", f"{method_name}()")
-                        doc = skill_data.get("docstring", "No description available")
-                        return f'def {sig}:\n    """\n    {doc}\n    """'
-
-            return f"Error: Function '{path}' not found"
-
-        return (
-            f"Error: Invalid path '{path}'."
-            " Use 'SkillName.method' or"
-            " 'device.SkillName.method'"
-        )
-
-    def _describe_local_method(self, skill_name: str, method_name: str) -> str:
-        """Describe a method from the local skill loader."""
-        skill = self._local_loader.get_skill(skill_name)
-        if skill:
-            for method in skill.methods:
-                if method.name == method_name:
-                    doc = method.docstring or "No description available"
-                    return f'def {method.signature}:\n    """\n    {doc}\n    """'
-        return f"Error: Method '{method_name}' not found in {skill_name}"
-
-    def __getattr__(self, name: str) -> "_RemoteDeviceProxy":
-        """Get a device by name for skill calls.
-
-        Uses __getattr__ so devices can connect/disconnect during conversation.
-        """
-        if name.startswith("_"):
-            raise AttributeError(name)
-
-        normalized = normalize_device_name(name)
-
-        # Check if it's the local device
-        if normalized == self._local_device_name:
-            return _LocalDeviceSkillsProxy(self._local_loader)
-
-        # Check if device exists in connected devices
-        if normalized not in self._connected_devices:
-            available = list(self._connected_devices.keys())
-            if self._local_device_name:
-                available.insert(0, self._local_device_name)
-            available_str = ", ".join(available) if available else "none connected"
-            raise AttributeError(
-                f"Device '{name}' not connected. "
-                f"Available devices: {available_str}. "
-                f"Use device_manager.search_skills() to see all skills."
-            )
-
-        device_info = self._connected_devices[normalized]
-        if not device_info.get("online", False):
-            raise AttributeError(f"Device '{name}' is currently offline.")
-
-        return _RemoteDeviceProxy(normalized, self._hub_client)
-
-
-class _LocalDeviceSkillsProxy:
-    """Proxy for accessing local device skills through device_manager."""
-
-    def __init__(self, loader: SkillLoader):
-        """Initialize the local device proxy.
-
-        Args:
-            loader: Skill loader used to resolve skills.
-        """
-        self._loader = loader
-
-    def __getattr__(self, skill_name: str) -> "_SkillProxy":
-        """Resolve a skill class by name.
-
-        Args:
-            skill_name: Skill class name.
-
-        Returns:
-            Skill proxy for invoking methods.
-        """
-        if skill_name.startswith("_"):
-            raise AttributeError(skill_name)
-        skill = self._loader.get_skill(skill_name)
-        if skill is None:
-            available = [s.name for s in self._loader.get_all_skills()]
-            raise AttributeError(
-                f"Skill '{skill_name}' not found. Available: {', '.join(available)}"
-            )
-        return _SkillProxy(self._loader, skill_name)
-
-
-class _RemoteDeviceProxy:
-    """Proxy for accessing skills on a remote device."""
-
-    def __init__(self, device_name: str, hub_client: Optional[HubClient]):
-        """Initialize the remote device proxy.
-
-        Args:
-            device_name: Normalized device name.
-            hub_client: Hub client used for remote calls.
-        """
-        self._device_name = device_name
-        self._hub_client = hub_client
-
-    def __getattr__(self, skill_name: str) -> "_RemoteSkillProxy":
-        """Resolve a remote skill by name.
-
-        Args:
-            skill_name: Skill class name.
-
-        Returns:
-            Proxy for the remote skill.
-        """
-        if skill_name.startswith("_"):
-            raise AttributeError(skill_name)
-        return _RemoteSkillProxy(self._device_name, skill_name, self._hub_client)
-
-
-class _RemoteSkillProxy:
-    """Proxy for a skill on a remote device."""
-
-    def __init__(
-        self, device_name: str, skill_name: str, hub_client: Optional[HubClient]
-    ):
-        """Initialize the remote skill proxy.
-
-        Args:
-            device_name: Target device name.
-            skill_name: Skill class name.
-            hub_client: Hub client used for remote calls.
-        """
-        self._device_name = device_name
-        self._skill_name = skill_name
-        self._hub_client = hub_client
-
-    def __getattr__(self, method_name: str):
-        """Get a method that calls the remote skill."""
-        if method_name.startswith("_"):
-            raise AttributeError(method_name)
-
-        def method_wrapper(*args, **kwargs):
-            if not self._hub_client:
-                raise RuntimeError("Hub client not available for remote skill calls")
-
-            # This will be called synchronously from sandbox
-            # The actual call goes through Hub to the target device
-            import asyncio
-
-            try:
-                asyncio.get_running_loop()
-            except RuntimeError:
-                # No running loop: use asyncio.run() so the loop is always closed.
-                return asyncio.run(
-                    self._hub_client.execute_remote_skill(
-                        device_name=self._device_name,
-                        skill_name=self._skill_name,
-                        method_name=method_name,
-                        args=list(args),
-                        kwargs=kwargs,
-                    )
-                )
-
-            # Running loop in this thread.
-            # Remote skill calls from sandbox require async bridge implementation.
-            # This would need to use the sandbox's async bridge to call Hub.
-            raise NotImplementedError(
-                "Remote skill calls from sandbox require async bridge implementation. "
-                f"Attempted: {self._device_name}.{self._skill_name}.{method_name}"
-            )
-
-            # (unreachable)
-            if False:  # pragma: no cover
-                # Remote skill calls from sandbox require async bridge implementation
-                # This would need to use the sandbox's async bridge to call Hub
-                ...
-
-        return method_wrapper

@@ -53,7 +53,7 @@ class Gatekeeper:
 
         TODO: This method exists but is not currently called anywhere.
         The online/offline mode switching is handled differently:
-        - SkillService uses _DeviceProxy (local) or _DeviceManagerProxy (online)
+        - SkillService uses DeviceProxy (local) or DeviceManagerProxy (online)
         - Mode is determined at initialization, not switched dynamically
         - Consider removing or integrating this if dynamic mode switching is needed.
         """
