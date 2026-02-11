@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _HELP_EPILOG = """\
@@ -396,60 +397,86 @@ def _read_log_text(log_file: Path, hide_warnings: bool) -> str:
     return text
 
 
-def _cmd_failures(args, log_file: Path) -> int:
+@dataclass
+class RunnerConfig:
+    """Typed configuration populated once from argparse.
+
+    Eliminates inline ``int()``/``bool()`` casts in every handler.
+    """
+
+    # Log reader options
+    log_file: Path = field(default_factory=lambda: Path(".test-logs/latest.log"))
+    hide_warnings: bool = False
+    failures: bool = False
+    show_failure: int = 0
+    tail_log: int = 0
+    list_logs: bool = False
+
+    # Search options
+    grep: str = ""
+    test: str = ""
+    fixed_strings: bool = False
+    ignore_case: bool = False
+    before: int = 0
+    after: int = 0
+    from_line: int | None = None
+    to_line: int | None = None
+
+    # Test-run options
+    show_all: bool = False
+    tail: int = 0
+    tb: str = "line"
+    verbose: bool = False
+    keep_other_logs: bool = False
+
+
+def _cmd_failures(cfg: RunnerConfig) -> int:
     _print_header()
-    text = _read_log_text(log_file, args.hide_warnings)
+    text = _read_log_text(cfg.log_file, cfg.hide_warnings)
     failures = _extract_failures_from_pytest_log(text)
     if not failures:
         print("No failures found in log.")
-        print(f"Log: {log_file}")
+        print(f"Log: {cfg.log_file}")
         return 0
     print("Failures:")
     for i, block in enumerate(failures, start=1):
         print(f"{i}) {_failure_title(block)}")
-    print(f"\nLog: {log_file}")
+    print(f"\nLog: {cfg.log_file}")
     return 0
 
 
-def _cmd_show_failure(args, log_file: Path) -> int:
+def _cmd_show_failure(cfg: RunnerConfig) -> int:
     _print_header()
-    if not log_file.exists():
-        print(f"Log file not found: {log_file}")
+    if not cfg.log_file.exists():
+        print(f"Log file not found: {cfg.log_file}")
         return 2
-    text = _read_log_text(log_file, args.hide_warnings)
+    text = _read_log_text(cfg.log_file, cfg.hide_warnings)
     failures = _extract_failures_from_pytest_log(text)
     if not failures:
         print("No failures found in log.")
-        print(f"Log: {log_file}")
+        print(f"Log: {cfg.log_file}")
         return 0
-    index = int(args.show_failure)
+    index = cfg.show_failure
     if index < 1 or index > len(failures):
         print(f"Invalid failure index: {index} (valid range: 1..{len(failures)})")
-        print(f"Log: {log_file}")
+        print(f"Log: {cfg.log_file}")
         return 2
     print(f"Failure {index}/{len(failures)}: {_failure_title(failures[index - 1])}")
     print("-" * 50)
     print(failures[index - 1])
-    print(f"\nLog: {log_file}")
+    print(f"\nLog: {cfg.log_file}")
     return 0
 
 
-def _cmd_tail_log(args, log_file: Path) -> int:
+def _cmd_tail_log(cfg: RunnerConfig) -> int:
     _print_header()
-    if not log_file.exists():
-        print(f"Log file not found: {log_file}")
+    if not cfg.log_file.exists():
+        print(f"Log file not found: {cfg.log_file}")
         return 2
-    text = _read_log_text(log_file, args.hide_warnings)
-    print(_tail_lines(text, int(args.tail_log)), end="")
-    print(f"\nLog: {log_file}")
+    text = _read_log_text(cfg.log_file, cfg.hide_warnings)
+    print(_tail_lines(text, cfg.tail_log), end="")
+    print(f"\nLog: {cfg.log_file}")
     return 0
-
-
-def _parse_line_range(args) -> tuple[int | None, int | None]:
-    """Parse from_line/to_line args into optional ints."""
-    from_line = int(args.from_line) if int(args.from_line) > 0 else None
-    to_line = int(args.to_line) if int(args.to_line) > 0 else None
-    return from_line, to_line
 
 
 def _inline_search(
@@ -489,94 +516,92 @@ def _inline_search(
     return 0
 
 
-def _cmd_test(args, log_file: Path) -> int:
+def _cmd_test(cfg: RunnerConfig) -> int:
     _print_header()
-    from_line, to_line = _parse_line_range(args)
-    before = int(args.before) if int(args.before) > 0 else 2
-    after = int(args.after) if int(args.after) > 0 else 30
+    before = cfg.before if cfg.before > 0 else 2
+    after = cfg.after if cfg.after > 0 else 30
 
-    if not log_file.exists():
-        print(f"Log file not found: {log_file}")
+    if not cfg.log_file.exists():
+        print(f"Log file not found: {cfg.log_file}")
         return 2
 
-    if args.hide_warnings:
-        text = _read_log_text(log_file, True)
+    if cfg.hide_warnings:
+        text = _read_log_text(cfg.log_file, True)
         return _inline_search(
             text,
-            re.escape(str(args.test)),
+            re.escape(cfg.test),
             re.IGNORECASE,
             before,
             after,
-            from_line,
-            to_line,
-            log_file,
+            cfg.from_line,
+            cfg.to_line,
+            cfg.log_file,
             "Test",
         )
 
     return _search_log(
-        log_file=log_file,
-        pattern=str(args.test),
+        log_file=cfg.log_file,
+        pattern=cfg.test,
         fixed_strings=True,
         ignore_case=True,
         before=before,
         after=after,
-        from_line=from_line,
-        to_line=to_line,
+        from_line=cfg.from_line,
+        to_line=cfg.to_line,
     )
 
 
-def _cmd_grep(args, log_file: Path) -> int:
+def _cmd_grep(cfg: RunnerConfig) -> int:
     _print_header()
-    from_line, to_line = _parse_line_range(args)
     try:
-        if not log_file.exists():
-            print(f"Log file not found: {log_file}")
+        if not cfg.log_file.exists():
+            print(f"Log file not found: {cfg.log_file}")
             return 2
 
-        if not args.hide_warnings:
+        if not cfg.hide_warnings:
             return _search_log(
-                log_file=log_file,
-                pattern=str(args.grep),
-                fixed_strings=bool(args.fixed_strings),
-                ignore_case=bool(args.ignore_case),
-                before=int(args.before),
-                after=int(args.after),
-                from_line=from_line,
-                to_line=to_line,
+                log_file=cfg.log_file,
+                pattern=cfg.grep,
+                fixed_strings=cfg.fixed_strings,
+                ignore_case=cfg.ignore_case,
+                before=cfg.before,
+                after=cfg.after,
+                from_line=cfg.from_line,
+                to_line=cfg.to_line,
             )
 
-        text = _read_log_text(log_file, True)
-        flags = re.IGNORECASE if bool(args.ignore_case) else 0
-        pattern = (
-            re.escape(str(args.grep)) if bool(args.fixed_strings) else str(args.grep)
-        )
+        text = _read_log_text(cfg.log_file, True)
+        flags = re.IGNORECASE if cfg.ignore_case else 0
+        pattern = re.escape(cfg.grep) if cfg.fixed_strings else cfg.grep
         return _inline_search(
             text,
             pattern,
             flags,
-            int(args.before),
-            int(args.after),
-            from_line,
-            to_line,
-            log_file,
+            cfg.before,
+            cfg.after,
+            cfg.from_line,
+            cfg.to_line,
+            cfg.log_file,
         )
     except re.error as exc:
         print(f"Invalid regex for --grep: {exc}")
-        print(f"Pattern: {args.grep}")
+        print(f"Pattern: {cfg.grep}")
         return 2
 
 
-def _cmd_run_tests(args, passthrough, project_root: Path, log_file: Path) -> int:
+def _cmd_run_tests(
+    cfg: RunnerConfig, passthrough: list[str], project_root: Path
+) -> int:
     _print_header()
     test_dir = project_root / "tests"
     print(f"Running tests in: {test_dir}")
-    print(f"Writing full output to: {log_file}")
+    print(f"Writing full output to: {cfg.log_file}")
     print()
     cmd = _build_pytest_command(
         python_exe=sys.executable,
         test_dir=test_dir,
-        tb=args.tb,
-        verbose=args.verbose,
+        tb=cfg.tb,
+        verbose=cfg.verbose,
         passthrough_args=passthrough,
     )
     env = dict(os.environ)
@@ -594,9 +619,9 @@ def _cmd_run_tests(args, passthrough, project_root: Path, log_file: Path) -> int
     )
     return _stream_process_to_log(
         proc,
-        log_file=log_file,
-        show_all=bool(args.show_all),
-        tail_lines=int(args.tail),
+        log_file=cfg.log_file,
+        show_all=cfg.show_all,
+        tail_lines=cfg.tail,
     )
 
 
@@ -734,29 +759,52 @@ def main() -> int:
         log_file = project_root / log_file
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    if log_file.parent == log_dir and not args.keep_other_logs:
-        _cleanup_log_dir(log_dir=log_dir, keep=log_file)
+    # Build typed config once — no inline casts in handlers.
+    cfg = RunnerConfig(
+        log_file=log_file,
+        hide_warnings=args.hide_warnings,
+        failures=args.failures,
+        show_failure=args.show_failure,
+        tail_log=args.tail_log,
+        list_logs=args.list_logs,
+        grep=args.grep,
+        test=args.test,
+        fixed_strings=args.fixed_strings,
+        ignore_case=args.ignore_case,
+        before=args.before,
+        after=args.after,
+        from_line=args.from_line if args.from_line > 0 else None,
+        to_line=args.to_line if args.to_line > 0 else None,
+        show_all=args.show_all,
+        tail=args.tail,
+        tb=args.tb,
+        verbose=args.verbose,
+        keep_other_logs=args.keep_other_logs,
+    )
+
+    if cfg.log_file.parent == log_dir and not cfg.keep_other_logs:
+        _cleanup_log_dir(log_dir=log_dir, keep=cfg.log_file)
 
     # Dispatch to subcommand handlers
-    if args.failures:
-        return _cmd_failures(args, log_file)
-    if int(args.show_failure) > 0:
-        return _cmd_show_failure(args, log_file)
-    if int(args.tail_log) > 0:
-        return _cmd_tail_log(args, log_file)
-    if args.list_logs:
+    if cfg.failures:
+        return _cmd_failures(cfg)
+    if cfg.show_failure > 0:
+        return _cmd_show_failure(cfg)
+    if cfg.tail_log > 0:
+        return _cmd_tail_log(cfg)
+    if cfg.list_logs:
         _print_header()
         return _print_log_files(log_dir)
-    if args.test and args.grep:
+    if cfg.test and cfg.grep:
         _print_header()
         print("Choose either --test or --grep (not both).")
         return 2
-    if args.test:
-        return _cmd_test(args, log_file)
-    if args.grep:
-        return _cmd_grep(args, log_file)
+    if cfg.test:
+        return _cmd_test(cfg)
+    if cfg.grep:
+        return _cmd_grep(cfg)
 
-    return _cmd_run_tests(args, passthrough, project_root, log_file)
+    return _cmd_run_tests(cfg, passthrough, project_root)
 
 
 if __name__ == "__main__":

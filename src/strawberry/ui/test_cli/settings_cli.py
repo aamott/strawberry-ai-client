@@ -4,29 +4,23 @@ This module provides a command-line interface for viewing and editing settings,
 designed to work alongside test_cli for rapid iteration before Qt UI implementation.
 """
 
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from strawberry.shared.settings import (
     FieldType,
+    PendingChangeController,
     SettingField,
     SettingsManager,
-    SettingsViewModel,
+    format_field_value,
+    get_available_options,
+    list_move_down,
+    list_move_up,
+    list_remove,
 )
 
 
-@dataclass
-class PendingChange:
-    """A buffered change waiting for Apply."""
-
-    namespace: str
-    key: str
-    old_value: Any
-    new_value: Any
-
-
 class SettingsCLI:
-    """CLI settings editor using SettingsViewModel.
+    """CLI settings editor using shared PendingChangeController.
 
     Buffers changes until Apply is called, matching the Qt UI behavior.
 
@@ -44,17 +38,29 @@ class SettingsCLI:
         Args:
             settings_manager: The SettingsManager instance.
         """
-        self.vm = SettingsViewModel(settings_manager)
+        self._ctrl = PendingChangeController(settings_manager)
         self._settings = settings_manager
-        self.pending_changes: Dict[str, Dict[str, Any]] = {}
+
+    @property
+    def vm(self):
+        """Access the underlying view model."""
+        return self._ctrl.view_model
+
+    @property
+    def pending_changes(self):
+        """Access pending changes dict (for backward compat)."""
+        return self._ctrl._pending
 
     def list_namespaces(self) -> None:
-        """Print all registered namespaces grouped by tab."""
-        namespaces = self._settings.get_namespaces()
+        """List all registered settings namespaces."""
+        sections = self._ctrl.view_model.get_sections()
+        if not sections:
+            print("No registered namespaces")
+            return
 
         # Group by tab
         tabs: Dict[str, List] = {}
-        for ns in namespaces:
+        for ns in sections:
             tab = ns.tab
             if tab not in tabs:
                 tabs[tab] = []
@@ -99,11 +105,11 @@ class SettingsCLI:
             value: Current value.
             pending: Pending change value (if any).
         """
-        display = self._render_field_value(field, value)
+        display = format_field_value(field, value)
 
         # Show pending indicator
         if pending is not None:
-            pending_display = self._render_field_value(field, pending)
+            pending_display = format_field_value(field, pending)
             print(f"  {field.label}: {display} → {pending_display} [pending]")
         else:
             print(f"  {field.label}: {display}")
@@ -111,53 +117,6 @@ class SettingsCLI:
         # Show description on separate line if present
         if field.description:
             print(f"    └─ {field.description}")
-
-    @staticmethod
-    def _format_range(field: SettingField) -> str:
-        """Format the min/max range suffix for numeric fields."""
-        if field.min_value is None and field.max_value is None:
-            return ""
-        min_v = field.min_value if field.min_value is not None else ""
-        max_v = field.max_value if field.max_value is not None else ""
-        return f" [{min_v}..{max_v}]"
-
-    def _render_field_value(self, field: SettingField, value: Any) -> str:
-        """Render a field value for display.
-
-        Args:
-            field: The field definition.
-            value: The value to render.
-
-        Returns:
-            Formatted string representation.
-        """
-        if value is None:
-            return "(not set)"
-
-        match field.type:
-            case FieldType.PASSWORD:
-                return "••••••••" if value else "(not set)"
-            case FieldType.CHECKBOX:
-                return "[x]" if value else "[ ]"
-            case FieldType.NUMBER | FieldType.SLIDER:
-                return f"{value}{self._format_range(field)}"
-            case FieldType.LIST | FieldType.PROVIDER_SELECT:
-                return (
-                    " → ".join(str(v) for v in value)
-                    if isinstance(value, list)
-                    else str(value)
-                )
-            case FieldType.SELECT | FieldType.DYNAMIC_SELECT:
-                opts = field.options or []
-                return (
-                    f"{value} (options: {', '.join(opts[:3])}...)" if opts else str(value)
-                )
-            case FieldType.COLOR:
-                return value if value else "#000000"
-            case FieldType.ACTION:
-                return f"[{field.label}]"
-            case _:
-                return str(value) if value else "(empty)"
 
     def get_value(self, namespace: str, key: str) -> Any:
         """Get current value (including pending changes).
@@ -169,12 +128,7 @@ class SettingsCLI:
         Returns:
             Current or pending value.
         """
-        # Check pending first
-        pending = self.pending_changes.get(namespace, {}).get(key)
-        if pending is not None:
-            return pending
-
-        return self.vm.get_value(namespace, key)
+        return self._ctrl.get_value(namespace, key)
 
     def set_value(self, namespace: str, key: str, value: Any) -> Optional[str]:
         """Buffer a value change (doesn't apply until apply_changes).
@@ -187,19 +141,7 @@ class SettingsCLI:
         Returns:
             Validation error message or None if valid.
         """
-        # Validate
-        field = self._settings.get_field(namespace, key)
-        if field:
-            error = field.validate(value)
-            if error:
-                return error
-
-        # Buffer the change
-        if namespace not in self.pending_changes:
-            self.pending_changes[namespace] = {}
-        self.pending_changes[namespace][key] = value
-
-        return None
+        return self._ctrl.set_value(namespace, key, value)
 
     def apply_changes(self) -> List[str]:
         """Apply all pending changes.
@@ -207,40 +149,18 @@ class SettingsCLI:
         Returns:
             List of error messages (empty if all succeeded).
         """
-        errors = []
-
-        # Use batch mode to emit all changes at once
-        self._settings.begin_batch()
-
-        try:
-            for namespace, changes in self.pending_changes.items():
-                for key, value in changes.items():
-                    try:
-                        self.vm.set_value(namespace, key, value)
-                    except Exception as e:
-                        errors.append(f"{namespace}.{key}: {e}")
-
-            if not errors:
-                self._settings.end_batch(emit=True)
-                self._settings.save()
-                self.pending_changes.clear()
-                print("✓ Changes applied and saved")
-            else:
-                self._settings.end_batch(emit=False)
-                print("✗ Some changes failed:")
-                for err in errors:
-                    print(f"  - {err}")
-
-        except Exception as e:
-            self._settings.end_batch(emit=False)
-            errors.append(str(e))
-
+        errors = self._ctrl.apply()
+        if not errors:
+            print("✓ Changes applied and saved")
+        else:
+            print("✗ Some changes failed:")
+            for err in errors:
+                print(f"  - {err}")
         return errors
 
     def discard_changes(self) -> None:
         """Discard all pending changes."""
-        count = sum(len(v) for v in self.pending_changes.values())
-        self.pending_changes.clear()
+        count = self._ctrl.discard()
         print(f"Discarded {count} pending change(s)")
 
     def reset_field(self, namespace: str, key: str) -> None:
@@ -255,28 +175,28 @@ class SettingsCLI:
             print(f"Error: Field '{key}' not found in '{namespace}'")
             return
 
-        current = self.vm.get_value(namespace, key)
+        current = self._ctrl.get_value(namespace, key)
         if current == field.default:
             print(f"{field.label} is already at default value")
             return
 
-        # Buffer the reset as a pending change
-        if namespace not in self.pending_changes:
-            self.pending_changes[namespace] = {}
-        self.pending_changes[namespace][key] = field.default
-        print(f"{field.label}: {current} → {field.default} [pending reset]")
+        error = self._ctrl.reset_field(namespace, key)
+        if error:
+            print(f"Error: {error}")
+        else:
+            print(f"{field.label}: {current} → {field.default} [pending reset]")
 
     def has_pending_changes(self) -> bool:
         """Check if there are pending changes."""
-        return any(len(v) > 0 for v in self.pending_changes.values())
+        return self._ctrl.has_pending()
 
     def get_pending_count(self) -> int:
         """Get the number of pending changes."""
-        return sum(len(v) for v in self.pending_changes.values())
+        return self._ctrl.pending_count()
 
     def _list_cmd_add(self, items: list[str], field: SettingField) -> None:
         """Handle the 'add' command in the list editor."""
-        available = self._get_available_options(field, items)
+        available = get_available_options(self._settings, field, items)
         if available:
             print("Available options:")
             for i, opt in enumerate(available, 1):
@@ -306,9 +226,7 @@ class SettingsCLI:
         """Handle the 'u N' (move up) command."""
         try:
             idx = int(cmd[2:]) - 1
-            if 0 < idx < len(items):
-                items[idx - 1], items[idx] = items[idx], items[idx - 1]
-            else:
+            if not list_move_up(items, idx):
                 print("Cannot move up")
         except (ValueError, IndexError):
             print("Invalid index")
@@ -318,9 +236,7 @@ class SettingsCLI:
         """Handle the 'd N' (move down) command."""
         try:
             idx = int(cmd[2:]) - 1
-            if 0 <= idx < len(items) - 1:
-                items[idx], items[idx + 1] = items[idx + 1], items[idx]
-            else:
+            if not list_move_down(items, idx):
                 print("Cannot move down")
         except (ValueError, IndexError):
             print("Invalid index")
@@ -330,8 +246,9 @@ class SettingsCLI:
         """Handle the 'r N' (remove) command."""
         try:
             idx = int(cmd[2:]) - 1
-            if 0 <= idx < len(items):
-                print(f"Removed: {items.pop(idx)}")
+            removed = list_remove(items, idx)
+            if removed is not None:
+                print(f"Removed: {removed}")
             else:
                 print("Invalid index")
         except (ValueError, IndexError):
@@ -417,38 +334,6 @@ class SettingsCLI:
             marker = "→" if i == 1 else " "
             print(f"  {i}. {marker} {item}")
 
-    def _get_available_options(
-        self, field: SettingField, current_items: List[str]
-    ) -> List[str]:
-        """Get options not already in list.
-
-        Args:
-            field: The field definition.
-            current_items: Currently selected items.
-
-        Returns:
-            List of available options.
-        """
-        if field.options:
-            return [opt for opt in field.options if opt not in current_items]
-
-        if field.options_provider:
-            all_opts = self._settings.get_options(field.options_provider)
-            return [opt for opt in all_opts if opt not in current_items]
-
-        # For PROVIDER_SELECT, try to get from registered namespaces
-        if field.type == FieldType.PROVIDER_SELECT and field.provider_type:
-            prefix = f"voice.{field.provider_type}."
-            available = []
-            for ns in self._settings.get_namespaces():
-                if ns.name.startswith(prefix):
-                    backend = ns.name.split(".")[-1]
-                    if backend not in current_items:
-                        available.append(backend)
-            return available
-
-        return []
-
     def _show_provider_details(self, field: SettingField, provider: str) -> None:
         """Show settings for a selected provider.
 
@@ -471,7 +356,7 @@ class SettingsCLI:
             for group_name, fields in section.groups.items():
                 for f in fields:
                     value = section.values.get(f.key, f.default)
-                    display = self._render_field_value(f, value)
+                    display = format_field_value(f, value)
                     print(f"    {f.label}: {display}")
         else:
             print(f"  No settings registered for '{namespace}'")

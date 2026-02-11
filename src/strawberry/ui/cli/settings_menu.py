@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from strawberry.shared.settings.schema import SettingField
     from strawberry.shared.settings.view_model import SettingsSection
 
+from strawberry.shared.settings.editor import format_field_value
+
 from . import renderer
 
 
@@ -132,34 +134,8 @@ class CLISettingsMenu:
                 return
 
     def _format_value(self, value: Any, field: "SettingField") -> str:
-        """Format a value for display."""
-        from strawberry.shared.settings.schema import FieldType
-
-        field_type = field.type
-
-        if value is None:
-            return "(not set)"
-
-        if field_type == FieldType.PASSWORD:
-            # Mask passwords
-            if value:
-                return "****" + str(value)[-4:] if len(str(value)) > 4 else "****"
-            return "(not set)"
-
-        if field_type == FieldType.CHECKBOX:
-            return "Yes" if value else "No"
-
-        if field_type == FieldType.SELECT:
-            # Options are plain strings (List[str]) in the schema
-            # Just return the value as-is since it should match an option
-            return str(value)
-
-        if field_type == FieldType.LIST or field_type == FieldType.PROVIDER_SELECT:
-            if isinstance(value, list):
-                return ",".join(str(v) for v in value)
-            return str(value)
-
-        return str(value)
+        """Format a value for display. Delegates to shared editor."""
+        return format_field_value(field, value)
 
     def _get_backend_options(self, key: str) -> list[str]:
         """Get available backend options for order fields.

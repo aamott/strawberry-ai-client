@@ -20,6 +20,15 @@ Example usage:
     settings.set("my_module", "enabled", False)
 """
 
+from .editor import (
+    PendingChangeController,
+    format_field_value,
+    get_available_options,
+    list_add,
+    list_move_down,
+    list_move_up,
+    list_remove,
+)
 from .manager import (
     MigrationFunc,
     RegisteredNamespace,
@@ -64,6 +73,14 @@ __all__ = [
     "SettingsSection",
     "ProviderSection",
     "ValidationResult",
+    # Editor
+    "PendingChangeController",
+    "format_field_value",
+    "get_available_options",
+    "list_add",
+    "list_remove",
+    "list_move_up",
+    "list_move_down",
     # Storage utilities
     "parse_list_value",
 ]
