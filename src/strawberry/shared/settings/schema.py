@@ -100,9 +100,7 @@ class SettingField:
     secret: bool = False
     group: str = "general"
     depends_on: Optional[str] = None
-    validation: Optional[Callable[[Any], bool | str]] = field(
-        default=None, repr=False
-    )
+    validation: Optional[Callable[[Any], bool | str]] = field(default=None, repr=False)
     min_value: Optional[float] = None
     max_value: Optional[float] = None
     placeholder: Optional[str] = None
@@ -279,9 +277,7 @@ class SecretValue:
         return self._value
 
 
-def get_field_by_key(
-    schema: List[SettingField], key: str
-) -> Optional[SettingField]:
+def get_field_by_key(schema: List[SettingField], key: str) -> Optional[SettingField]:
     """Find a field in a schema by its key.
 
     Args:

@@ -109,7 +109,9 @@ class TestSoundConfigs:
         """Test wake detected sound is an A major chord (pleasant)."""
         config = SOUND_CONFIGS[FeedbackSound.WAKE_DETECTED]
         # A major: A4 (440), C#5 (554.37), E5 (659.26)
-        assert 440 in config.frequencies or any(abs(f - 440) < 5 for f in config.frequencies)
+        assert 440 in config.frequencies or any(
+            abs(f - 440) < 5 for f in config.frequencies
+        )
 
     def test_error_sound_is_lower(self):
         """Test error sound uses lower frequencies."""
@@ -137,4 +139,3 @@ class TestConvenienceMethods:
         feedback.play_success
         feedback.play_error
         feedback.play_ready
-

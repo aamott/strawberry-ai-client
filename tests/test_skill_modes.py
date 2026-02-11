@@ -37,7 +37,9 @@ class _StubSyncHubClient:
         )
         return "stub-remote-result"
 
-    def search_skills_sync(self, query: str = "", device_limit: int = 10) -> list[dict[str, Any]]:
+    def search_skills_sync(
+        self, query: str = "", device_limit: int = 10
+    ) -> list[dict[str, Any]]:
         self.search_calls.append((query, device_limit))
         return []
 
@@ -145,11 +147,11 @@ async def test_local_device_via_devices_syntax_in_remote_mode(tmp_path: Path) ->
 
     # Call local device using devices.my_strawberry_spoke.* syntax in REMOTE mode
     # This should execute locally without Hub roundtrip
-    result = svc.execute_code(
-        "print(devices.my_strawberry_spoke.DemoSkill.ping())"
-    )
+    result = svc.execute_code("print(devices.my_strawberry_spoke.DemoSkill.ping())")
     assert result.success is True
-    assert result.result == "pong"  # Local execution returns "pong", not "stub-remote-result"
+    assert (
+        result.result == "pong"
+    )  # Local execution returns "pong", not "stub-remote-result"
     assert not hub_client.execute_calls  # Should NOT have called Hub
 
 
@@ -169,9 +171,7 @@ async def test_remote_device_works_without_sandbox_via_sync_hub(tmp_path: Path) 
     svc.load_skills()
 
     # Remote device call (different device) should execute via hub sync method
-    result = svc.execute_code(
-        "print(devices.living_room_pc.DemoSkill.ping())"
-    )
+    result = svc.execute_code("print(devices.living_room_pc.DemoSkill.ping())")
     assert result.success is True
     assert result.result == "stub-remote-result"
     assert hub_client.execute_calls

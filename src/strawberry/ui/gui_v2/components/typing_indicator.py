@@ -57,8 +57,12 @@ class TypingIndicator(QWidget):
 
         # Highlight active dot
         self._dot_labels[self._active_dot].setProperty("active", True)
-        self._dot_labels[self._active_dot].style().unpolish(self._dot_labels[self._active_dot])
-        self._dot_labels[self._active_dot].style().polish(self._dot_labels[self._active_dot])
+        self._dot_labels[self._active_dot].style().unpolish(
+            self._dot_labels[self._active_dot]
+        )
+        self._dot_labels[self._active_dot].style().polish(
+            self._dot_labels[self._active_dot]
+        )
 
         # Move to next dot
         self._active_dot = (self._active_dot + 1) % 3

@@ -24,7 +24,9 @@ class FasterWhisperSTT(STTEngine):
 
     # Module metadata for discovery
     name: ClassVar[str] = "Faster Whisper"
-    description: ClassVar[str] = "Local Whisper model using CTranslate2 for faster inference"
+    description: ClassVar[str] = (
+        "Local Whisper model using CTranslate2 for faster inference"
+    )
 
     @classmethod
     def get_settings_schema(cls) -> List:
@@ -37,8 +39,18 @@ class FasterWhisperSTT(STTEngine):
                 label="Model Size",
                 type=FieldType.SELECT,
                 default="medium.en",
-                options=["tiny", "tiny.en", "base", "base.en", "small", "small.en",
-                         "medium", "medium.en", "large-v2", "large-v3"],
+                options=[
+                    "tiny",
+                    "tiny.en",
+                    "base",
+                    "base.en",
+                    "small",
+                    "small.en",
+                    "medium",
+                    "medium.en",
+                    "large-v2",
+                    "large-v3",
+                ],
                 description="Whisper model size. Larger = more accurate but slower.",
             ),
             SettingField(
@@ -64,8 +76,8 @@ class FasterWhisperSTT(STTEngine):
         model_size: str = "medium.en",
         device: Optional[str] = None,
         precision: str = "float16",
-        monitor_gpu: bool = True, # Toggle to enable/disable live stats
-        **kwargs
+        monitor_gpu: bool = True,  # Toggle to enable/disable live stats
+        **kwargs,
     ) -> None:
         self._sample_rate = 16000
         self._monitor_gpu = monitor_gpu
@@ -88,9 +100,7 @@ class FasterWhisperSTT(STTEngine):
                 compute_type = "int8_float16"
 
         self._model = WhisperModel(
-            model_size,
-            device=self._device,
-            compute_type=compute_type
+            model_size, device=self._device, compute_type=compute_type
         )
 
     @property
@@ -104,20 +114,21 @@ class FasterWhisperSTT(STTEngine):
             return
 
         info = pynvml.nvmlDeviceGetMemoryInfo(self._gpu_handle)
-        temp = pynvml.nvmlDeviceGetTemperature(self._gpu_handle, pynvml.NVML_TEMPERATURE_GPU)
+        temp = pynvml.nvmlDeviceGetTemperature(
+            self._gpu_handle, pynvml.NVML_TEMPERATURE_GPU
+        )
         used_gb = info.used / (1024**3)
         total_gb = info.total / (1024**3)
 
         print(f"[{stage}] VRAM: {used_gb:.2f}/{total_gb:.2f} GB | Temp: {temp}°C")
 
-    def transcribe(self, audio_path: str, *, timestamps: bool = False) -> TranscriptionResult:
+    def transcribe(
+        self, audio_path: str, *, timestamps: bool = False
+    ) -> TranscriptionResult:
         self._log_stats("Pre-Inference")
 
         segments, _ = self._model.transcribe(
-            audio_path,
-            beam_size=5,
-            word_timestamps=timestamps,
-            vad_filter=True
+            audio_path, beam_size=5, word_timestamps=timestamps, vad_filter=True
         )
 
         segments = list(segments)
@@ -127,7 +138,9 @@ class FasterWhisperSTT(STTEngine):
 
         timestamp_data = None
         if timestamps:
-            timestamp_data = [{"start": s.start, "end": s.end, "text": s.text} for s in segments]
+            timestamp_data = [
+                {"start": s.start, "end": s.end, "text": s.text} for s in segments
+            ]
 
         return TranscriptionResult(text=full_text, timestamps=timestamp_data)
 

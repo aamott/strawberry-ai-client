@@ -108,11 +108,13 @@ class TestHubClientChat:
         mock_response.json.return_value = {
             "id": "chatcmpl-123",
             "model": "gpt-4o-mini",
-            "choices": [{
-                "index": 0,
-                "message": {"role": "assistant", "content": "Hello! How can I help?"},
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "Hello! How can I help?"},
+                    "finish_reason": "stop",
+                }
+            ],
         }
         mock_client.post = AsyncMock(return_value=mock_response)
         mock_client.is_closed = False
@@ -131,10 +133,12 @@ class TestHubClientChat:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "model": "gpt-4o-mini",
-            "choices": [{
-                "message": {"role": "assistant", "content": "Hi there!"},
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "Hi there!"},
+                    "finish_reason": "stop",
+                }
+            ],
         }
         mock_client.post = AsyncMock(return_value=mock_response)
         mock_client.is_closed = False

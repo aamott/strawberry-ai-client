@@ -325,9 +325,7 @@ class TestSyncManager:
         assert not result
 
     @pytest.mark.asyncio
-    async def test_queue_create_session(
-        self, db: LocalSessionDB, mock_hub_client
-    ):
+    async def test_queue_create_session(self, db: LocalSessionDB, mock_hub_client):
         """Test queuing session creation for sync."""
         sync_manager = SyncManager(db, mock_hub_client)
 
@@ -342,9 +340,7 @@ class TestSyncManager:
         assert updated.hub_id == "hub-session-1"
 
     @pytest.mark.asyncio
-    async def test_queue_add_message(
-        self, db: LocalSessionDB, mock_hub_client
-    ):
+    async def test_queue_add_message(self, db: LocalSessionDB, mock_hub_client):
         """Test queuing message for sync."""
         sync_manager = SyncManager(db, mock_hub_client)
 
@@ -352,9 +348,7 @@ class TestSyncManager:
         db.mark_session_synced(session.id, "hub-session-1")
         msg = db.add_message(session.id, "user", "Hello")
 
-        await sync_manager.queue_add_message(
-            session.id, msg.id, "user", "Hello"
-        )
+        await sync_manager.queue_add_message(session.id, msg.id, "user", "Hello")
 
         # Should have synced message
         mock_hub_client.add_session_message.assert_called_once_with(
@@ -362,7 +356,9 @@ class TestSyncManager:
         )
 
     @pytest.mark.asyncio
-    async def test_add_message_deferred_not_removed(self, db: LocalSessionDB, mock_hub_client):
+    async def test_add_message_deferred_not_removed(
+        self, db: LocalSessionDB, mock_hub_client
+    ):
         """If a session has no hub_id yet, add_message ops should remain queued."""
         sync_manager = SyncManager(db, mock_hub_client)
 
@@ -376,7 +372,9 @@ class TestSyncManager:
         assert any(op.operation == "add_message" for op in pending)
 
     @pytest.mark.asyncio
-    async def test_update_session_deferred_then_synced(self, db: LocalSessionDB, mock_hub_client):
+    async def test_update_session_deferred_then_synced(
+        self, db: LocalSessionDB, mock_hub_client
+    ):
         """update_session ops should defer until hub_id exists, then sync."""
         mock_hub_client.update_session = AsyncMock(return_value={"id": "hub-session-1"})
         sync_manager = SyncManager(db, mock_hub_client)
@@ -397,9 +395,7 @@ class TestSyncManager:
         assert not any(op.operation == "update_session" for op in pending2)
 
     @pytest.mark.asyncio
-    async def test_pull_remote_sessions(
-        self, db: LocalSessionDB, mock_hub_client
-    ):
+    async def test_pull_remote_sessions(self, db: LocalSessionDB, mock_hub_client):
         """Test pulling remote sessions."""
         mock_hub_client.list_sessions = AsyncMock(
             return_value=[
@@ -456,7 +452,6 @@ class TestSyncManager:
         assert updated.title == "New Title"
 
 
-
 class TestTensorZeroClient:
     """Tests for TensorZeroClient (embedded gateway)."""
 
@@ -490,6 +485,7 @@ class TestTensorZeroClient:
     def test_chat_response_dataclass(self):
         """Test ChatResponse dataclass."""
         from strawberry.llm.tensorzero_client import ChatResponse
+
         response = ChatResponse(
             content="Hello!",
             model="gpt-4",

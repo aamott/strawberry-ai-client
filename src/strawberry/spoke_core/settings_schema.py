@@ -39,7 +39,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         description="Name of this device shown in Hub",
         group="general",
     ),
-
     # Hub connection
     SettingField(
         key="hub.url",
@@ -87,7 +86,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
             )
         },
     ),
-
     # Offline LLM
     SettingField(
         key="local_llm.model",
@@ -113,7 +111,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         description="Allow running without Hub connection",
         group="offline",
     ),
-
     # Skills
     SettingField(
         key="skills.allow_unsafe_exec",
@@ -131,7 +128,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         description="Path to directory containing user skills",
         group="skills",
     ),
-
     # Storage
     SettingField(
         key="storage.db_path",
@@ -141,7 +137,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         description="Path to local session storage database",
         group="storage",
     ),
-
     # TensorZero
     SettingField(
         key="tensorzero.enabled",
@@ -151,7 +146,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         description="Use TensorZero for LLM routing and fallback",
         group="tensorzero",
     ),
-
     # LLM Settings
     SettingField(
         key="llm.system_prompt",
@@ -186,7 +180,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
             )
         },
     ),
-
     # Conversation
     SettingField(
         key="conversation.max_history",
@@ -196,7 +189,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         description="Maximum conversation messages to keep in memory",
         group="conversation",
     ),
-
     # Testing
     SettingField(
         key="testing.deterministic_tool_hooks",
@@ -214,7 +206,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
             )
         },
     ),
-
     # UI Settings
     SettingField(
         key="ui.theme",

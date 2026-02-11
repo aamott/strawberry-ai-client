@@ -94,9 +94,7 @@ class PasswordFieldWidget(BaseFieldWidget):
     def _build_input(self) -> None:
         self._line_edit = QLineEdit()
         self._line_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._line_edit.setPlaceholderText(
-            self.field.placeholder or "Enter secret..."
-        )
+        self._line_edit.setPlaceholderText(self.field.placeholder or "Enter secret...")
         self._line_edit.setStyleSheet(_INPUT_STYLE)
         self._line_edit.textChanged.connect(self._on_value_changed)
         self._input_layout.addWidget(self._line_edit)
@@ -113,11 +111,13 @@ class NumberFieldWidget(BaseFieldWidget):
 
     def _build_input(self) -> None:
         # Determine if float or int based on default/min/max
-        is_float = any([
-            isinstance(self.field.default, float),
-            isinstance(self.field.min_value, float),
-            isinstance(self.field.max_value, float),
-        ])
+        is_float = any(
+            [
+                isinstance(self.field.default, float),
+                isinstance(self.field.min_value, float),
+                isinstance(self.field.max_value, float),
+            ]
+        )
 
         if is_float:
             self._spin = QDoubleSpinBox()

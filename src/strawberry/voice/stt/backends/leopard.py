@@ -32,7 +32,9 @@ class LeopardSTT(STTEngine):
 
     # Module metadata for discovery
     name = "Leopard (Picovoice)"
-    description = "On-device speech-to-text using Picovoice Leopard. Requires license key."
+    description = (
+        "On-device speech-to-text using Picovoice Leopard. Requires license key."
+    )
 
     @classmethod
     def get_settings_schema(cls) -> List:
@@ -166,4 +168,3 @@ class LeopardSTT(STTEngine):
         if self._leopard is not None:
             self._leopard.delete()
             self._leopard = None
-

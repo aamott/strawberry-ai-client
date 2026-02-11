@@ -49,6 +49,7 @@ class AudioPlayer:
         self._sd_import_attempted = True
         try:
             import sounddevice as sd
+
             self._sd = sd
         except ImportError:
             logger.warning("sounddevice not available for audio playback")
@@ -57,7 +58,9 @@ class AudioPlayer:
     # One-shot playback (existing API, unchanged behaviour)
     # ------------------------------------------------------------------
 
-    def play(self, audio: np.ndarray, sample_rate: Optional[int] = None, blocking: bool = True):
+    def play(
+        self, audio: np.ndarray, sample_rate: Optional[int] = None, blocking: bool = True
+    ):
         """Play audio samples (one-shot).
 
         Opens a new stream per call. Fine for complete utterances but will
@@ -85,7 +88,9 @@ class AudioPlayer:
         if audio.dtype == np.int16:
             audio = audio.astype(np.float32) / 32768.0
 
-        logger.debug(f"Playing audio: {len(audio)} samples @ {sr}Hz, device={self._device}")
+        logger.debug(
+            f"Playing audio: {len(audio)} samples @ {sr}Hz, device={self._device}"
+        )
 
         try:
             self._sd.play(audio, sr, device=self._device, blocking=blocking)
@@ -226,6 +231,7 @@ class AudioPlayer:
         """List available output devices."""
         try:
             import sounddevice as sd
+
             return sd.query_devices()
         except ImportError:
             return []
@@ -235,7 +241,7 @@ class AudioPlayer:
         """Get the default output device index."""
         try:
             import sounddevice as sd
+
             return sd.default.device[1]  # [1] is output device
         except (ImportError, Exception):
             return None
-

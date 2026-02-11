@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 # ANSI helpers (minimal, self-contained)
 # ---------------------------------------------------------------------------
 
+
 class _C:
     """ANSI color codes."""
 
@@ -73,6 +74,7 @@ def _s(text: str, *styles: str) -> str:
 # ---------------------------------------------------------------------------
 # Tool schema loader
 # ---------------------------------------------------------------------------
+
 
 def _load_tool_schemas(config_dir: Path) -> Dict[str, Dict[str, Any]]:
     """Load tool JSON schemas from config/tools/.
@@ -109,7 +111,9 @@ def _load_tool_schemas(config_dir: Path) -> Dict[str, Dict[str, Any]]:
     return schemas
 
 
-def _enrich_schemas_from_toml(toml_path: Path, schemas: Dict[str, Dict[str, Any]]) -> None:
+def _enrich_schemas_from_toml(
+    toml_path: Path, schemas: Dict[str, Dict[str, Any]]
+) -> None:
     """Pull tool descriptions from tensorzero.toml into schemas.
 
     Args:
@@ -139,6 +143,7 @@ def _enrich_schemas_from_toml(toml_path: Path, schemas: Dict[str, Dict[str, Any]
 # History entry
 # ---------------------------------------------------------------------------
 
+
 class _HistoryEntry:
     """One tool call + result in the session history."""
 
@@ -158,9 +163,7 @@ class _HistoryEntry:
         """One-line summary."""
         success = "result" in self.result
         icon = _s("✓", _C.GREEN) if success else _s("✗", _C.RED)
-        args_preview = ", ".join(
-            f"{k}={repr(v)[:30]}" for k, v in self.arguments.items()
-        )
+        args_preview = ", ".join(f"{k}={repr(v)[:30]}" for k, v in self.arguments.items())
         return (
             f"  {_s(str(index), _C.DIM)}. {icon} "
             f"{_s(self.tool_name, _C.CYAN)}({args_preview}) "
@@ -171,6 +174,7 @@ class _HistoryEntry:
 # ---------------------------------------------------------------------------
 # Main tester class
 # ---------------------------------------------------------------------------
+
 
 class SkillTester:
     """Interactive skill interaction tester.
@@ -222,18 +226,14 @@ class SkillTester:
 
         # Load tool schemas
         self._tool_schemas = _load_tool_schemas(self._config_dir)
-        print(
-            _s(f"  Loaded {len(self._tool_schemas)} tool schemas", _C.DIM)
-        )
+        print(_s(f"  Loaded {len(self._tool_schemas)} tool schemas", _C.DIM))
         print()
 
     def _reload(self) -> None:
         """Reload skills from disk."""
         if self._service:
             skills = self._service.reload_skills()
-            print(
-                _s(f"Reloaded {len(skills)} skills", _C.GREEN)
-            )
+            print(_s(f"Reloaded {len(skills)} skills", _C.GREEN))
             for skill in skills:
                 methods = ", ".join(m.name for m in skill.methods)
                 print(f"  {_s(skill.name, _C.CYAN)}: {_s(methods, _C.DIM)}")
@@ -251,7 +251,13 @@ class SkillTester:
             return
 
         prompt = self._service.get_system_prompt()
-        print(_s("\n═══ SYSTEM PROMPT (exactly as the LLM sees it) ═══\n", _C.MAGENTA, _C.BOLD))
+        print(
+            _s(
+                "\n═══ SYSTEM PROMPT (exactly as the LLM sees it) ═══\n",
+                _C.MAGENTA,
+                _C.BOLD,
+            )
+        )
         print(prompt)
         print(_s("\n═══ END SYSTEM PROMPT ═══\n", _C.MAGENTA, _C.BOLD))
 
@@ -261,7 +267,13 @@ class SkillTester:
             print(_s("No tool schemas loaded", _C.RED))
             return
 
-        print(_s("\n═══ TOOL DEFINITIONS (JSON schemas sent to LLM) ═══\n", _C.MAGENTA, _C.BOLD))
+        print(
+            _s(
+                "\n═══ TOOL DEFINITIONS (JSON schemas sent to LLM) ═══\n",
+                _C.MAGENTA,
+                _C.BOLD,
+            )
+        )
         for name, schema in self._tool_schemas.items():
             toml_desc = schema.pop("_toml_description", None)
             print(_s(f"── {name} ──", _C.CYAN, _C.BOLD))
@@ -285,7 +297,9 @@ class SkillTester:
         for skill in skills:
             print(f"  {_s(skill.name, _C.CYAN, _C.BOLD)}")
             if skill.class_obj.__doc__:
-                print(f"    {_s(skill.class_obj.__doc__.strip().split(chr(10))[0], _C.DIM)}")
+                print(
+                    f"    {_s(skill.class_obj.__doc__.strip().split(chr(10))[0], _C.DIM)}"
+                )
             for method in skill.methods:
                 print(f"    - {_s(method.signature, _C.GREEN)}")
                 if method.docstring:
@@ -348,10 +362,7 @@ Direct skill call (for comparison with python_exec output):
 
         # Show what we're calling
         args_str = json.dumps(arguments, indent=2) if arguments else "{}"
-        print(
-            _s("\n▶ Calling tool: ", _C.CYAN)
-            + _s(tool_name, _C.CYAN, _C.BOLD)
-        )
+        print(_s("\n▶ Calling tool: ", _C.CYAN) + _s(tool_name, _C.CYAN, _C.BOLD))
         print(_s(f"  Arguments: {args_str}", _C.DIM))
 
         # Execute with timing
@@ -377,16 +388,12 @@ Direct skill call (for comparison with python_exec output):
         timing = _s(f"[{elapsed_ms:.0f}ms]", _C.DIM)
 
         if "error" in result:
-            print(
-                _s("\n◀ TOOL ERROR ", _C.RED, _C.BOLD) + timing
-            )
+            print(_s("\n◀ TOOL ERROR ", _C.RED, _C.BOLD) + timing)
             print(_s("─" * 60, _C.RED))
             print(result["error"])
             print(_s("─" * 60, _C.RED))
         else:
-            print(
-                _s("\n◀ TOOL RESULT ", _C.GREEN, _C.BOLD) + timing
-            )
+            print(_s("\n◀ TOOL RESULT ", _C.GREEN, _C.BOLD) + timing)
             print(_s("─" * 60, _C.GREEN))
             print(result.get("result", "(no output)"))
             print(_s("─" * 60, _C.GREEN))
@@ -461,23 +468,15 @@ Direct skill call (for comparison with python_exec output):
             rlen = len(repr(result))
             print(
                 _s(
-                    f"  Type: {type(result).__name__},"
-                    f" repr length: {rlen} chars",
+                    f"  Type: {type(result).__name__}, repr length: {rlen} chars",
                     _C.DIM,
                 )
             )
 
             # Now show what python_exec would return for comparison
-            kw_str = ', '.join(
-                f'{k}={repr(v)}' for k, v in kwargs.items()
-            )
-            code = (
-                f"print(device.{skill_name}.{method_name}"
-                f"({kw_str}))"
-            )
-            print(
-                _s("\n  Equivalent python_exec code:", _C.DIM)
-            )
+            kw_str = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items())
+            code = f"print(device.{skill_name}.{method_name}({kw_str}))"
+            print(_s("\n  Equivalent python_exec code:", _C.DIM))
             print(_s(f"    {code}", _C.YELLOW))
 
             exec_result = self._service.execute_tool("python_exec", {"code": code})
@@ -539,7 +538,7 @@ Direct skill call (for comparison with python_exec output):
     def _strip_kw_prefix(text: str, prefix: str) -> str:
         """Strip a keyword prefix like 'query=' or 'code=' and surrounding quotes."""
         if text.startswith(prefix):
-            return text[len(prefix):].strip().strip('"').strip("'")
+            return text[len(prefix) :].strip().strip('"').strip("'")
         return text
 
     def _parse_search_skills(self, rest: str) -> tuple[str, Dict[str, Any]]:
@@ -600,7 +599,7 @@ Direct skill call (for comparison with python_exec output):
         ]
         for prefix, parser in tool_parsers:
             if lower.startswith(prefix):
-                rest = stripped[len(prefix):].strip()
+                rest = stripped[len(prefix) :].strip()
                 return parser(rest)
 
         return None
@@ -697,6 +696,7 @@ Direct skill call (for comparison with python_exec output):
 # ---------------------------------------------------------------------------
 # CLI entrypoint
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """CLI entrypoint for the skill tester."""

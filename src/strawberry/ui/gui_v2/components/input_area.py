@@ -81,8 +81,18 @@ _HOLD_THRESHOLD_MS = 300
 
 
 # Loading animation frames for buttons
-_RECORD_LOADING_FRAMES = [Icons.MICROPHONE, Icons.LOADING, Icons.MICROPHONE, Icons.LOADING]
-_VOICE_MODE_LOADING_FRAMES = [Icons.VOICE_MODE, Icons.LOADING, Icons.VOICE_MODE, Icons.LOADING]
+_RECORD_LOADING_FRAMES = [
+    Icons.MICROPHONE,
+    Icons.LOADING,
+    Icons.MICROPHONE,
+    Icons.LOADING,
+]
+_VOICE_MODE_LOADING_FRAMES = [
+    Icons.VOICE_MODE,
+    Icons.LOADING,
+    Icons.VOICE_MODE,
+    Icons.LOADING,
+]
 
 
 class InputArea(QFrame):
@@ -211,7 +221,7 @@ class InputArea(QFrame):
         - Hold (>= _HOLD_THRESHOLD_MS): emit record_hold_stop (PTT stop)
         """
         # Stop the hold timer so it doesn't fire after release
-        if hasattr(self, '_hold_timer') and self._hold_timer.isActive():
+        if hasattr(self, "_hold_timer") and self._hold_timer.isActive():
             self._hold_timer.stop()
 
         if self._press_time is None:
@@ -322,9 +332,7 @@ class InputArea(QFrame):
             self._record_btn.setToolTip("Voice engine not available")
             self._voice_mode_btn.setToolTip("Voice engine not available")
         else:
-            self._record_btn.setToolTip(
-                "Record (tap to record, hold to push-to-talk)"
-            )
+            self._record_btn.setToolTip("Record (tap to record, hold to push-to-talk)")
             self._voice_mode_btn.setToolTip("Voice mode (wakeword listening)")
 
     def set_recording_state(self, recording: bool) -> None:
@@ -398,11 +406,9 @@ class InputArea(QFrame):
 
     def _animate_record_loading(self) -> None:
         """Cycle through record button loading animation frames."""
-        self._record_btn.setText(
-            _RECORD_LOADING_FRAMES[self._record_loading_frame]
-        )
-        self._record_loading_frame = (
-            (self._record_loading_frame + 1) % len(_RECORD_LOADING_FRAMES)
+        self._record_btn.setText(_RECORD_LOADING_FRAMES[self._record_loading_frame])
+        self._record_loading_frame = (self._record_loading_frame + 1) % len(
+            _RECORD_LOADING_FRAMES
         )
 
     # -- Loading state for Voice Mode button -----------------------------------
@@ -440,8 +446,8 @@ class InputArea(QFrame):
         self._voice_mode_btn.setText(
             _VOICE_MODE_LOADING_FRAMES[self._voice_mode_loading_frame]
         )
-        self._voice_mode_loading_frame = (
-            (self._voice_mode_loading_frame + 1) % len(_VOICE_MODE_LOADING_FRAMES)
+        self._voice_mode_loading_frame = (self._voice_mode_loading_frame + 1) % len(
+            _VOICE_MODE_LOADING_FRAMES
         )
 
     @property

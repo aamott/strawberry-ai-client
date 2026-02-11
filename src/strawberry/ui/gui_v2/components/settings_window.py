@@ -270,8 +270,7 @@ class SettingsWindow(QDialog):
 
         # Sort tabs by the minimum namespace order within each tab, then alphabetically
         sorted_tabs = sorted(
-            tabs.keys(),
-            key=lambda t: (min(ns.order for ns in tabs[t]), t)
+            tabs.keys(), key=lambda t: (min(ns.order for ns in tabs[t]), t)
         )
 
         for tab_name in sorted_tabs:
@@ -293,9 +292,7 @@ class SettingsWindow(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         container = QWidget()
         container.setStyleSheet("background-color: transparent;")
@@ -393,9 +390,7 @@ class SettingsWindow(QDialog):
 
             # Connect change signal
             widget.value_changed.connect(
-                lambda val, ns=namespace, k=field.key: self._on_field_changed(
-                    ns, k, val
-                )
+                lambda val, ns=namespace, k=field.key: self._on_field_changed(ns, k, val)
             )
 
             # Handle PROVIDER_SELECT: populate available providers
@@ -423,9 +418,7 @@ class SettingsWindow(QDialog):
             return widget
 
         except Exception:
-            logger.exception(
-                f"Failed to create widget for {namespace}.{field.key}"
-            )
+            logger.exception(f"Failed to create widget for {namespace}.{field.key}")
             return None
 
     def _get_available_providers(
@@ -587,8 +580,7 @@ class SettingsWindow(QDialog):
                 self,
                 "Unsaved Changes",
                 "You have unsaved changes. Discard them?",
-                QMessageBox.StandardButton.Discard
-                | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.Cancel,
             )
             if reply == QMessageBox.StandardButton.Cancel:

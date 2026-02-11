@@ -33,7 +33,6 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         ),
         group="general",
     ),
-
     # ─────────────────────────────────────────────────────────────────
     # STT Settings
     # ─────────────────────────────────────────────────────────────────
@@ -45,9 +44,7 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         provider_namespace_template="voice.stt.{value}",
         options_provider="available_stt_backends",
         default=["leopard", "whisper", "google"],
-        description=(
-            "Ordered list of STT backends. First one is active provider."
-        ),
+        description=("Ordered list of STT backends. First one is active provider."),
         group="stt",
         metadata={
             "help_text": (
@@ -65,7 +62,6 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         description="Enable speech recognition",
         group="stt",
     ),
-
     # ─────────────────────────────────────────────────────────────────
     # TTS Settings
     # ─────────────────────────────────────────────────────────────────
@@ -77,9 +73,7 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         provider_namespace_template="voice.tts.{value}",
         options_provider="available_tts_backends",
         default=["pocket", "orca", "piper", "google"],
-        description=(
-            "Ordered list of TTS backends. First one is active provider."
-        ),
+        description=("Ordered list of TTS backends. First one is active provider."),
         group="tts",
         metadata={
             "help_text": (
@@ -97,7 +91,6 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         description="Enable voice output",
         group="tts",
     ),
-
     # ─────────────────────────────────────────────────────────────────
     # VAD Settings
     # ─────────────────────────────────────────────────────────────────
@@ -120,7 +113,6 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         description="Enable VAD to detect when user stops speaking",
         group="vad",
     ),
-
     # ─────────────────────────────────────────────────────────────────
     # Wake Word Settings
     # ─────────────────────────────────────────────────────────────────
@@ -129,10 +121,25 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         label="Wake Word",
         type=FieldType.SELECT,
         options=[
-            "hey barista", "computer", "jarvis", "alexa", "hey google", "ok google",
-            "hey siri", "porcupine", "picovoice", "bumblebee", "terminator",
-            "blueberry", "grapefruit", "grasshopper", "americano", "pico clock",
-            "smart mirror", "snowboy", "view glass",
+            "hey barista",
+            "computer",
+            "jarvis",
+            "alexa",
+            "hey google",
+            "ok google",
+            "hey siri",
+            "porcupine",
+            "picovoice",
+            "bumblebee",
+            "terminator",
+            "blueberry",
+            "grapefruit",
+            "grasshopper",
+            "americano",
+            "pico clock",
+            "smart mirror",
+            "snowboy",
+            "view glass",
         ],
         default="hey barista",
         description="The phrase that activates the assistant (Porcupine built-in keywords)",
@@ -174,7 +181,6 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         description="Ordered list of wake word backends.",
         group="wakeword",
     ),
-
     # ─────────────────────────────────────────────────────────────────
     # Audio Settings
     # ─────────────────────────────────────────────────────────────────

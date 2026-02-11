@@ -105,7 +105,9 @@ class ToolCallWidget(QFrame):
         self._args_label = QLabel()
         self._args_label.setObjectName("ToolDetails")
         self._args_label.setWordWrap(True)
-        self._args_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._args_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
         self._update_args_label()
         details_layout.addWidget(self._args_label)
 
@@ -113,7 +115,9 @@ class ToolCallWidget(QFrame):
         self._result_label = QLabel()
         self._result_label.setObjectName("ToolDetails")
         self._result_label.setWordWrap(True)
-        self._result_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._result_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
         self._update_result_label()
         details_layout.addWidget(self._result_label)
 

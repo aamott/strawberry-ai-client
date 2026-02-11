@@ -15,6 +15,7 @@ class AudioChunk:
         audio: Audio samples (int16)
         sample_rate: Sample rate in Hz
     """
+
     audio: np.ndarray
     sample_rate: int
 
@@ -105,7 +106,7 @@ class TTSEngine(ABC):
             Dictionary mapping setting keys to their default values
         """
         schema = cls.get_settings_schema()
-        return {field.key: field.default for field in schema if hasattr(field, 'key')}
+        return {field.key: field.default for field in schema if hasattr(field, "key")}
 
     def synthesize_stream(self, text: str) -> Iterator[AudioChunk]:
         """Synthesize text with streaming output.

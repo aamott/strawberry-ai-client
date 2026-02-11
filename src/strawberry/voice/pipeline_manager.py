@@ -89,9 +89,7 @@ class VoicePipelineManager:
         """Add callback for pipeline state changes."""
         self._pipeline_state_callbacks.append(callback)
 
-    def _on_listener_state_change(
-        self, old: ListenerState, new: ListenerState
-    ) -> None:
+    def _on_listener_state_change(self, old: ListenerState, new: ListenerState) -> None:
         """Handle listener state changes and notify pipeline callbacks."""
         self._notify_pipeline_state_change()
 

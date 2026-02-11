@@ -35,7 +35,9 @@ class TestTTSHealthCheck:
         modules = discover_tts_modules()
         for name, cls in modules.items():
             assert hasattr(cls, "is_healthy"), f"{name} missing is_healthy()"
-            assert hasattr(cls, "health_check_error"), f"{name} missing health_check_error()"
+            assert hasattr(cls, "health_check_error"), (
+                f"{name} missing health_check_error()"
+            )
             # Method should be callable
             result = cls.is_healthy()
             assert isinstance(result, bool), f"{name}.is_healthy() should return bool"
@@ -47,7 +49,9 @@ class TestTTSHealthCheck:
             if not cls.is_healthy():
                 error = cls.health_check_error()
                 assert error is not None, f"{name} is unhealthy but has no error message"
-                assert isinstance(error, str), f"{name}.health_check_error() should return str"
+                assert isinstance(error, str), (
+                    f"{name}.health_check_error() should return str"
+                )
                 assert len(error) > 0, f"{name} error message should not be empty"
 
 

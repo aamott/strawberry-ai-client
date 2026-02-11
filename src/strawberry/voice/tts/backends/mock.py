@@ -20,7 +20,6 @@ class MockTTS(TTSEngine):
     name = "Mock TTS"
     description = "Mock TTS engine for testing. Returns silence or tones."
 
-
     def __init__(
         self,
         sample_rate: int = 16000,
@@ -129,6 +128,7 @@ def generate_tone_audio(
     Returns:
         Function(text) -> np.ndarray for use with MockTTS
     """
+
     def generator(text: str) -> np.ndarray:
         duration = len(text) * duration_per_char
         num_samples = int(duration * sample_rate)
@@ -158,4 +158,3 @@ if __name__ == "__main__":
         sample_rate=chunk.sample_rate,
         blocking=True,
     )
-

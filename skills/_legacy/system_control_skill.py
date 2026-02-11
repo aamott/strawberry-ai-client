@@ -19,7 +19,7 @@ class SystemControlSkill:
             "os_version": platform.version(),
             "architecture": platform.architecture()[0],
             "processor": platform.processor(),
-            "hostname": platform.node()
+            "hostname": platform.node(),
         }
 
     def set_system_volume(self, volume: int) -> str:
@@ -142,14 +142,16 @@ class DisplayControlSkill:
                         "osascript",
                         "-e",
                         (
-                            "tell application \"System Events\" to key code 144 "
+                            'tell application "System Events" to key code 144 '
                             "using control down"
                         ),
                     ]
                 )
             elif system == "Linux":
                 # Linux brightness control
-                subprocess.run(["xrandr", "--output", "eDP-1", "--brightness", str(brightness/100)])
+                subprocess.run(
+                    ["xrandr", "--output", "eDP-1", "--brightness", str(brightness / 100)]
+                )
 
             return f"Display brightness set to {brightness}%"
         except Exception:

@@ -22,6 +22,7 @@ MAX_DECODE_ERRORS = 5  # Restart sandbox after this many consecutive errors
 
 class BridgeError(Exception):
     """Error from bridge communication."""
+
     pass
 
 
@@ -105,7 +106,7 @@ class BridgeClient:
                 "data": {
                     "code": code,
                     "proxy": proxy_code,
-                }
+                },
             }
 
             await self._send(message)
@@ -204,17 +205,8 @@ class BridgeClient:
                 result = await result
 
             # Send result back
-            await self._send({
-                "type": "result",
-                "id": msg_id,
-                "data": {"value": result}
-            })
+            await self._send({"type": "result", "id": msg_id, "data": {"value": result}})
 
         except Exception as e:
             logger.error(f"Bridge call error: {path} - {e}")
-            await self._send({
-                "type": "error",
-                "id": msg_id,
-                "data": {"error": str(e)}
-            })
-
+            await self._send({"type": "error", "id": msg_id, "data": {"error": str(e)}})

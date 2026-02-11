@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class SkillNotAllowedError(Exception):
     """Raised when a skill call is not in the allow-list."""
+
     pass
 
 
@@ -174,7 +175,9 @@ class Gatekeeper:
 
         parts = path.split(".")
         if len(parts) != 3:
-            raise ValueError(f"Invalid remote path: {path}. Expected: Device.Skill.method")
+            raise ValueError(
+                f"Invalid remote path: {path}. Expected: Device.Skill.method"
+            )
 
         device_name, skill_name, method_name = parts
 
@@ -191,7 +194,9 @@ class Gatekeeper:
             logger.error(f"Remote skill execution error: {path} - {e}")
             raise RuntimeError(self._sanitize_error(str(e)))
 
-    def _execute_device_manager(self, method: str, args: List[Any], kwargs: Dict[str, Any]) -> Any:
+    def _execute_device_manager(
+        self, method: str, args: List[Any], kwargs: Dict[str, Any]
+    ) -> Any:
         """Execute a DeviceManager method (search_skills, describe_function).
 
         Args:
@@ -228,11 +233,10 @@ class Gatekeeper:
         error = re.sub(r'File "[^"]+",', 'File "<skill>",', error)
 
         # Remove line numbers that might reveal structure
-        error = re.sub(r'line \d+', 'line ?', error)
+        error = re.sub(r"line \d+", "line ?", error)
 
         # Limit length
         if len(error) > 500:
             error = error[:500] + "..."
 
         return error
-

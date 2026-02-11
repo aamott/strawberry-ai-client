@@ -222,14 +222,14 @@ class TestSkillService:
 
     def test_parse_skill_calls(self, service):
         """Test parsing skill calls from response."""
-        response = '''Here's the time:
+        response = """Here's the time:
 
 ```python
 result = device.TimeSkill.get_current_time()
 print(result)
 ```
 
-That's the current time!'''
+That's the current time!"""
 
         code_blocks = service.parse_skill_calls(response)
 
@@ -238,7 +238,7 @@ That's the current time!'''
 
     def test_parse_multiple_skill_calls(self, service):
         """Test parsing multiple skill calls."""
-        response = '''Let me do both:
+        response = """Let me do both:
 
 ```python
 time = device.TimeSkill.get_current_time()
@@ -250,7 +250,7 @@ result = device.CalculatorSkill.add(5, 3)
 print(result)
 ```
 
-Done!'''
+Done!"""
 
         code_blocks = service.parse_skill_calls(response)
         assert len(code_blocks) == 2
@@ -258,9 +258,9 @@ Done!'''
     def test_parse_bare_code_without_fences(self, service):
         """Test parsing bare code without markdown fences."""
         # LLM sometimes outputs code without proper fences
-        response = '''Let me try that.
+        response = """Let me try that.
 print(device.TimeSkill.get_current_time())
-'''
+"""
 
         code_blocks = service.parse_skill_calls(response)
 
@@ -269,9 +269,9 @@ print(device.TimeSkill.get_current_time())
 
     def test_parse_bare_code_adds_print(self, service):
         """Test that bare code without print() gets wrapped."""
-        response = '''Here you go:
+        response = """Here you go:
 device.CalculatorSkill.add(5, 3)
-'''
+"""
 
         code_blocks = service.parse_skill_calls(response)
 
@@ -280,13 +280,13 @@ device.CalculatorSkill.add(5, 3)
 
     def test_parse_tool_code_fence(self, service):
         """Test parsing ```tool_code``` fences (some LLMs use this)."""
-        response = '''Let me search for that.
+        response = """Let me search for that.
 
 ```tool_code
 print(device.search_skills("browser"))
 ```
 
-Here are the results.'''
+Here are the results."""
 
         code_blocks = service.parse_skill_calls(response)
 
@@ -296,15 +296,15 @@ Here are the results.'''
     def test_parse_various_fence_types(self, service):
         """Test parsing various code fence types."""
         # Test ```code
-        response1 = '```code\nprint(device.TimeSkill.get_current_time())\n```'
+        response1 = "```code\nprint(device.TimeSkill.get_current_time())\n```"
         assert len(service.parse_skill_calls(response1)) == 1
 
         # Test ```py
-        response2 = '```py\nprint(device.TimeSkill.get_current_time())\n```'
+        response2 = "```py\nprint(device.TimeSkill.get_current_time())\n```"
         assert len(service.parse_skill_calls(response2)) == 1
 
         # Test bare ``` (no language)
-        response3 = '```\nprint(device.TimeSkill.get_current_time())\n```'
+        response3 = "```\nprint(device.TimeSkill.get_current_time())\n```"
         assert len(service.parse_skill_calls(response3)) == 1
 
     def test_execute_code_success(self, service):
@@ -331,12 +331,12 @@ Here are the results.'''
         """Test processing LLM response with skill calls."""
         service.load_skills()
 
-        response = '''The sum is:
+        response = """The sum is:
 
 ```python
 result = device.CalculatorSkill.add(7, 3)
 print(result)
-```'''
+```"""
 
         processed, tool_calls = service.process_response(response)
 
@@ -398,7 +398,9 @@ class TestDeviceProxy:
 
     def test_describe_function_success(self, service):
         """Test describe_function returns function details."""
-        code = "info = device.describe_function('TimeSkill.get_current_time')\nprint(info)"
+        code = (
+            "info = device.describe_function('TimeSkill.get_current_time')\nprint(info)"
+        )
         result = service.execute_code(code)
 
         assert result.success
@@ -440,4 +442,3 @@ class TestDeviceProxy:
         result3 = service.execute_code(code3)
         assert result3.success
         assert "30" in result3.result
-

@@ -185,18 +185,22 @@ def _build_method_for_tool(
         py_type = _json_schema_type_to_python(prop_schema.get("type", "any"))
         # Required params have no default; optional params default to None.
         if prop_name in required_params:
-            sig_params.append(inspect.Parameter(
-                prop_name,
-                inspect.Parameter.KEYWORD_ONLY,
-                annotation=py_type,
-            ))
+            sig_params.append(
+                inspect.Parameter(
+                    prop_name,
+                    inspect.Parameter.KEYWORD_ONLY,
+                    annotation=py_type,
+                )
+            )
         else:
-            sig_params.append(inspect.Parameter(
-                prop_name,
-                inspect.Parameter.KEYWORD_ONLY,
-                default=None,
-                annotation=py_type,
-            ))
+            sig_params.append(
+                inspect.Parameter(
+                    prop_name,
+                    inspect.Parameter.KEYWORD_ONLY,
+                    default=None,
+                    annotation=py_type,
+                )
+            )
     method.__signature__ = inspect.Signature(
         parameters=sig_params,
         return_annotation=Any,

@@ -57,11 +57,13 @@ class NumberFieldWidget(BaseFieldWidget):
 
     def _build_input(self) -> None:
         # Determine if float or int based on default/min/max
-        is_float = any([
-            isinstance(self.field.default, float),
-            isinstance(self.field.min_value, float),
-            isinstance(self.field.max_value, float),
-        ])
+        is_float = any(
+            [
+                isinstance(self.field.default, float),
+                isinstance(self.field.min_value, float),
+                isinstance(self.field.max_value, float),
+            ]
+        )
 
         if is_float:
             self._spin = QDoubleSpinBox()

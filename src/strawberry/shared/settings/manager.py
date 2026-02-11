@@ -196,7 +196,9 @@ class SettingsManager:
                 env_value = self._env_storage.get(field.env_key)
                 if env_value:
                     self._values[namespace][field.key] = env_value
-                    logger.debug(f"Loaded secret '{field.key}' from env var '{field.env_key}'")
+                    logger.debug(
+                        f"Loaded secret '{field.key}' from env var '{field.env_key}'"
+                    )
 
         # Apply Env Overrides from .env file
         # This handles standard NAMESPACE__KEY variables for this namespace
@@ -688,6 +690,7 @@ class SettingsManager:
             result = handler()
             # If handler is async, await it
             import inspect
+
             if inspect.isawaitable(result):
                 result = await result
 

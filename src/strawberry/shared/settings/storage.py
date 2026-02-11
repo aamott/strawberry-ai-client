@@ -89,9 +89,7 @@ class YamlStorage:
         data[namespace][key] = value
         self.save(data)
 
-    def _flatten_namespaces(
-        self, data: Dict[str, Any]
-    ) -> Dict[str, Dict[str, Any]]:
+    def _flatten_namespaces(self, data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """Convert nested YAML to flat namespace -> {key: value} structure.
 
         Args:
@@ -111,9 +109,7 @@ class YamlStorage:
 
         return result
 
-    def _flatten_dict(
-        self, d: Dict[str, Any], prefix: str = ""
-    ) -> Dict[str, Any]:
+    def _flatten_dict(self, d: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
         """Flatten a nested dictionary using dot-notation keys.
 
         Args:
@@ -132,9 +128,7 @@ class YamlStorage:
                 result[full_key] = value
         return result
 
-    def _unflatten_namespaces(
-        self, data: Dict[str, Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    def _unflatten_namespaces(self, data: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         """Convert flat namespace -> {key: value} to nested YAML structure.
 
         Args:
@@ -274,7 +268,8 @@ class EnvStorage:
 
         if duplicate_keys:
             logger.warning(
-                "Removed duplicate env keys during save: %s", ", ".join(sorted(duplicate_keys))
+                "Removed duplicate env keys during save: %s",
+                ", ".join(sorted(duplicate_keys)),
             )
 
         with open(self._path, "w", encoding="utf-8") as f:
@@ -339,7 +334,7 @@ class EnvStorage:
 
         text = "" if value is None else str(value)
         if text and (" " in text or '"' in text or "'" in text):
-            escaped = text.replace("\\", "\\\\").replace('"', '\\\"')
+            escaped = text.replace("\\", "\\\\").replace('"', '\\"')
             return f'"{escaped}"'
         return text
 

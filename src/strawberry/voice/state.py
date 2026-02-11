@@ -16,12 +16,12 @@ class VoiceState(Enum):
         Any → ERROR (on error, then → STOPPED)
     """
 
-    STOPPED = auto()    # Voice is not running
-    IDLE = auto()       # Waiting for wake word or PTT
+    STOPPED = auto()  # Voice is not running
+    IDLE = auto()  # Waiting for wake word or PTT
     LISTENING = auto()  # Recording speech (VAD active)
-    PROCESSING = auto() # STT transcription + LLM response
-    SPEAKING = auto()   # TTS playback
-    ERROR = auto()      # Error state (transitional)
+    PROCESSING = auto()  # STT transcription + LLM response
+    SPEAKING = auto()  # TTS playback
+    ERROR = auto()  # Error state (transitional)
 
 
 class VoiceStateError(Exception):
@@ -30,9 +30,7 @@ class VoiceStateError(Exception):
     def __init__(self, current: VoiceState, attempted: VoiceState):
         self.current = current
         self.attempted = attempted
-        super().__init__(
-            f"Invalid state transition: {current.name} → {attempted.name}"
-        )
+        super().__init__(f"Invalid state transition: {current.name} → {attempted.name}")
 
 
 # Valid state transitions

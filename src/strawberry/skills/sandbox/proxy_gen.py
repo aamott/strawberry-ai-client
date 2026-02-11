@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 
 class SkillMode(Enum):
     """Skill execution mode."""
-    LOCAL = "local"    # Only local device skills (device)
+
+    LOCAL = "local"  # Only local device skills (device)
     REMOTE = "remote"  # All devices via Hub (device_manager)
 
 
@@ -81,7 +82,7 @@ class ProxyGenerator:
                         "docstring": m.docstring or "",
                     }
                     for m in skill.methods
-                ]
+                ],
             }
             skill_data.append(skill_dict)
 
@@ -380,4 +381,3 @@ device_manager = devices
         self._cache = code
         logger.debug(f"Generated REMOTE mode proxy code ({len(code)} bytes)")
         return code
-

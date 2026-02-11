@@ -25,4 +25,3 @@ def get_ten_vad():
     from .ten_vad import TenVAD
 
     return TenVAD
-

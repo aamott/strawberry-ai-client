@@ -33,9 +33,7 @@ def test_default_settings():
 
 def test_settings_override():
     """Settings should allow overriding defaults."""
-    settings = Settings(
-        audio=AudioSettings(sample_rate=48000, backend="pvrecorder")
-    )
+    settings = Settings(audio=AudioSettings(sample_rate=48000, backend="pvrecorder"))
 
     assert settings.audio.sample_rate == 48000
     assert settings.audio.backend == "pvrecorder"
@@ -65,7 +63,7 @@ audio:
   backend: pvrecorder
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_content)
         config_path = Path(f.name)
 
@@ -96,7 +94,7 @@ hub:
   url: "http://testhost:8000"
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_content)
         config_path = Path(f.name)
 
@@ -181,17 +179,15 @@ def test_settings_include_llm_and_conversation():
     """Settings should include LLM and conversation configs."""
     settings = Settings()
 
-    assert hasattr(settings, 'llm')
-    assert hasattr(settings, 'conversation')
+    assert hasattr(settings, "llm")
+    assert hasattr(settings, "conversation")
     assert settings.llm.temperature == 0.7
     assert settings.conversation.max_history == 50
 
 
 def test_llm_config_override():
     """LLM config should be overridable."""
-    settings = Settings(
-        llm=LLMConfig(temperature=0.5, max_tokens=500)
-    )
+    settings = Settings(llm=LLMConfig(temperature=0.5, max_tokens=500))
 
     assert settings.llm.temperature == 0.5
     assert settings.llm.max_tokens == 500
@@ -205,4 +201,3 @@ def test_conversation_config_override():
 
     assert settings.conversation.max_history == 100
     assert settings.conversation.timeout_minutes == 60
-

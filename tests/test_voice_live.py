@@ -29,8 +29,7 @@ pytestmark = pytest.mark.skipif(
 
 # Enable detailed logging for debugging
 logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 
 
@@ -89,12 +88,12 @@ def test_vad_processes_without_blocking():
     avg_time = sum(frame_times) / len(frame_times)
     max_time = max(frame_times)
 
-    print(f"✓ Average frame time: {avg_time*1000:.1f}ms")
-    print(f"✓ Max frame time: {max_time*1000:.1f}ms")
+    print(f"✓ Average frame time: {avg_time * 1000:.1f}ms")
+    print(f"✓ Max frame time: {max_time * 1000:.1f}ms")
 
     # Real-time threshold: frame must process faster than 30ms (typical audio frame)
     # Allow some headroom - fail only if consistently over 50ms
-    assert avg_time < 0.030, f"VAD avg too slow for real-time: {avg_time*1000:.1f}ms"
+    assert avg_time < 0.030, f"VAD avg too slow for real-time: {avg_time * 1000:.1f}ms"
 
 
 @pytest.mark.timeout(20)
@@ -153,9 +152,9 @@ def test_voice_core_listening_exits():
     states_seen = []
 
     def on_event(event):
-        if hasattr(event, '__class__'):
+        if hasattr(event, "__class__"):
             event_name = event.__class__.__name__
-            if 'State' in event_name or 'Listening' in event_name:
+            if "State" in event_name or "Listening" in event_name:
                 states_seen.append(event_name)
                 print(f"Event: {event_name}")
 
@@ -163,6 +162,7 @@ def test_voice_core_listening_exits():
 
     # Start voice
     import asyncio
+
     started = asyncio.run(voice.start())
     assert started, "VoiceCore failed to start"
 
@@ -195,6 +195,7 @@ def test_voice_core_with_real_audio_and_vad():
     try:
         # Try to use real VAD
         from strawberry.voice.vad.backends.silero import SileroVAD
+
         test_vad = SileroVAD(sample_rate=16000)
         test_vad.preload()
     except Exception as e:
@@ -220,6 +221,7 @@ def test_voice_core_with_real_audio_and_vad():
 
     # Start
     import asyncio
+
     started = asyncio.run(voice.start())
     assert started, "VoiceCore failed to start with real VAD"
 

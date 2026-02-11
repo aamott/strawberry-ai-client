@@ -18,7 +18,6 @@ class MockWakeWordDetector(WakeWordDetector):
     name = "Mock Wake Word"
     description = "Mock wake word detector for testing. Returns configurable results."
 
-
     def __init__(
         self,
         keywords: List[str] = None,
@@ -96,4 +95,3 @@ class MockWakeWordDetector(WakeWordDetector):
     def frame_count(self) -> int:
         """Number of frames processed so far."""
         return self._frame_count
-

@@ -78,10 +78,12 @@ class HubConnectionManager:
 
         if not hub_token:
             logger.warning("Hub token not configured - skipping hub connection")
-            await self._emit(ConnectionChanged(
-                connected=False,
-                error="Hub token not configured",
-            ))
+            await self._emit(
+                ConnectionChanged(
+                    connected=False,
+                    error="Hub token not configured",
+                )
+            )
             return False
 
         try:
@@ -98,11 +100,13 @@ class HubConnectionManager:
                 timeout=hub_timeout,
             )
             if not healthy:
-                await self._emit(ConnectionChanged(
-                    connected=False,
-                    url=hub_url,
-                    error="Hub is not responding",
-                ))
+                await self._emit(
+                    ConnectionChanged(
+                        connected=False,
+                        url=hub_url,
+                        error="Hub is not responding",
+                    )
+                )
                 return False
 
             # Verify auth
@@ -112,18 +116,22 @@ class HubConnectionManager:
                     timeout=hub_timeout,
                 )
             except HubError as e:
-                await self._emit(ConnectionChanged(
-                    connected=False,
-                    url=hub_url,
-                    error=f"Hub authentication failed: {e}",
-                ))
+                await self._emit(
+                    ConnectionChanged(
+                        connected=False,
+                        url=hub_url,
+                        error=f"Hub authentication failed: {e}",
+                    )
+                )
                 return False
 
             self._hub_connected = True
-            await self._emit(ConnectionChanged(
-                connected=True,
-                url=hub_url,
-            ))
+            await self._emit(
+                ConnectionChanged(
+                    connected=True,
+                    url=hub_url,
+                )
+            )
             logger.info(f"Connected to Hub at {hub_url}")
 
             # Store and register skills with hub
@@ -135,9 +143,7 @@ class HubConnectionManager:
             # Set up WebSocket connection callback so we detect
             # when the hub goes offline (WebSocket drops) and can
             # emit ConnectionChanged / ModeChanged events + auto-reconnect.
-            self._hub_client.set_connection_callback(
-                self._on_ws_connection_changed
-            )
+            self._hub_client.set_connection_callback(self._on_ws_connection_changed)
 
             # Connect WebSocket for skill execution requests
             self._hub_websocket_task = asyncio.create_task(
@@ -145,27 +151,33 @@ class HubConnectionManager:
             )
 
             # Emit mode change
-            await self._emit(ModeChanged(
-                online=True,
-                message="Connected to Hub. Remote devices API is available.",
-            ))
+            await self._emit(
+                ModeChanged(
+                    online=True,
+                    message="Connected to Hub. Remote devices API is available.",
+                )
+            )
 
             return True
 
         except asyncio.TimeoutError:
             logger.warning("Hub connection timed out")
-            await self._emit(ConnectionChanged(
-                connected=False,
-                url=hub_url,
-                error="Connection timed out",
-            ))
+            await self._emit(
+                ConnectionChanged(
+                    connected=False,
+                    url=hub_url,
+                    error="Connection timed out",
+                )
+            )
             return False
         except Exception as e:
             logger.exception("Failed to connect to Hub")
-            await self._emit(ConnectionChanged(
-                connected=False,
-                error=str(e),
-            ))
+            await self._emit(
+                ConnectionChanged(
+                    connected=False,
+                    error=str(e),
+                )
+            )
             return False
 
     async def disconnect(self) -> None:
@@ -187,10 +199,12 @@ class HubConnectionManager:
 
         if was_connected:
             await self._emit(ConnectionChanged(connected=False))
-            await self._emit(ModeChanged(
-                online=False,
-                message="Disconnected from Hub. Running in local mode.",
-            ))
+            await self._emit(
+                ModeChanged(
+                    online=False,
+                    message="Disconnected from Hub. Running in local mode.",
+                )
+            )
             logger.info("Disconnected from Hub")
 
     def schedule_reconnection(self) -> None:
@@ -198,6 +212,7 @@ class HubConnectionManager:
 
         Uses asyncio to run the reconnection in the background.
         """
+
         async def reconnect():
             try:
                 await self.disconnect()
@@ -210,9 +225,7 @@ class HubConnectionManager:
             loop.create_task(reconnect())
             return
 
-        logger.warning(
-            "No running event loop available for hub reconnection; skipping."
-        )
+        logger.warning("No running event loop available for hub reconnection; skipping.")
 
     async def _register_skills(self, skill_service: "SkillService") -> bool:
         """Register skills with Hub and start heartbeat.
@@ -274,10 +287,12 @@ class HubConnectionManager:
                 self._hub_connected = True
                 logger.info("Hub WebSocket reconnected")
                 await self._emit(ConnectionChanged(connected=True))
-                await self._emit(ModeChanged(
-                    online=True,
-                    message="Reconnected to Hub.",
-                ))
+                await self._emit(
+                    ModeChanged(
+                        online=True,
+                        message="Reconnected to Hub.",
+                    )
+                )
                 # Re-register skills after reconnection
                 if self._skill_service:
                     # Hub may still be starting up; retry a few times before giving up
@@ -297,14 +312,18 @@ class HubConnectionManager:
             if self._hub_connected:
                 self._hub_connected = False
                 logger.warning("Hub WebSocket disconnected")
-                await self._emit(ConnectionChanged(
-                    connected=False,
-                    error="Hub connection lost",
-                ))
-                await self._emit(ModeChanged(
-                    online=False,
-                    message="Lost connection to Hub. Running in local mode.",
-                ))
+                await self._emit(
+                    ConnectionChanged(
+                        connected=False,
+                        error="Hub connection lost",
+                    )
+                )
+                await self._emit(
+                    ModeChanged(
+                        online=False,
+                        message="Lost connection to Hub. Running in local mode.",
+                    )
+                )
 
     def _configure_ping_pong_logging(self) -> None:
         """Configure logging level for WebSocket ping/pong frames.

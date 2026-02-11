@@ -27,7 +27,7 @@ class TestMusicControlSkill:
 
         for file_path in self.test_files:
             # Create empty files
-            with open(file_path, 'w') as f:
+            with open(file_path, "w") as f:
                 f.write("test")
 
         self.music_skill = MusicControlSkill(self.temp_dir)
@@ -58,11 +58,11 @@ class TestMusicControlSkill:
 
         # Check that each file has metadata
         for file_path, metadata in cache.items():
-            assert 'title' in metadata
-            assert 'path' in metadata
-            assert 'artist' in metadata
-            assert 'album' in metadata
-            assert 'duration' in metadata
+            assert "title" in metadata
+            assert "path" in metadata
+            assert "artist" in metadata
+            assert "album" in metadata
+            assert "duration" in metadata
 
     def test_search_music(self):
         """Test music search functionality."""
@@ -72,43 +72,43 @@ class TestMusicControlSkill:
         # Test specific search
         results = self.music_skill.search_music("album")
         assert len(results) == 1
-        assert "album" in results[0]['title'].lower()
+        assert "album" in results[0]["title"].lower()
 
     def test_play_music_file_nonexistent(self):
         """Test playing non-existent file."""
         result = self.music_skill.play_music_file("/nonexistent/file.mp3")
         assert "Error: File not found" in result
 
-    @patch('subprocess.Popen')
+    @patch("subprocess.Popen")
     def test_play_music_file_windows(self, mock_popen):
         """Test playing music file on Windows."""
         mock_popen.return_value = MagicMock()
 
-        with patch('platform.system', return_value='Windows'):
+        with patch("platform.system", return_value="Windows"):
             result = self.music_skill.play_music_file(self.test_files[0])
 
             assert "Playing" in result
             assert "song1.mp3" in result
             mock_popen.assert_called_once()
 
-    @patch('subprocess.Popen')
+    @patch("subprocess.Popen")
     def test_play_music_file_mac(self, mock_popen):
         """Test playing music file on macOS."""
         mock_popen.return_value = MagicMock()
 
-        with patch('platform.system', return_value='Darwin'):
+        with patch("platform.system", return_value="Darwin"):
             result = self.music_skill.play_music_file(self.test_files[0])
 
             assert "Playing" in result
             assert "song1.mp3" in result
             mock_popen.assert_called_once()
 
-    @patch('subprocess.Popen')
+    @patch("subprocess.Popen")
     def test_play_music_file_linux(self, mock_popen):
         """Test playing music file on Linux."""
         mock_popen.return_value = MagicMock()
 
-        with patch('platform.system', return_value='Linux'):
+        with patch("platform.system", return_value="Linux"):
             result = self.music_skill.play_music_file(self.test_files[0])
 
             assert "Playing" in result
@@ -117,16 +117,18 @@ class TestMusicControlSkill:
 
     def test_play_song_by_title(self):
         """Test playing song by title."""
-        with patch.object(self.music_skill, 'play_music_file', return_value="Playing test song"):
+        with patch.object(
+            self.music_skill, "play_music_file", return_value="Playing test song"
+        ):
             result = self.music_skill.play_song_by_title("song1")
             assert "Playing" in result
 
     def test_get_music_library_stats(self):
         """Test music library statistics."""
         stats = self.music_skill.get_music_library_stats()
-        assert stats['total_songs'] == 3
-        assert stats['music_folder'] == self.temp_dir
-        assert len(stats['file_types']) == 3
+        assert stats["total_songs"] == 3
+        assert stats["music_folder"] == self.temp_dir
+        assert len(stats["file_types"]) == 3
 
     def test_set_music_folder(self):
         """Test setting music folder."""
@@ -163,7 +165,7 @@ class TestAdvancedMusicControlSkill:
         ]
 
         for file_path in self.test_files:
-            with open(file_path, 'w') as f:
+            with open(file_path, "w") as f:
                 f.write("test")
 
         self.advanced_skill = AdvancedMusicControlSkill(self.temp_dir)
@@ -176,7 +178,7 @@ class TestAdvancedMusicControlSkill:
                 os.remove(file_path)
 
         # Remove playlists file if it exists
-        playlists_file = os.path.join(self.temp_dir, 'playlists.json')
+        playlists_file = os.path.join(self.temp_dir, "playlists.json")
         if os.path.exists(playlists_file):
             os.remove(playlists_file)
 
@@ -218,8 +220,8 @@ class TestAdvancedMusicControlSkill:
         self.advanced_skill.create_playlist("test_playlist", ["song1", "song2"])
 
         info = self.advanced_skill.get_playlist_info("test_playlist")
-        assert info['name'] == "test_playlist"
-        assert info['song_count'] == 2
+        assert info["name"] == "test_playlist"
+        assert info["song_count"] == 2
         # Note: songs list might be empty if search doesn't find the songs
         # This is expected behavior for the test
-        assert 'songs' in info
+        assert "songs" in info

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RegistrationResult:
     """Result of skill registration."""
+
     success: bool
     message: str
     skill_count: int = 0
@@ -148,18 +149,21 @@ class SkillRegistry:
         for skill in local_skills:
             for method in skill.methods:
                 # Simple substring matching
-                if (not query or
-                    query.lower() in method.name.lower() or
-                    query.lower() in skill.name.lower() or
-                    (method.docstring and query.lower() in method.docstring.lower())):
-
-                    results.append({
-                        "path": f"{skill.name}.{method.name}",
-                        "signature": method.signature,
-                        "summary": (method.docstring or "").split("\n")[0],
-                        "device": "local",
-                        "is_local": True,
-                    })
+                if (
+                    not query
+                    or query.lower() in method.name.lower()
+                    or query.lower() in skill.name.lower()
+                    or (method.docstring and query.lower() in method.docstring.lower())
+                ):
+                    results.append(
+                        {
+                            "path": f"{skill.name}.{method.name}",
+                            "signature": method.signature,
+                            "summary": (method.docstring or "").split("\n")[0],
+                            "device": "local",
+                            "is_local": True,
+                        }
+                    )
 
         # Remote skills from Hub
         if self.hub_client:
@@ -177,13 +181,7 @@ class SkillRegistry:
         """Get a local skill by name."""
         return self._loader.get_skill(name)
 
-    def call_skill(
-        self,
-        skill_name: str,
-        method_name: str,
-        *args,
-        **kwargs
-    ) -> Any:
+    def call_skill(self, skill_name: str, method_name: str, *args, **kwargs) -> Any:
         """Call a local skill method.
 
         Args:
@@ -222,4 +220,3 @@ class SkillRegistry:
                 lines.append("")
 
         return "\n".join(lines)
-

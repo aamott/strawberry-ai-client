@@ -92,9 +92,7 @@ class EventBus:
             RuntimeError: If no event loop is configured.
         """
         if not self._loop:
-            raise RuntimeError(
-                "EventBus.set_loop() must be called before subscribing"
-            )
+            raise RuntimeError("EventBus.set_loop() must be called before subscribing")
 
         queue: asyncio.Queue = asyncio.Queue()
         self._subscribers.append(queue)

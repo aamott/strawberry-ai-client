@@ -12,6 +12,7 @@ _GOOGLE_TTS_AVAILABLE = False
 _GOOGLE_TTS_IMPORT_ERROR: str | None = None
 try:
     from google.cloud import texttospeech
+
     _GOOGLE_TTS_AVAILABLE = True
 except ImportError as e:
     texttospeech = None
@@ -77,7 +78,7 @@ class GoogleTTS(TTSEngine):
 
         self._audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.LINEAR16,
-            sample_rate_hertz=24000, # Higher quality for TTS
+            sample_rate_hertz=24000,  # Higher quality for TTS
         )
 
     @property
@@ -87,7 +88,9 @@ class GoogleTTS(TTSEngine):
     def synthesize(self, text: str) -> AudioChunk:
         """Synthesize text to audio."""
         if not text:
-            return AudioChunk(audio=np.array([], dtype=np.int16), sample_rate=self.sample_rate)
+            return AudioChunk(
+                audio=np.array([], dtype=np.int16), sample_rate=self.sample_rate
+            )
 
         input_text = texttospeech.SynthesisInput(text=text)
 
@@ -95,45 +98,39 @@ class GoogleTTS(TTSEngine):
             response = self._client.synthesize_speech(
                 input=input_text,
                 voice=self._voice_params,
-                audio_config=self._audio_config
+                audio_config=self._audio_config,
             )
         except Exception:
             # Fallback to standard voice if Journey fails (needs specific access)
             if "en-US-Journey" in self._voice_params.name:
                 self._voice_params = texttospeech.VoiceSelectionParams(
-                    language_code="en-US",
-                    ssml_gender=texttospeech.SsmlVoiceGender.FEMALE
+                    language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.FEMALE
                 )
                 try:
                     response = self._client.synthesize_speech(
                         input=input_text,
                         voice=self._voice_params,
-                        audio_config=self._audio_config
+                        audio_config=self._audio_config,
                     )
                 except Exception:
-                     # Log properly in real app, here checking empty audio handling
-                     return AudioChunk(
-                        audio=np.array([], dtype=np.int16),
-                        sample_rate=self.sample_rate
+                    # Log properly in real app, here checking empty audio handling
+                    return AudioChunk(
+                        audio=np.array([], dtype=np.int16), sample_rate=self.sample_rate
                     )
             else:
-                 return AudioChunk(
-                    audio=np.array([], dtype=np.int16),
-                    sample_rate=self.sample_rate
+                return AudioChunk(
+                    audio=np.array([], dtype=np.int16), sample_rate=self.sample_rate
                 )
 
         # Convert bytes to int16 numpy array
         # Google returns bytes in LINEAR16, which is distinct from int16 array
         audio_data = np.frombuffer(response.audio_content, dtype=np.int16)
 
-        return AudioChunk(
-            audio=audio_data,
-            sample_rate=self.sample_rate
-        )
+        return AudioChunk(audio=audio_data, sample_rate=self.sample_rate)
 
     @classmethod
     def get_settings_schema(cls) -> List[Any]:
-         # No runtime settings for now
+        # No runtime settings for now
         return []
 
 

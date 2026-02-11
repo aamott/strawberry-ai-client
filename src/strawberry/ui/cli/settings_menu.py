@@ -177,15 +177,19 @@ class CLISettingsMenu:
             # Determine which type of backend based on key prefix
             if key.startswith("stt."):
                 from strawberry.voice.stt import discover_stt_modules
+
                 return list(discover_stt_modules().keys())
             elif key.startswith("tts."):
                 from strawberry.voice.tts import discover_tts_modules
+
                 return list(discover_tts_modules().keys())
             elif key.startswith("vad."):
                 from strawberry.voice.vad import discover_vad_modules
+
                 return list(discover_vad_modules().keys())
             elif key.startswith("wakeword."):
                 from strawberry.voice.wakeword import discover_wake_modules
+
                 return list(discover_wake_modules().keys())
         except ImportError:
             pass
@@ -218,8 +222,12 @@ class CLISettingsMenu:
             renderer.print_system("Cancelled")
 
     def _dispatch_edit(
-        self, field_type, key: str, current: Any,
-        field: "SettingField", label: str,
+        self,
+        field_type,
+        key: str,
+        current: Any,
+        field: "SettingField",
+        label: str,
     ) -> Any:
         """Dispatch to the appropriate editor for a field type."""
         from strawberry.shared.settings.schema import FieldType
@@ -357,7 +365,9 @@ class CLISettingsMenu:
             return not current
         return None
 
-    def _edit_select(self, current: Any, options: list, label: str = "option") -> Optional[str]:
+    def _edit_select(
+        self, current: Any, options: list, label: str = "option"
+    ) -> Optional[str]:
         """Edit a select field.
 
         Options are plain strings (List[str]) in the schema.

@@ -43,7 +43,7 @@ class MusicControlSkill:
             return []
 
         # Supported audio file extensions
-        extensions = ['*.mp3', '*.wav', '*.flac', '*.ogg', '*.m4a', '*.aac']
+        extensions = ["*.mp3", "*.wav", "*.flac", "*.ogg", "*.m4a", "*.aac"]
         music_files = []
 
         for ext in extensions:
@@ -68,11 +68,11 @@ class MusicControlSkill:
                 name_without_ext = os.path.splitext(filename)[0]
 
                 cache[file_path] = {
-                    'title': name_without_ext,
-                    'path': file_path,
-                    'artist': 'Unknown',
-                    'album': 'Unknown',
-                    'duration': 'Unknown'
+                    "title": name_without_ext,
+                    "path": file_path,
+                    "artist": "Unknown",
+                    "album": "Unknown",
+                    "duration": "Unknown",
                 }
             except Exception as e:
                 logger.error(f"Error processing file {file_path}: {e}")
@@ -102,17 +102,17 @@ class MusicControlSkill:
 
             if system == "Windows":
                 # Windows: use start command or os.startfile
-                subprocess.Popen(['start', file_path], shell=True)
+                subprocess.Popen(["start", file_path], shell=True)
                 return f"Playing {os.path.basename(file_path)} in default player"
 
             elif system == "Darwin":  # macOS
                 # macOS: use open command
-                subprocess.Popen(['open', file_path])
+                subprocess.Popen(["open", file_path])
                 return f"Playing {os.path.basename(file_path)} in default player"
 
             else:  # Linux and others
                 # Linux: use xdg-open
-                subprocess.Popen(['xdg-open', file_path])
+                subprocess.Popen(["xdg-open", file_path])
                 return f"Playing {os.path.basename(file_path)} in default player"
 
         except Exception as e:
@@ -136,17 +136,20 @@ class MusicControlSkill:
 
         for file_path, metadata in cache.items():
             # Search in title, artist, and album
-            if (query_lower in metadata['title'].lower() or
-                query_lower in metadata['artist'].lower() or
-                query_lower in metadata['album'].lower()):
-
-                results.append({
-                    'title': metadata['title'],
-                    'artist': metadata['artist'],
-                    'album': metadata['album'],
-                    'path': file_path,
-                    'duration': metadata['duration']
-                })
+            if (
+                query_lower in metadata["title"].lower()
+                or query_lower in metadata["artist"].lower()
+                or query_lower in metadata["album"].lower()
+            ):
+                results.append(
+                    {
+                        "title": metadata["title"],
+                        "artist": metadata["artist"],
+                        "album": metadata["album"],
+                        "path": file_path,
+                        "duration": metadata["duration"],
+                    }
+                )
 
                 if len(results) >= max_results:
                     break
@@ -168,16 +171,16 @@ class MusicControlSkill:
             return f"No song found with title: {title}"
 
         song = results[0]
-        return self.play_music_file(song['path'])
+        return self.play_music_file(song["path"])
 
     def get_music_library_stats(self) -> Dict[str, Any]:
         """Get statistics about the music library."""
         cache = self._get_music_cache()
 
         return {
-            'total_songs': len(cache),
-            'music_folder': self.music_folder,
-            'file_types': list(set(os.path.splitext(f)[1] for f in cache.keys()))
+            "total_songs": len(cache),
+            "music_folder": self.music_folder,
+            "file_types": list(set(os.path.splitext(f)[1] for f in cache.keys())),
         }
 
     def set_music_folder(self, folder_path: str) -> str:
@@ -223,7 +226,7 @@ class AdvancedMusicControlSkill:
         """Load playlists from file."""
         try:
             if os.path.exists(self.playlists_file):
-                with open(self.playlists_file, 'r') as f:
+                with open(self.playlists_file, "r") as f:
                     return json.load(f)
         except Exception as e:
             logger.error(f"Error loading playlists: {e}")
@@ -234,7 +237,7 @@ class AdvancedMusicControlSkill:
         """Save playlists to file."""
         try:
             os.makedirs(os.path.dirname(self.playlists_file), exist_ok=True)
-            with open(self.playlists_file, 'w') as f:
+            with open(self.playlists_file, "w") as f:
                 json.dump(self._playlists, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving playlists: {e}")
@@ -255,7 +258,7 @@ class AdvancedMusicControlSkill:
         for title in song_titles:
             results = self.base_control.search_music(title, max_results=1)
             if results:
-                playlist_songs.append(results[0]['path'])
+                playlist_songs.append(results[0]["path"])
 
         self._playlists[name] = playlist_songs
         self._save_playlists()
@@ -288,21 +291,19 @@ class AdvancedMusicControlSkill:
     def get_playlist_info(self, name: str) -> Dict[str, Any]:
         """Get information about a playlist."""
         if name not in self._playlists:
-            return {'error': 'Playlist not found'}
+            return {"error": "Playlist not found"}
 
         playlist = self._playlists[name]
         songs_info = []
 
         for song_path in playlist:
-            results = self.base_control.search_music(os.path.basename(song_path), max_results=1)
+            results = self.base_control.search_music(
+                os.path.basename(song_path), max_results=1
+            )
             if results:
                 songs_info.append(results[0])
 
-        return {
-            'name': name,
-            'song_count': len(playlist),
-            'songs': songs_info
-        }
+        return {"name": name, "song_count": len(playlist), "songs": songs_info}
 
 
 # Create instances for easy access

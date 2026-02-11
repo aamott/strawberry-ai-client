@@ -26,7 +26,7 @@ if not os.environ.get("HUB_DEVICE_TOKEN"):
 # Skip all tests in this module if no API keys are configured
 pytestmark = pytest.mark.skipif(
     not os.environ.get("GOOGLE_AI_STUDIO_API_KEY"),
-    reason="GOOGLE_AI_STUDIO_API_KEY not set - skipping live chat tests"
+    reason="GOOGLE_AI_STUDIO_API_KEY not set - skipping live chat tests",
 )
 
 
@@ -67,7 +67,9 @@ class TestLiveTensorZeroChat:
             response = await client.chat(messages)
 
             if not response.content:
-                pytest.skip("Live provider returned empty response (likely auth/config issue)")
+                pytest.skip(
+                    "Live provider returned empty response (likely auth/config issue)"
+                )
             assert len(response.content) > 0, "Response content should not be empty"
             assert response.model, "Response should include model name"
             assert response.variant, "Response should include variant name"
@@ -91,14 +93,17 @@ class TestLiveTensorZeroChat:
 
             messages = [ChatMessage(role="user", content="What is 2+2?")]
             response = await client.chat(
-                messages,
-                system_prompt="You are a math tutor. Answer briefly."
+                messages, system_prompt="You are a math tutor. Answer briefly."
             )
 
             if not response.content:
-                pytest.skip("Live provider returned empty response (likely auth/config issue)")
+                pytest.skip(
+                    "Live provider returned empty response (likely auth/config issue)"
+                )
             # The response should mention "4" somewhere
-            assert "4" in response.content, f"Expected '4' in response: {response.content}"
+            assert "4" in response.content, (
+                f"Expected '4' in response: {response.content}"
+            )
 
             print(f"\n[Test] Math response: {response.content[:100]}")
 
@@ -121,7 +126,9 @@ class TestLiveTensorZeroChat:
             messages = [ChatMessage(role="user", content="My name is TestUser.")]
             response1 = await client.chat(messages)
             if not response1.content:
-                pytest.skip("Live provider returned empty response (likely auth/config issue)")
+                pytest.skip(
+                    "Live provider returned empty response (likely auth/config issue)"
+                )
 
             # Second message - should remember context
             messages.append(ChatMessage(role="assistant", content=response1.content))
@@ -129,7 +136,9 @@ class TestLiveTensorZeroChat:
 
             response2 = await client.chat(messages)
             if not response2.content:
-                pytest.skip("Live provider returned empty response (likely auth/config issue)")
+                pytest.skip(
+                    "Live provider returned empty response (likely auth/config issue)"
+                )
             if "TestUser" not in response2.content:
                 pytest.skip(
                     "Provider did not preserve conversation memory across turns; skipping"
@@ -180,7 +189,9 @@ class TestLiveHubChat:
                 response = await client.post(
                     f"{hub_url}/api/v1/chat/completions",
                     json={
-                        "messages": [{"role": "user", "content": "Say 'pong' and nothing else."}],
+                        "messages": [
+                            {"role": "user", "content": "Say 'pong' and nothing else."}
+                        ],
                         "temperature": 0.1,
                     },
                     headers={"Authorization": f"Bearer {hub_token}"},
@@ -208,7 +219,9 @@ if __name__ == "__main__":
 
     async def main():
         print("Running live chat tests...")
-        print(f"GOOGLE_AI_STUDIO_API_KEY set: {bool(os.environ.get('GOOGLE_AI_STUDIO_API_KEY'))}")
+        print(
+            f"GOOGLE_AI_STUDIO_API_KEY set: {bool(os.environ.get('GOOGLE_AI_STUDIO_API_KEY'))}"
+        )
         print(f"HUB_DEVICE_TOKEN set: {bool(os.environ.get('HUB_DEVICE_TOKEN'))}")
 
         config_path = str(Path(__file__).parent.parent / "config" / "tensorzero.toml")
@@ -225,7 +238,11 @@ if __name__ == "__main__":
 
             if healthy:
                 print("\nSending test message...")
-                messages = [ChatMessage(role="user", content="Say 'hello world' and nothing else.")]
+                messages = [
+                    ChatMessage(
+                        role="user", content="Say 'hello world' and nothing else."
+                    )
+                ]
                 response = await client.chat(messages)
                 print(f"Response from {response.variant}: {response.content}")
                 print(f"Model: {response.model}")

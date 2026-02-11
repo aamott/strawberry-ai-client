@@ -157,6 +157,7 @@ def _make_call_tool_fn(server_name: str):
 
 # ── Async discovery ─────────────────────────────────────────────────────────
 
+
 async def _discover_and_build() -> list:
     """Connect to MCP servers and build skill classes.
 
@@ -190,9 +191,7 @@ async def _discover_and_build() -> list:
     for server in servers:
         if server.session is not None:
             _sessions[server.server_name] = server.session
-            logger.info(
-                "Session stored for MCP server '%s'", server.server_name
-            )
+            logger.info("Session stored for MCP server '%s'", server.server_name)
 
     # Build call_tool functions for each connected server
     call_tool_fns = {name: _make_call_tool_fn(name) for name in _sessions}

@@ -34,7 +34,7 @@ def _parse_env_line(line: str) -> EnvLine:
     value = value.strip()
 
     if value.startswith('"') and value.endswith('"') and len(value) >= 2:
-        value = value[1:-1].replace("\\\"", '"')
+        value = value[1:-1].replace('\\"', '"')
 
     return EnvLine(kind="kv", raw=line, key=key, value=value)
 
@@ -67,7 +67,7 @@ def _format_env_value(value: str) -> str:
     if not needs_quotes:
         return value
 
-    escaped = value.replace('"', "\\\"")
+    escaped = value.replace('"', '\\"')
     return f'"{escaped}"'
 
 

@@ -317,7 +317,8 @@ class PathFieldWidget(BaseFieldWidget):
     def _build_input(self) -> None:
         self._line_edit = QLineEdit()
         self._line_edit.setPlaceholderText(
-            "Select file..." if self.field.type == FieldType.FILE_PATH
+            "Select file..."
+            if self.field.type == FieldType.FILE_PATH
             else "Select directory..."
         )
         self._line_edit.textChanged.connect(self._on_value_changed)
@@ -336,11 +337,12 @@ class PathFieldWidget(BaseFieldWidget):
 
     def _on_browse(self) -> None:
         if self.field.type == FieldType.FILE_PATH:
-            file_filter = self.field.metadata.get("filter", "All Files (*)") \
-                if self.field.metadata else "All Files (*)"
-            path, _ = QFileDialog.getOpenFileName(
-                self, "Select File", "", file_filter
+            file_filter = (
+                self.field.metadata.get("filter", "All Files (*)")
+                if self.field.metadata
+                else "All Files (*)"
             )
+            path, _ = QFileDialog.getOpenFileName(self, "Select File", "", file_filter)
         else:
             path = QFileDialog.getExistingDirectory(self, "Select Directory")
 
@@ -383,9 +385,7 @@ class ColorFieldWidget(BaseFieldWidget):
             self._on_value_changed()
 
     def _update_display(self) -> None:
-        self._color_btn.setStyleSheet(
-            f"background-color: {self._current_color.name()};"
-        )
+        self._color_btn.setStyleSheet(f"background-color: {self._current_color.name()};")
         self._hex_label.setText(self._current_color.name())
 
 

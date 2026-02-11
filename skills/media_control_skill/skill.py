@@ -85,7 +85,7 @@ class MediaControlSkill:
             "artist": "Sample Artist",
             "album": "Sample Album",
             "duration": "3:45",
-            "position": "1:23"
+            "position": "1:23",
         }
 
     def _send_media_command(self, command: str) -> str:
@@ -230,7 +230,9 @@ class MediaControlSkill:
             volume: Volume level (0-100).
         """
         if shutil.which("wpctl"):
-            subprocess.run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{volume / 100:.2f}"])
+            subprocess.run(
+                ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{volume / 100:.2f}"]
+            )
             return
         if shutil.which("pactl"):
             subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{volume}%"])
@@ -289,7 +291,9 @@ class MediaControlSkill:
         script = self._windows_volume_script(
             "$vol.GetMasterVolumeLevelScalar([ref]$level); $level"
         )
-        result = subprocess.run(["powershell", "-Command", script], capture_output=True, text=True)
+        result = subprocess.run(
+            ["powershell", "-Command", script], capture_output=True, text=True
+        )
         match = re.search(r"([0-9.]+)", result.stdout or "")
         if match:
             return int(float(match.group(1)) * 100)
@@ -311,7 +315,7 @@ class MediaControlSkill:
                 "using System;",
                 "using System.Runtime.InteropServices;",
                 "namespace AudioUtilities {",
-                "  [Guid(\"5CDF2C82-841E-4546-9722-0CF74078229A\"), ",
+                '  [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), ',
                 "InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
                 "  interface IAudioEndpointVolume {",
                 "    int RegisterControlChangeNotify(IntPtr pNotify);",
@@ -334,19 +338,19 @@ class MediaControlSkill:
                 "    int SetMute([MarshalAs(UnmanagedType.Bool)] bool isMuted, Guid eventContext);",
                 "    int GetMute(out bool isMuted);",
                 "  }",
-                "  [Guid(\"D666063F-1587-4E43-81F1-B948E807363F\"), ",
+                '  [Guid("D666063F-1587-4E43-81F1-B948E807363F"), ',
                 "InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
                 "  interface IMMDevice {",
                 "    int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, ",
                 "out IAudioEndpointVolume aev);",
                 "  }",
-                "  [Guid(\"A95664D2-9614-4F35-A746-DE8DB63617E6\"), ",
+                '  [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), ',
                 "InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
                 "  interface IMMDeviceEnumerator {",
                 "    int NotImpl1();",
                 "    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice device);",
                 "  }",
-                "  [ComImport, Guid(\"BCDE0395-E52F-467C-8E3D-C4579291692E\")]",
+                '  [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]',
                 "  class MMDeviceEnumerator {}",
                 "  public class Audio {",
                 "    public static IAudioEndpointVolume GetDefaultEndpointVolume() {",
@@ -388,7 +392,7 @@ class MusicLibrarySkill:
                 "title": f"Song matching '{query}'",
                 "artist": "Sample Artist",
                 "album": "Sample Album",
-                "duration": "3:30"
+                "duration": "3:30",
             }
         ][:max_results]
 

@@ -240,7 +240,9 @@ class SidebarRail(QFrame):
         nav_layout.addWidget(self._chats_btn)
 
         # New chat button — entire row triggers new_chat_requested
-        self._new_chat_btn = self._create_nav_button(Icons.NEW_CHAT, "New Chat", "new_chat")
+        self._new_chat_btn = self._create_nav_button(
+            Icons.NEW_CHAT, "New Chat", "new_chat"
+        )
         self._new_chat_btn.clicked.disconnect()
         self._new_chat_btn.clicked.connect(lambda _: self.new_chat_requested.emit())
         self._new_chat_btn.icon_btn.clicked.disconnect()
@@ -253,7 +255,9 @@ class SidebarRail(QFrame):
         self._session_scroll = QScrollArea()
         self._session_scroll.setObjectName("SessionList")
         self._session_scroll.setWidgetResizable(True)
-        self._session_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._session_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self._session_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._session_scroll.hide()
 
@@ -280,7 +284,9 @@ class SidebarRail(QFrame):
         bottom_layout.addWidget(self._skills_btn)
 
         # Settings button
-        self._settings_btn = self._create_nav_button(Icons.SETTINGS, "Settings", "settings")
+        self._settings_btn = self._create_nav_button(
+            Icons.SETTINGS, "Settings", "settings"
+        )
         bottom_layout.addWidget(self._settings_btn)
 
         layout.addWidget(self._bottom_nav)
@@ -338,7 +344,10 @@ class SidebarRail(QFrame):
 
         # Show nav labels
         for nav_btn in [
-            self._chats_btn, self._new_chat_btn, self._skills_btn, self._settings_btn
+            self._chats_btn,
+            self._new_chat_btn,
+            self._skills_btn,
+            self._settings_btn,
         ]:
             nav_btn.label_widget.show()
 
@@ -373,7 +382,10 @@ class SidebarRail(QFrame):
 
         # Hide nav labels
         for nav_btn in [
-            self._chats_btn, self._new_chat_btn, self._skills_btn, self._settings_btn
+            self._chats_btn,
+            self._new_chat_btn,
+            self._skills_btn,
+            self._settings_btn,
         ]:
             nav_btn.label_widget.hide()
 
@@ -402,9 +414,15 @@ class SidebarRail(QFrame):
 
     def _stop_animations(self) -> None:
         """Stop any in-flight expand/collapse animations."""
-        if self._animation and self._animation.state() == QPropertyAnimation.State.Running:
+        if (
+            self._animation
+            and self._animation.state() == QPropertyAnimation.State.Running
+        ):
             self._animation.stop()
-        if self._max_animation and self._max_animation.state() == QPropertyAnimation.State.Running:
+        if (
+            self._max_animation
+            and self._max_animation.state() == QPropertyAnimation.State.Running
+        ):
             self._max_animation.stop()
 
     def toggle(self) -> None:

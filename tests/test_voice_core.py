@@ -78,8 +78,12 @@ class TestVoiceState:
 
     def test_stop_from_any_state(self):
         """Should be able to stop from most states."""
-        for state in [VoiceState.IDLE, VoiceState.LISTENING,
-                      VoiceState.PROCESSING, VoiceState.SPEAKING]:
+        for state in [
+            VoiceState.IDLE,
+            VoiceState.LISTENING,
+            VoiceState.PROCESSING,
+            VoiceState.SPEAKING,
+        ]:
             assert can_transition(state, VoiceState.STOPPED)
 
     def test_error_only_to_stopped(self):
@@ -207,6 +211,7 @@ class TestVoiceCoreAsync:
         core = VoiceCore(config)
 
         events = []
+
         def listener(e):
             return events.append(e)
 
@@ -368,6 +373,7 @@ class TestPTT:
 
         assert core._ptt_active is False
 
+
 @pytest.mark.asyncio
 class TestThreadSafety:
     """Tests for thread safety and event marshaling."""
@@ -387,7 +393,7 @@ class TestThreadSafety:
             listener_thread_id = threading.get_ident()
             # Signal completion
             if loop.is_running():
-                 loop.call_soon_threadsafe(event_received.set)
+                loop.call_soon_threadsafe(event_received.set)
 
         core.add_listener(listener)
 
@@ -409,6 +415,7 @@ class TestThreadSafety:
         assert listener_thread_id == loop_thread_id
 
         await core.stop()
+
 
 class TestBargeIn:
     """Tests for barge-in functionality."""
@@ -433,6 +440,7 @@ class TestBargeIn:
 
         # Simulate audio frame that triggers wake word
         import numpy as np
+
         core._on_audio_frame(np.zeros(512, dtype=np.int16))
 
         # Assertions
@@ -465,6 +473,7 @@ class TestInterruptibleSpeech:
         core.component_manager.components.wake = mock_wake
 
         import numpy as np
+
         core._on_audio_frame(np.zeros(512, dtype=np.int16))
 
         # Verify
@@ -492,6 +501,7 @@ class TestInterruptibleSpeech:
         core.component_manager.components.wake = mock_wake
 
         import numpy as np
+
         core._on_audio_frame(np.zeros(512, dtype=np.int16))
 
         assert core.state == VoiceState.LISTENING
@@ -518,6 +528,7 @@ class TestInterruptibleSpeech:
         # Setup mock VAD that saw NO speech
         from strawberry.voice.vad.backends.mock import MockVAD
         from strawberry.voice.vad.processor import VADProcessor
+
         core.component_manager.components.vad_processor = VADProcessor(MockVAD())
 
         # Finish recording (silent)
@@ -547,7 +558,8 @@ class TestInterruptibleSpeech:
 
         # We need to mock the stt component
         class MockSTT:
-            def transcribe(self, audio): return TranscriptionResult(text="New Command")
+            def transcribe(self, audio):
+                return TranscriptionResult(text="New Command")
 
         core.component_manager.components.stt = MockSTT()
         core.component_manager.stt_backend_names = ["mock"]
@@ -561,6 +573,7 @@ class TestInterruptibleSpeech:
         # Check if it tried to speak the new command (it would be in the queue)
         # However, _process_audio_sync calls self.speak(response) if handler exists.
         # If no handler, it just goes IDLE.
+
 
 class TestStateMachineFixes:
     """Tests for recent state machine fixes."""
@@ -601,6 +614,7 @@ class TestStateMachineFixes:
         core.component_manager.components.wake = mock_wake
 
         import numpy as np
+
         core._on_audio_frame(np.zeros(512, dtype=np.int16))
 
         assert core.state == VoiceState.LISTENING

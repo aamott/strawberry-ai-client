@@ -9,6 +9,7 @@ class Theme:
 
     All colors are hex strings (e.g., "#1a1a2e").
     """
+
     # Identification
     name: str
 

@@ -17,6 +17,7 @@ try:
 except ImportError:
     from base import STTEngine, TranscriptionResult
 
+
 class SherpaParakeetSTT(STTEngine):
     """Parakeet TDT 0.6B v2 via Sherpa-ONNX (INT8 quantized)."""
 
@@ -59,7 +60,9 @@ class SherpaParakeetSTT(STTEngine):
     def sample_rate(self) -> int:
         return self._sample_rate
 
-    def transcribe(self, audio_path: str, *, timestamps: bool = False) -> TranscriptionResult:
+    def transcribe(
+        self, audio_path: str, *, timestamps: bool = False
+    ) -> TranscriptionResult:
         """Transcribe a single audio file.
 
         Args:

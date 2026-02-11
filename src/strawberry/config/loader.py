@@ -54,7 +54,8 @@ def _load_yaml_config(config_path: Path) -> dict:
     except yaml.YAMLError as e:
         logger.warning(
             "Config file is invalid YAML at %s: %s. Using defaults",
-            config_path, e,
+            config_path,
+            e,
         )
         return {}
 
@@ -74,10 +75,7 @@ def _apply_hub_env_overrides(config_data: dict) -> None:
         config_data["hub"]["token"] = os.environ["STRAWBERRY_DEVICE_TOKEN"]
 
     if not config_data["hub"].get("token"):
-        env_token = (
-            os.environ.get("HUB_DEVICE_TOKEN")
-            or os.environ.get("HUB_TOKEN")
-        )
+        env_token = os.environ.get("HUB_DEVICE_TOKEN") or os.environ.get("HUB_TOKEN")
         if env_token:
             config_data["hub"]["token"] = env_token
 
@@ -111,6 +109,7 @@ def load_config(
     # Load .env file if it exists
     if env_path is None:
         from ..utils.paths import get_project_root
+
         env_path = get_project_root() / ".env"
     if env_path.exists():
         load_dotenv(env_path, override=True)
@@ -118,6 +117,7 @@ def load_config(
     # Resolve default config path
     if config_path is None:
         from ..utils.paths import get_project_root
+
         config_path = get_project_root() / "src" / "config" / "config.yaml"
 
     config_data = _load_yaml_config(config_path)
@@ -161,4 +161,3 @@ def reset_settings() -> None:
     """Reset settings to None (for testing)."""
     global _settings
     _settings = None
-

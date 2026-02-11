@@ -15,13 +15,15 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SkillLoadFailure:
     """Record of a skill that failed to load."""
+
     source: str  # file path or repo name
-    error: str   # human-readable error message
+    error: str  # human-readable error message
 
 
 @dataclass
 class SkillMethod:
     """Information about a skill method."""
+
     name: str
     signature: str
     docstring: Optional[str]
@@ -39,6 +41,7 @@ class SkillMethod:
 @dataclass
 class SkillInfo:
     """Information about a loaded skill class."""
+
     name: str
     class_obj: type
     methods: List[SkillMethod] = field(default_factory=list)
@@ -103,7 +106,9 @@ class SkillLoader:
         self._repo_namespace_root = "strawberry_skillrepos"
 
     def _register_loaded_skills(
-        self, skills: list, source_label: str,
+        self,
+        skills: list,
+        source_label: str,
     ) -> None:
         """Register loaded skills, skipping duplicates.
 
@@ -162,10 +167,12 @@ class SkillLoader:
                 self._register_loaded_skills(skills, str(entrypoint))
             except Exception as e:
                 logger.error(f"Failed to load repo skill from {entrypoint}: {e}")
-                self._failures.append(SkillLoadFailure(
-                    source=str(repo_dir.name),
-                    error=str(e),
-                ))
+                self._failures.append(
+                    SkillLoadFailure(
+                        source=str(repo_dir.name),
+                        error=str(e),
+                    )
+                )
 
         # Find all top-level Python files
         for py_file in self.skills_path.glob("*.py"):
@@ -177,10 +184,12 @@ class SkillLoader:
                 self._register_loaded_skills(skills, str(py_file))
             except Exception as e:
                 logger.error(f"Failed to load {py_file}: {e}")
-                self._failures.append(SkillLoadFailure(
-                    source=py_file.name,
-                    error=str(e),
-                ))
+                self._failures.append(
+                    SkillLoadFailure(
+                        source=py_file.name,
+                        error=str(e),
+                    )
+                )
 
         return list(self._skills.values())
 
@@ -305,10 +314,7 @@ class SkillLoader:
             try:
                 sig = inspect.signature(method)
                 # Remove 'self' parameter for display
-                params = [
-                    p for name, p in sig.parameters.items()
-                    if name != "self"
-                ]
+                params = [p for name, p in sig.parameters.items() if name != "self"]
                 new_sig = sig.replace(parameters=params)
                 sig_str = f"{method_name}{new_sig}"
             except ValueError:
@@ -317,12 +323,14 @@ class SkillLoader:
             # Get docstring
             docstring = inspect.getdoc(method)
 
-            methods.append(SkillMethod(
-                name=method_name,
-                signature=sig_str,
-                docstring=docstring,
-                callable=method,
-            ))
+            methods.append(
+                SkillMethod(
+                    name=method_name,
+                    signature=sig_str,
+                    docstring=docstring,
+                    callable=method,
+                )
+            )
 
         # Create instance of the skill class
         try:
@@ -374,13 +382,7 @@ class SkillLoader:
             data.extend(skill.get_registration_data())
         return data
 
-    def call_method(
-        self,
-        skill_name: str,
-        method_name: str,
-        *args,
-        **kwargs
-    ) -> Any:
+    def call_method(self, skill_name: str, method_name: str, *args, **kwargs) -> Any:
         """Call a method on a skill.
 
         Args:
@@ -404,4 +406,3 @@ class SkillLoader:
             raise ValueError(f"Method not found: {skill_name}.{method_name}")
 
         return method(*args, **kwargs)
-

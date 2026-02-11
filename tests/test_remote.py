@@ -19,43 +19,46 @@ from strawberry.skills.remote import (
 # Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def mock_hub_client():
     """Create a mock Hub client."""
     client = Mock()
     # New grouped format: skills grouped by (class, method) with device list
-    client.search_skills = AsyncMock(return_value=[
-        {
-            "path": "MediaSkill.set_volume",
-            "signature": "set_volume(volume: int) -> None",
-            "summary": "Set the TV volume (0-100).",
-            "docstring": "Set the TV volume (0-100).",
-            "devices": ["tv"],
-            "device_names": ["TV"],
-            "device_count": 1,
-            "is_local": False,
-        },
-        {
-            "path": "MediaSkill.play",
-            "signature": "play(url: str) -> bool",
-            "summary": "Play media from URL.",
-            "docstring": "Play media from URL.",
-            "devices": ["speaker"],
-            "device_names": ["Speaker"],
-            "device_count": 1,
-            "is_local": False,
-        },
-        {
-            "path": "TimeSkill.get_time",
-            "signature": "get_time() -> str",
-            "summary": "Get the current time.",
-            "docstring": "Get the current time.",
-            "devices": ["mydevice"],
-            "device_names": ["MyDevice"],
-            "device_count": 1,
-            "is_local": True,
-        },
-    ])
+    client.search_skills = AsyncMock(
+        return_value=[
+            {
+                "path": "MediaSkill.set_volume",
+                "signature": "set_volume(volume: int) -> None",
+                "summary": "Set the TV volume (0-100).",
+                "docstring": "Set the TV volume (0-100).",
+                "devices": ["tv"],
+                "device_names": ["TV"],
+                "device_count": 1,
+                "is_local": False,
+            },
+            {
+                "path": "MediaSkill.play",
+                "signature": "play(url: str) -> bool",
+                "summary": "Play media from URL.",
+                "docstring": "Play media from URL.",
+                "devices": ["speaker"],
+                "device_names": ["Speaker"],
+                "device_count": 1,
+                "is_local": False,
+            },
+            {
+                "path": "TimeSkill.get_time",
+                "signature": "get_time() -> str",
+                "summary": "Get the current time.",
+                "docstring": "Get the current time.",
+                "devices": ["mydevice"],
+                "device_names": ["MyDevice"],
+                "device_count": 1,
+                "is_local": True,
+            },
+        ]
+    )
     client.execute_remote_skill = AsyncMock(return_value="Success!")
     return client
 
@@ -69,6 +72,7 @@ def device_manager(mock_hub_client):
 # =============================================================================
 # DeviceManager Tests
 # =============================================================================
+
 
 class TestDeviceManager:
     """Tests for DeviceManager."""
@@ -160,6 +164,7 @@ class TestDeviceManager:
 # RemoteDeviceProxy Tests
 # =============================================================================
 
+
 class TestRemoteDeviceProxy:
     """Tests for RemoteDeviceProxy."""
 
@@ -179,6 +184,7 @@ class TestRemoteDeviceProxy:
 # RemoteSkillClassProxy Tests
 # =============================================================================
 
+
 class TestRemoteSkillClassProxy:
     """Tests for RemoteSkillClassProxy."""
 
@@ -197,6 +203,7 @@ class TestRemoteSkillClassProxy:
 # =============================================================================
 # RemoteSkillProxy Tests
 # =============================================================================
+
 
 class TestRemoteSkillProxy:
     """Tests for RemoteSkillProxy."""
@@ -231,6 +238,7 @@ class TestRemoteSkillProxy:
 # Mode Prompt Tests
 # =============================================================================
 
+
 class TestModePrompts:
     """Tests for mode switching prompts."""
 
@@ -253,4 +261,3 @@ class TestModePrompts:
         """Should have switch-to-local prompt."""
         assert "offline mode" in SWITCHED_TO_LOCAL_PROMPT
         assert "device.search_skills" in SWITCHED_TO_LOCAL_PROMPT
-

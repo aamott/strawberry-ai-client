@@ -68,7 +68,7 @@ class VADBackend(ABC):
     def get_default_settings(cls) -> Dict[str, Any]:
         """Return default values for all settings."""
         schema = cls.get_settings_schema()
-        return {field.key: field.default for field in schema if hasattr(field, 'key')}
+        return {field.key: field.default for field in schema if hasattr(field, "key")}
 
     def preload(self) -> None:
         """Preload any models or resources needed for inference.

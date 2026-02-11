@@ -1,5 +1,3 @@
-
-
 import pytest
 
 from strawberry.shared.settings.manager import SettingsManager
@@ -11,9 +9,11 @@ from strawberry.shared.settings.view_model import SettingsViewModel
 def settings_manager(tmp_path):
     return SettingsManager(config_dir=tmp_path, auto_save=False)
 
+
 @pytest.fixture
 def view_model(settings_manager):
     return SettingsViewModel(settings_manager)
+
 
 def test_decoupled_provider_template(settings_manager, view_model):
     """Verify that provider sections can be generated using a template."""
@@ -21,7 +21,7 @@ def test_decoupled_provider_template(settings_manager, view_model):
     settings_manager.register(
         "plugins.image.flux",
         "Flux Image Gen",
-        [SettingField("model", "Model", FieldType.TEXT, default="flux-pro")]
+        [SettingField("model", "Model", FieldType.TEXT, default="flux-pro")],
     )
 
     # 2. Register a consumer with a TEMPLATE
@@ -32,7 +32,7 @@ def test_decoupled_provider_template(settings_manager, view_model):
             FieldType.PROVIDER_SELECT,
             provider_type="image",
             default="flux",
-            provider_namespace_template="plugins.image.{value}" # <--- The new feature
+            provider_namespace_template="plugins.image.{value}",  # <--- The new feature
         )
     ]
     settings_manager.register("image_core", "Image Core", schema)
@@ -52,9 +52,7 @@ def test_decoupled_provider_template(settings_manager, view_model):
 
 def test_field_type_list(settings_manager):
     """Verify FieldType.LIST support."""
-    schema = [
-        SettingField("items", "My Items", FieldType.LIST, default=["a", "b"])
-    ]
+    schema = [SettingField("items", "My Items", FieldType.LIST, default=["a", "b"])]
     settings_manager.register("list_test", "List Test", schema)
 
     # Verify default
@@ -64,11 +62,10 @@ def test_field_type_list(settings_manager):
     settings_manager.set("list_test", "items", ["c"])
     assert settings_manager.get("list_test", "items") == ["c"]
 
+
 def test_external_validation(settings_manager):
     """Verify external validation callbacks."""
-    schema = [
-        SettingField("age", "Age", FieldType.NUMBER)
-    ]
+    schema = [SettingField("age", "Age", FieldType.NUMBER)]
     settings_manager.register("validation_test", "Test", schema)
 
     # Register validator
@@ -88,12 +85,10 @@ def test_external_validation(settings_manager):
     error = settings_manager.set("validation_test", "age", -5)
     assert error == "Age cannot be negative"
 
+
 def test_metadata_field():
     """Verify that metadata is correctly stored in SettingField."""
     field = SettingField(
-        "test_key",
-        "Test Label",
-        FieldType.TEXT,
-        metadata={"help_text": "Some help"}
+        "test_key", "Test Label", FieldType.TEXT, metadata={"help_text": "Some help"}
     )
     assert field.metadata == {"help_text": "Some help"}

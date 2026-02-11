@@ -35,6 +35,7 @@ class StatusBar(QFrame):
         self._voice_status = VoiceStatus.READY
         # Read version from QApplication metadata; fall back to "0.0.0"
         from PySide6.QtWidgets import QApplication
+
         app = QApplication.instance()
         self._version = app.applicationVersion() if app else "0.0.0"
         self._flash_timer: Optional[QTimer] = None
@@ -131,7 +132,9 @@ class StatusBar(QFrame):
         )
         self._voice_label.setText(f"{icon} {text}")
 
-    def set_connection(self, status: ConnectionStatus, details: Optional[str] = None) -> None:
+    def set_connection(
+        self, status: ConnectionStatus, details: Optional[str] = None
+    ) -> None:
         """Update the connection status.
 
         Args:

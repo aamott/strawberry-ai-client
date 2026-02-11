@@ -217,6 +217,7 @@ class VoiceComponentManager:
                     self.components.vad.preload()
 
                 from .vad.processor import VADConfig
+
                 self.components.vad_processor = VADProcessor(
                     self.components.vad,
                     VADConfig(),
@@ -348,8 +349,8 @@ class VoiceComponentManager:
                     target = self.tts_backend_names[0] if self.tts_backend_names else None
 
                 if not target or not await self.init_tts_backend(target):
-                     # Fallback loop
-                     await self._init_tts(self.tts_backend_names)
+                    # Fallback loop
+                    await self._init_tts(self.tts_backend_names)
             except Exception:
                 success = False
 
@@ -401,7 +402,11 @@ class VoiceComponentManager:
 
         try:
             if hasattr(cls, "is_healthy") and not cls.is_healthy():
-                error = cls.health_check_error() if hasattr(cls, "health_check_error") else None
+                error = (
+                    cls.health_check_error()
+                    if hasattr(cls, "health_check_error")
+                    else None
+                )
                 return False, error or "Backend unavailable"
             return True, None
         except Exception as e:

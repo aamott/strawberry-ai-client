@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 class SpeakerState(Enum):
     """States for the speaker FSM."""
 
-    IDLE = auto()        # No speech queued or playing
-    SPEAKING = auto()    # TTS playback in progress
-    INTERRUPTED = auto() # Playback stopped, pending speech buffered
+    IDLE = auto()  # No speech queued or playing
+    SPEAKING = auto()  # TTS playback in progress
+    INTERRUPTED = auto()  # Playback stopped, pending speech buffered
 
 
 # Valid speaker state transitions

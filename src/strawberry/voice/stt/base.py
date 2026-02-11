@@ -18,6 +18,7 @@ class TranscriptionResult:
         words: Optional list of word-level results with timing
         language: Detected language code, if available
     """
+
     text: str
     confidence: float = 1.0
     is_final: bool = True
@@ -81,7 +82,7 @@ class STTEngine(ABC):
             Dictionary mapping setting keys to their default values
         """
         schema = cls.get_settings_schema()
-        return {field.key: field.default for field in schema if hasattr(field, 'key')}
+        return {field.key: field.default for field in schema if hasattr(field, "key")}
 
     def transcribe_file(self, file_path: str) -> TranscriptionResult:
         """Transcribe audio from file.
@@ -97,7 +98,7 @@ class STTEngine(ABC):
         """
         import wave
 
-        with wave.open(file_path, 'rb') as wf:
+        with wave.open(file_path, "rb") as wf:
             audio = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
 
         return self.transcribe(audio)
@@ -115,5 +116,3 @@ class STTEngine(ABC):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cleanup()
         return False
-
-

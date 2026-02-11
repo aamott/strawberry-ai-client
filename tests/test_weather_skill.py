@@ -28,7 +28,9 @@ def test_get_current_weather_requires_api_key(monkeypatch: pytest.MonkeyPatch) -
     assert result["error"] == "Weather API not configured"
 
 
-def test_get_current_weather_geocodes_and_uses_lat_lon(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_current_weather_geocodes_and_uses_lat_lon(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Current weather uses geocoding and then queries weather by lat/lon."""
     monkeypatch.setenv("WEATHER_API_KEY", "test-key")
 

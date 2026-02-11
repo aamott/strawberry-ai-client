@@ -56,6 +56,7 @@ def create_pipeline(
 
 # --- State Tests ---
 
+
 def test_pipeline_initial_state():
     """Pipeline should start in IDLE state."""
     pipeline = create_pipeline()
@@ -102,6 +103,7 @@ def test_pipeline_pause_and_resume():
 
 # --- Event Tests ---
 
+
 def test_pipeline_emits_state_changed_events():
     """Pipeline should emit STATE_CHANGED events."""
     pipeline = create_pipeline()
@@ -136,11 +138,10 @@ def test_pipeline_emits_wake_word_event():
 
 # --- Text Processing Tests ---
 
+
 def test_pipeline_process_text():
     """process_text() should bypass audio and return response."""
-    pipeline = create_pipeline(
-        response_handler=lambda x: f"Response to: {x}"
-    )
+    pipeline = create_pipeline(response_handler=lambda x: f"Response to: {x}")
 
     response = pipeline.process_text("turn on the lights")
 
@@ -157,6 +158,7 @@ def test_pipeline_default_echo_handler():
 
 
 # --- Config Tests ---
+
 
 def test_pipeline_config_defaults():
     """PipelineConfig should have sensible defaults."""
@@ -194,6 +196,7 @@ def test_pipeline_uses_custom_config():
 
 
 # --- Integration Tests ---
+
 
 def test_pipeline_full_conversation_flow():
     """Test complete conversation: wake → record → transcribe → respond → speak."""
@@ -265,4 +268,3 @@ def test_pipeline_handler_error_doesnt_crash():
 
     # Good handler should still have received events
     assert len(good_events) > 0
-

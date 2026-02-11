@@ -163,7 +163,9 @@ class LocalSessionDB:
             cursor.execute("PRAGMA table_info(local_sessions)")
             existing_cols = {row[1] for row in cursor.fetchall()}
             if "last_mode_prompt" not in existing_cols:
-                cursor.execute("ALTER TABLE local_sessions ADD COLUMN last_mode_prompt TEXT")
+                cursor.execute(
+                    "ALTER TABLE local_sessions ADD COLUMN last_mode_prompt TEXT"
+                )
                 conn.commit()
         except Exception:
             pass  # Best-effort migration
@@ -243,9 +245,7 @@ class LocalSessionDB:
         cursor = conn.cursor()
 
         if include_deleted:
-            cursor.execute(
-                "SELECT * FROM local_sessions ORDER BY last_activity DESC"
-            )
+            cursor.execute("SELECT * FROM local_sessions ORDER BY last_activity DESC")
         else:
             cursor.execute(
                 """
@@ -330,7 +330,9 @@ class LocalSessionDB:
             )
         else:
             cursor.execute("DELETE FROM local_sessions WHERE id = ?", (session_id,))
-            cursor.execute("DELETE FROM local_messages WHERE session_id = ?", (session_id,))
+            cursor.execute(
+                "DELETE FROM local_messages WHERE session_id = ?", (session_id,)
+            )
 
         conn.commit()
         return cursor.rowcount > 0
@@ -392,9 +394,7 @@ class LocalSessionDB:
         """
         conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT 1 FROM local_sessions WHERE hub_id = ?", (hub_id,)
-        )
+        cursor.execute("SELECT 1 FROM local_sessions WHERE hub_id = ?", (hub_id,))
         return cursor.fetchone() is not None
 
     def import_remote_session(self, remote: Dict[str, Any]) -> Session:
@@ -447,9 +447,7 @@ class LocalSessionDB:
     # Message Operations
     # =========================================================================
 
-    def add_message(
-        self, session_id: str, role: str, content: str
-    ) -> Message:
+    def add_message(self, session_id: str, role: str, content: str) -> Message:
         """Add a message to a session.
 
         Args:
@@ -517,7 +515,9 @@ class LocalSessionDB:
         )
         return [self._row_to_message(row) for row in cursor.fetchall()]
 
-    def mark_message_synced(self, message_id: int, hub_message_id: Optional[int] = None) -> None:
+    def mark_message_synced(
+        self, message_id: int, hub_message_id: Optional[int] = None
+    ) -> None:
         """Mark a message as synced.
 
         Args:
@@ -635,9 +635,7 @@ class LocalSessionDB:
         """
         conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM sync_queue ORDER BY created_at ASC"
-        )
+        cursor.execute("SELECT * FROM sync_queue ORDER BY created_at ASC")
         return [self._row_to_sync_op(row) for row in cursor.fetchall()]
 
     def get_pending_sync_count(self) -> int:

@@ -91,9 +91,7 @@ class SettingsCLI:
                 pending = self.pending_changes.get(namespace, {}).get(field.key)
                 self._print_field(field, value, pending)
 
-    def _print_field(
-        self, field: SettingField, value: Any, pending: Any = None
-    ) -> None:
+    def _print_field(self, field: SettingField, value: Any, pending: Any = None) -> None:
         """Print a single field with its value.
 
         Args:
@@ -144,10 +142,16 @@ class SettingsCLI:
             case FieldType.NUMBER | FieldType.SLIDER:
                 return f"{value}{self._format_range(field)}"
             case FieldType.LIST | FieldType.PROVIDER_SELECT:
-                return " → ".join(str(v) for v in value) if isinstance(value, list) else str(value)
+                return (
+                    " → ".join(str(v) for v in value)
+                    if isinstance(value, list)
+                    else str(value)
+                )
             case FieldType.SELECT | FieldType.DYNAMIC_SELECT:
                 opts = field.options or []
-                return f"{value} (options: {', '.join(opts[:3])}...)" if opts else str(value)
+                return (
+                    f"{value} (options: {', '.join(opts[:3])}...)" if opts else str(value)
+                )
             case FieldType.COLOR:
                 return value if value else "#000000"
             case FieldType.ACTION:
@@ -333,7 +337,9 @@ class SettingsCLI:
         except (ValueError, IndexError):
             print("Invalid index")
 
-    def _list_cmd_view_detail(self, items: list[str], cmd: str, field: SettingField) -> None:
+    def _list_cmd_view_detail(
+        self, items: list[str], cmd: str, field: SettingField
+    ) -> None:
         """Handle numeric input to view item details."""
         try:
             idx = int(cmd) - 1
@@ -362,8 +368,7 @@ class SettingsCLI:
 
         current = self.get_value(namespace, key)
         items = (
-            list(current) if isinstance(current, list)
-            else ([current] if current else [])
+            list(current) if isinstance(current, list) else ([current] if current else [])
         )
 
         print(f"\n═══ Edit: {field.label} ═══")
@@ -539,21 +544,15 @@ def run_settings_command(
     two_arg_cmds: dict[str, tuple[str, Any]] = {
         "get": (
             "Usage: --settings get <namespace> <key>",
-            lambda: (
-                print(cli.get_value(args[0], args[1])), 0
-            )[1],
+            lambda: (print(cli.get_value(args[0], args[1])), 0)[1],
         ),
         "edit": (
             "Usage: --settings edit <namespace> <key>",
-            lambda: (
-                cli.edit_list_field(args[0], args[1]), 0
-            )[1],
+            lambda: (cli.edit_list_field(args[0], args[1]), 0)[1],
         ),
         "reset": (
             "Usage: --settings reset <namespace> <key>",
-            lambda: (
-                cli.reset_field(args[0], args[1]), 0
-            )[1],
+            lambda: (cli.reset_field(args[0], args[1]), 0)[1],
         ),
     }
     if command in two_arg_cmds:

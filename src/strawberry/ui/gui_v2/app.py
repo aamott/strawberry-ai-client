@@ -382,9 +382,7 @@ class IntegratedApp:
         )
         if not has_text and event.content:
             self._current_assistant_card.append_text(event.content)
-        self._window.finish_assistant_message(
-            self._current_assistant_card.message.id
-        )
+        self._window.finish_assistant_message(self._current_assistant_card.message.id)
         self._maybe_speak_response(event.content)
         self._current_assistant_card = None
 
@@ -409,7 +407,9 @@ class IntegratedApp:
         if event.connected:
             self._window.set_connection_status(ConnectionStatus.CONNECTED)
             self._window.toast.show(
-                "Hub connected", ToastLevel.SUCCESS, duration_ms=2500,
+                "Hub connected",
+                ToastLevel.SUCCESS,
+                duration_ms=2500,
             )
         else:
             self._window.set_connection_status(
@@ -427,19 +427,23 @@ class IntegratedApp:
 
         # Load failures (errors)
         for failure in event.failures:
-            toast_payloads.append((
-                f"Skill failed to load: {failure['source']}\n{failure['error']}",
-                ToastLevel.ERROR,
-            ))
+            toast_payloads.append(
+                (
+                    f"Skill failed to load: {failure['source']}\n{failure['error']}",
+                    ToastLevel.ERROR,
+                )
+            )
 
         # Loaded but unhealthy (warnings)
         for skill in event.skills:
             if not skill.get("healthy", True):
                 msg = skill.get("health_message", "Unknown issue")
-                toast_payloads.append((
-                    f"{skill['name']}: {msg}",
-                    ToastLevel.WARNING,
-                ))
+                toast_payloads.append(
+                    (
+                        f"{skill['name']}: {msg}",
+                        ToastLevel.WARNING,
+                    )
+                )
 
         if toast_payloads:
             logger.info("Emitting skill health/load toasts: %s", toast_payloads)
@@ -458,7 +462,9 @@ class IntegratedApp:
         self._window.set_offline_mode(not event.online)
         if event.online:
             self._window.toast.show(
-                "Online mode restored", ToastLevel.SUCCESS, duration_ms=2500,
+                "Online mode restored",
+                ToastLevel.SUCCESS,
+                duration_ms=2500,
             )
         else:
             self._window.toast.show(
@@ -557,7 +563,9 @@ class IntegratedApp:
                     logger.warning("VoiceCore failed to start")
                     self._window.set_voice_status(VoiceStatus.ERROR)
             else:
-                logger.info("VoiceCore available but autostart disabled — will start on demand")
+                logger.info(
+                    "VoiceCore available but autostart disabled — will start on demand"
+                )
 
         # Try to connect to Hub
         device_name = self._core._get_setting("device.name", "Strawberry Spoke")
@@ -669,9 +677,7 @@ def run_app_integrated(
     )
 
     # Create integrated app
-    integrated = IntegratedApp(
-        window, spoke_core, loop, voice_core, settings_manager
-    )
+    integrated = IntegratedApp(window, spoke_core, loop, voice_core, settings_manager)
 
     # Start SpokeCore after window is shown
     window.show()

@@ -194,7 +194,10 @@ class SpokeCore:
 
         # Check cache first
         now = time.time()
-        if self._models_cache and (now - self._models_cache_time) < self._models_cache_ttl:
+        if (
+            self._models_cache
+            and (now - self._models_cache_time) < self._models_cache_ttl
+        ):
             return self._models_cache
 
         try:
@@ -265,10 +268,12 @@ class SpokeCore:
             self._skills.load_skills()
 
             # Emit SkillsLoaded so the GUI can show toasts for failures
-            await self._emit(SkillsLoaded(
-                skills=self._skills.get_skill_summaries(),
-                failures=self._skills.get_load_failures(),
-            ))
+            await self._emit(
+                SkillsLoaded(
+                    skills=self._skills.get_skill_summaries(),
+                    failures=self._skills.get_load_failures(),
+                )
+            )
 
             # Initialize agent runners
             self._hub_runner = HubAgentRunner(
@@ -313,7 +318,6 @@ class SpokeCore:
         self._sessions[session.id] = session
         return session
 
-
     def get_session(self, session_id: str) -> Optional[ChatSession]:
         """Get session by ID."""
         return self._sessions.get(session_id)
@@ -342,7 +346,9 @@ class SpokeCore:
         try:
             # Add user message
             session.add_message("user", text)
-            await self._emit(MessageAdded(session_id=session_id, role="user", content=text))
+            await self._emit(
+                MessageAdded(session_id=session_id, role="user", content=text)
+            )
 
             # Deterministic tool execution hooks (for testing).
             #
@@ -356,7 +362,9 @@ class SpokeCore:
                 # If the user explicitly requests search_skills, run it immediately.
                 # This makes tool-use tests deterministic and provides the model with
                 # authoritative tool output.
-                requested_search = "search_skills" in text.lower() and "use" in text.lower()
+                requested_search = (
+                    "search_skills" in text.lower() and "use" in text.lower()
+                )
                 if requested_search:
                     await self._emit(
                         ToolCallStarted(
@@ -466,7 +474,10 @@ class SpokeCore:
 
         # Check if online state changed and update mode notice
         current_online = self.is_online()
-        if self._last_online_state is not None and current_online != self._last_online_state:
+        if (
+            self._last_online_state is not None
+            and current_online != self._last_online_state
+        ):
             if current_online:
                 self._pending_mode_notice = (
                     "Runtime mode switched to ONLINE (Hub). "
@@ -660,4 +671,3 @@ class SpokeCore:
             raise ValueError(f"Unknown action: {action}")
 
         return result
-

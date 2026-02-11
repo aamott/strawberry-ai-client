@@ -130,7 +130,7 @@ class CompactFormatter:
         """Truncate text with ellipsis if too long."""
         if len(text) <= max_len:
             return text
-        return text[:max_len - 3] + "..."
+        return text[: max_len - 3] + "..."
 
     def format_tool_call(self, name: str, arguments: dict) -> str:
         """Format a tool call start with truncated arguments."""

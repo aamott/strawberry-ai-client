@@ -103,6 +103,7 @@ def generate_sine_wave(
     Returns:
         Generator function for use with MockAudioBackend
     """
+
     def generator(frame_length: int, frame_index: int) -> np.ndarray:
         start_sample = frame_index * frame_length
         t = np.arange(start_sample, start_sample + frame_length) / sample_rate
@@ -121,8 +122,8 @@ def generate_noise(amplitude: int = 5000) -> Callable[[int, int], np.ndarray]:
     Returns:
         Generator function for use with MockAudioBackend
     """
+
     def generator(frame_length: int, frame_index: int) -> np.ndarray:
         return np.random.randint(-amplitude, amplitude, frame_length, dtype=np.int16)
 
     return generator
-

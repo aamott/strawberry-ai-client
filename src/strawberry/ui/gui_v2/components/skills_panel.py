@@ -231,9 +231,7 @@ class SkillsPanel(QFrame):
 
         # Loaded skills section
         if skills:
-            loaded_header = QLabel(
-                f"{Icons.SUCCESS}  Loaded ({len(skills)})"
-            )
+            loaded_header = QLabel(f"{Icons.SUCCESS}  Loaded ({len(skills)})")
             loaded_header.setObjectName("SkillsSectionHeader")
             self._list_layout.addWidget(loaded_header)
 

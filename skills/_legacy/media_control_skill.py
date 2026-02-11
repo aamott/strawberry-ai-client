@@ -64,7 +64,7 @@ class MediaControlSkill:
             "artist": "Sample Artist",
             "album": "Sample Album",
             "duration": "3:45",
-            "position": "1:23"
+            "position": "1:23",
         }
 
     def _send_media_command(self, command: str) -> str:
@@ -130,11 +130,17 @@ class MediaControlSkill:
             elif system == "Darwin":  # macOS
                 # macOS uses AppleScript for media control
                 if command == "play":
-                    subprocess.run(["osascript", "-e", 'tell application "Spotify" to play'])
+                    subprocess.run(
+                        ["osascript", "-e", 'tell application "Spotify" to play']
+                    )
                 elif command == "pause":
-                    subprocess.run(["osascript", "-e", 'tell application "Spotify" to pause'])
+                    subprocess.run(
+                        ["osascript", "-e", 'tell application "Spotify" to pause']
+                    )
                 elif command == "next":
-                    subprocess.run(["osascript", "-e", 'tell application "Spotify" to next track'])
+                    subprocess.run(
+                        ["osascript", "-e", 'tell application "Spotify" to next track']
+                    )
                 elif command == "previous":
                     subprocess.run(
                         [
@@ -172,7 +178,7 @@ class MusicLibrarySkill:
                 "title": f"Song matching '{query}'",
                 "artist": "Sample Artist",
                 "album": "Sample Album",
-                "duration": "3:30"
+                "duration": "3:30",
             }
         ][:max_results]
 

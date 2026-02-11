@@ -108,7 +108,9 @@ class _ToastCard(QFrame):
     def _fade_out(self) -> None:
         """Fade out and delete self."""
         fade_out = QPropertyAnimation(
-            self._opacity_effect, b"opacity", self,
+            self._opacity_effect,
+            b"opacity",
+            self,
         )
         fade_out.setDuration(300)
         fade_out.setStartValue(1.0)

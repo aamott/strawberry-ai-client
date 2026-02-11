@@ -32,7 +32,9 @@ class AIStudioTTS(TTSEngine):
     """Text-to-Speech using Google AI Studio (Gemini) speech generation."""
 
     name: ClassVar[str] = "Google AI Studio (Gemini) TTS"
-    description: ClassVar[str] = "Cloud TTS via Gemini speech-generation models (requires API key)."
+    description: ClassVar[str] = (
+        "Cloud TTS via Gemini speech-generation models (requires API key)."
+    )
 
     SAMPLE_RATE: ClassVar[int] = 24000
     DEFAULT_MODEL: ClassVar[str] = "gemini-2.5-flash-preview-tts"
@@ -120,7 +122,9 @@ class AIStudioTTS(TTSEngine):
 
     def synthesize(self, text: str) -> AudioChunk:
         if not text or not text.strip():
-            return AudioChunk(audio=np.array([], dtype=np.int16), sample_rate=self.SAMPLE_RATE)
+            return AudioChunk(
+                audio=np.array([], dtype=np.int16), sample_rate=self.SAMPLE_RATE
+            )
 
         assert types is not None
 

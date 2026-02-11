@@ -27,6 +27,7 @@ load_dotenv(_project_root / ".env")
 if not os.environ.get("HUB_DEVICE_TOKEN"):
     os.environ["HUB_DEVICE_TOKEN"] = "dummy-for-testing"
 
+
 # Skip all tests if no API keys are configured and Ollama not available
 def _check_llm_available() -> bool:
     """Check if any LLM backend is available."""
@@ -35,6 +36,7 @@ def _check_llm_available() -> bool:
     # Check for Ollama
     try:
         import httpx
+
         response = httpx.get("http://localhost:11434/api/tags", timeout=2.0)
         return response.status_code == 200
     except Exception:
@@ -43,7 +45,7 @@ def _check_llm_available() -> bool:
 
 pytestmark = pytest.mark.skipif(
     not _check_llm_available(),
-    reason="No LLM backend available (need GOOGLE_AI_STUDIO_API_KEY or Ollama)"
+    reason="No LLM backend available (need GOOGLE_AI_STUDIO_API_KEY or Ollama)",
 )
 
 
@@ -89,6 +91,7 @@ class TestSpokeCoreToolExecution:
 
             # Should have received at least a MessageAdded event
             from strawberry.spoke_core import MessageAdded
+
             message_events = [e for e in events if isinstance(e, MessageAdded)]
             assert len(message_events) >= 1, f"Expected message events, got: {events}"
 
@@ -118,8 +121,7 @@ class TestSpokeCoreToolExecution:
         try:
             # Ask about weather - should trigger search_skills or direct tool call
             await core.send_message(
-                session.id,
-                "What skills do you have? Use search_skills to find out."
+                session.id, "What skills do you have? Use search_skills to find out."
             )
             await asyncio.sleep(2.0)  # Allow time for LLM + tool execution
 
@@ -173,7 +175,7 @@ class TestSpokeCoreToolExecution:
                     "You MUST use the python_exec tool to calculate: "
                     "device.CalculatorSkill.multiply(7, 8). "
                     "Do not explain, just run the code."
-                )
+                ),
             )
             await asyncio.sleep(3.0)  # Increased timeout for robustness
 
@@ -185,7 +187,9 @@ class TestSpokeCoreToolExecution:
 
             tool_starts = [e for e in events if isinstance(e, ToolCallStarted)]
             tool_results = [e for e in events if isinstance(e, ToolCallResult)]
-            messages = [e for e in events if isinstance(e, MessageAdded) and e.role == "assistant"]
+            messages = [
+                e for e in events if isinstance(e, MessageAdded) and e.role == "assistant"
+            ]
 
             # Log what we got
             print(f"\nTool calls started: {[t.tool_name for t in tool_starts]}")
@@ -275,7 +279,9 @@ if __name__ == "__main__":
 
     async def main():
         print("Running CLI live integration tests...")
-        print(f"GOOGLE_AI_STUDIO_API_KEY set: {bool(os.environ.get('GOOGLE_AI_STUDIO_API_KEY'))}")
+        print(
+            f"GOOGLE_AI_STUDIO_API_KEY set: {bool(os.environ.get('GOOGLE_AI_STUDIO_API_KEY'))}"
+        )
 
         from strawberry.spoke_core import (
             MessageAdded,
@@ -305,8 +311,7 @@ if __name__ == "__main__":
 
             print("\nSending: 'What skills do you have? Use search_skills.'")
             await core.send_message(
-                session.id,
-                "What skills do you have? Use search_skills to find out."
+                session.id, "What skills do you have? Use search_skills to find out."
             )
             await asyncio.sleep(3.0)
 

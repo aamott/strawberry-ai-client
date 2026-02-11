@@ -29,6 +29,7 @@ _SOPRO_AVAILABLE = False
 _SOPRO_IMPORT_ERROR: str | None = None
 try:
     import sopro  # noqa: F401
+
     _SOPRO_AVAILABLE = True
 except ImportError as e:
     _SOPRO_IMPORT_ERROR = f"sopro not installed. Install with: pip install sopro. ({e})"
@@ -59,8 +60,7 @@ class SoproTTS(TTSEngine):
     # Module metadata for discovery
     name: ClassVar[str] = "Sopro TTS"
     description: ClassVar[str] = (
-        "Lightweight TTS with zero-shot voice cloning. "
-        "Runs on CPU. Free and open source."
+        "Lightweight TTS with zero-shot voice cloning. Runs on CPU. Free and open source."
     )
 
     # Sopro uses Mimi codec, outputs 24kHz

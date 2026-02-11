@@ -106,4 +106,3 @@ def save_settings(settings: "Settings", config_path: Path = DEFAULT_CONFIG_PATH)
             updates.append(YamlUpdate(path=path, value=value))
 
         apply_yaml_updates_preserve_comments(config_path, updates)
-

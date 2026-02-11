@@ -179,7 +179,10 @@ class AnimatedWidget(QObject):
             duration: Animation duration in milliseconds
             on_finished: Optional callback when animation completes
         """
-        if self._animation and self._animation.state() == QPropertyAnimation.State.Running:
+        if (
+            self._animation
+            and self._animation.state() == QPropertyAnimation.State.Running
+        ):
             self._animation.stop()
 
         self._animation = QPropertyAnimation(self, b"animated_height")

@@ -1,6 +1,5 @@
 """Tests for STT module discovery."""
 
-
 from strawberry.voice.stt import (
     STTEngine,
     discover_stt_modules,

@@ -20,9 +20,11 @@ from strawberry.skills.sandbox.process import DenoNotFoundError, DenoProcessMana
 # Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def mock_skill_info():
     """Create a mock skill info."""
+
     class MockTimeSkill:
         def get_time(self):
             return "12:00 PM"
@@ -84,6 +86,7 @@ def mock_skill_method():
 # ProxyGenerator Tests
 # =============================================================================
 
+
 class TestProxyGenerator:
     """Tests for ProxyGenerator."""
 
@@ -131,6 +134,7 @@ class TestProxyGenerator:
 # Gatekeeper Tests
 # =============================================================================
 
+
 class TestGatekeeper:
     """Tests for Gatekeeper."""
 
@@ -157,6 +161,7 @@ class TestGatekeeper:
 
     def test_execute_with_args(self, mock_loader):
         """Should pass arguments to skill method."""
+
         class MockSkill:
             def add(self, a, b):
                 return a + b
@@ -165,12 +170,14 @@ class TestGatekeeper:
         mock_skill = SkillInfo(
             name="MathSkill",
             class_obj=MockSkill,
-            methods=[SkillMethod(
-                name="add",
-                signature="add(a, b)",
-                docstring="Add two numbers.",
-                callable=instance.add,
-            )],
+            methods=[
+                SkillMethod(
+                    name="add",
+                    signature="add(a, b)",
+                    docstring="Add two numbers.",
+                    callable=instance.add,
+                )
+            ],
             module_path=Path("test.py"),
         )
         mock_skill.instance = instance
@@ -183,6 +190,7 @@ class TestGatekeeper:
 
     def test_refresh_updates_allow_list(self, gatekeeper, mock_loader):
         """Should update allow-list on refresh."""
+
         # Add a new skill
         class NewMockSkill:
             def new_method(self):
@@ -224,6 +232,7 @@ class TestGatekeeper:
 # DenoProcessManager Tests
 # =============================================================================
 
+
 class TestDenoProcessManager:
     """Tests for DenoProcessManager."""
 
@@ -251,6 +260,7 @@ class TestDenoProcessManager:
 # BridgeClient Tests
 # =============================================================================
 
+
 class TestBridgeClient:
     """Tests for BridgeClient."""
 
@@ -270,6 +280,7 @@ class TestBridgeClient:
 # =============================================================================
 # SandboxExecutor Tests
 # =============================================================================
+
 
 class TestSandboxExecutor:
     """Tests for SandboxExecutor."""
@@ -300,7 +311,7 @@ class TestSandboxExecutor:
         config = SandboxConfig(enabled=False)
         executor = SandboxExecutor(gatekeeper, proxy_generator, config)
 
-        result = await executor.execute('print(device.TimeSkill.get_time())')
+        result = await executor.execute("print(device.TimeSkill.get_time())")
 
         assert result.success
         assert result.output == "12:00 PM"
@@ -322,7 +333,9 @@ class TestSandboxExecutor:
         config = SandboxConfig(enabled=False)
         executor = SandboxExecutor(gatekeeper, proxy_generator, config)
 
-        result = await executor.execute('print(device.describe_function("TimeSkill.get_time"))')
+        result = await executor.execute(
+            'print(device.describe_function("TimeSkill.get_time"))'
+        )
 
         assert result.success
         assert "get_time" in result.output
@@ -344,7 +357,7 @@ class TestSandboxExecutor:
         config = SandboxConfig(enabled=False)
         executor = SandboxExecutor(gatekeeper, proxy_generator, config)
 
-        result = await executor.execute('print(device.FakeSkill.method())')
+        result = await executor.execute("print(device.FakeSkill.method())")
 
         assert not result.success
         # Error should indicate something went wrong with the skill access
@@ -373,6 +386,7 @@ class TestSandboxExecutor:
 # =============================================================================
 # ExecutionResult Tests
 # =============================================================================
+
 
 class TestExecutionResult:
     """Tests for ExecutionResult dataclass."""
@@ -403,6 +417,7 @@ class TestExecutionResult:
 # SandboxConfig Tests
 # =============================================================================
 
+
 class TestSandboxConfig:
     """Tests for SandboxConfig dataclass."""
 
@@ -426,4 +441,3 @@ class TestSandboxConfig:
         assert config.memory_limit_mb == 256
         assert config.deno_path == "/usr/local/bin/deno"
         assert not config.enabled
-

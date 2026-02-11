@@ -30,6 +30,7 @@ _SOPRANO_AVAILABLE = False
 _SOPRANO_IMPORT_ERROR: str | None = None
 try:
     from soprano import SopranoTTS as _SopranoModel  # noqa: F401
+
     _SOPRANO_AVAILABLE = True
 except ImportError as e:
     _SOPRANO_IMPORT_ERROR = (

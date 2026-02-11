@@ -207,9 +207,7 @@ def print_welcome(model: str, online: bool) -> None:
         flush=True,
     )
     print(
-        styled("│", border)
-        + f"   Model: {model[:20]:<20}     "
-        + styled("│", border),
+        styled("│", border) + f"   Model: {model[:20]:<20}     " + styled("│", border),
         flush=True,
     )
     print(styled("╰─────────────────────────────────────╯", border), flush=True)

@@ -17,6 +17,7 @@ from strawberry.voice.audio.stream import AudioStream
 
 # --- MockAudioBackend Tests ---
 
+
 def test_mock_backend_generates_silence_by_default():
     """Mock backend should generate silent frames by default."""
     backend = MockAudioBackend(sample_rate=16000, frame_length_ms=30)
@@ -93,12 +94,14 @@ def test_mock_backend_raises_when_not_started():
 
 # --- AudioStream Tests ---
 
+
 def test_stream_distributes_to_subscribers():
     """AudioStream should distribute frames to all subscribers."""
     backend = MockAudioBackend()
     stream = AudioStream(backend, buffer_size=10)
 
     received_frames = []
+
     def subscriber(frame):
         received_frames.append(frame)
 
@@ -173,6 +176,7 @@ def test_stream_unsubscribe():
     stream = AudioStream(backend, buffer_size=10)
 
     received = []
+
     def subscriber(frame):
         received.append(frame)
 
@@ -232,4 +236,3 @@ def test_stream_handles_subscriber_error():
 
     # Good subscriber should still have received frames
     assert len(good_received) >= 1
-

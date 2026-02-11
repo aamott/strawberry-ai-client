@@ -3,6 +3,7 @@
 NOTE: Widget tests that require a QApplication are skipped if no display is
 available (headless CI).
 """
+
 import re
 from unittest.mock import patch
 
@@ -10,12 +11,14 @@ from unittest.mock import patch
 # Helper: Check if Qt GUI tests can run
 # ────────────────────────────────────────────────────────────────────────────
 
+
 def qt_available() -> bool:
     """Return True if Qt GUI tests can run (display + QApplication)."""
     try:
         import os
 
         from PySide6.QtWidgets import QApplication
+
         # Headless check: $DISPLAY or $WAYLAND_DISPLAY
         if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
             return False
@@ -30,6 +33,7 @@ def qt_available() -> bool:
 # ────────────────────────────────────────────────────────────────────────────
 # Raw Output Rendering: Code blocks should NOT be stripped
 # ────────────────────────────────────────────────────────────────────────────
+
 
 class TestRawOutputRendering:
     """LLM responses containing code blocks should show them verbatim."""
@@ -50,10 +54,10 @@ class TestRawOutputRendering:
         assert "```python" not in stripped
 
 
-
 # ────────────────────────────────────────────────────────────────────────────
 # Session Refresh on Hub Connect (unit test, no GUI)
 # ────────────────────────────────────────────────────────────────────────────
+
 
 class TestSessionRefreshLogic:
     """_update_hub_status should trigger session refresh."""

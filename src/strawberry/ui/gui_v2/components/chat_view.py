@@ -40,7 +40,9 @@ class OfflineBanner(QFrame):
         layout.setSpacing(8)
 
         # Warning icon and message
-        self._label = QLabel(f"{Icons.WARNING} Running locally. Some features may be limited.")
+        self._label = QLabel(
+            f"{Icons.WARNING} Running locally. Some features may be limited."
+        )
         layout.addWidget(self._label, 1)
 
         # Dismiss button

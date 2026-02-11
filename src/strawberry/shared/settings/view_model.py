@@ -183,9 +183,7 @@ class SettingsViewModel:
         parts = namespace.split(".")
         return len(parts) >= 3 and parts[0] == "voice"
 
-    def _group_fields(
-        self, schema: List[SettingField]
-    ) -> Dict[str, List[SettingField]]:
+    def _group_fields(self, schema: List[SettingField]) -> Dict[str, List[SettingField]]:
         """Group fields by their group attribute.
 
         Args:
@@ -276,8 +274,7 @@ class SettingsViewModel:
                 # Determine provider namespace using template or fallback
                 if setting_field.provider_namespace_template:
                     provider_ns = setting_field.provider_namespace_template.format(
-                        provider_type=provider_type,
-                        value=selected
+                        provider_type=provider_type, value=selected
                     )
                 else:
                     # Default/Fallback behavior (backward compatibility)
@@ -378,9 +375,7 @@ class SettingsViewModel:
     # Validation
     # ─────────────────────────────────────────────────────────────────
 
-    def validate_field(
-        self, namespace: str, key: str, value: Any
-    ) -> ValidationResult:
+    def validate_field(self, namespace: str, key: str, value: Any) -> ValidationResult:
         """Validate a field value.
 
         Args:

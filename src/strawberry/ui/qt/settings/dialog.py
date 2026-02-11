@@ -100,8 +100,7 @@ class SettingsDialog(QDialog):
         self._discard_btn.setEnabled(False)
 
         button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save |
-            QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         button_box.accepted.connect(self._on_save)
         button_box.rejected.connect(self.reject)
@@ -128,8 +127,7 @@ class SettingsDialog(QDialog):
         # Sort tabs (General first, then alphabetical)
         tab_order = ["General", "Voice", "Skills"]
         sorted_tabs = sorted(
-            tabs.keys(),
-            key=lambda t: (tab_order.index(t) if t in tab_order else 100, t)
+            tabs.keys(), key=lambda t: (tab_order.index(t) if t in tab_order else 100, t)
         )
 
         for tab_name in sorted_tabs:
@@ -201,9 +199,7 @@ class SettingsDialog(QDialog):
 
             for field in fields:
                 current_value = values.get(field.key, field.default)
-                widget = self._create_field_widget(
-                    namespace.name, field, current_value
-                )
+                widget = self._create_field_widget(namespace.name, field, current_value)
                 layout.addWidget(widget)
 
         return section
@@ -343,7 +339,7 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "Validation Error",
-                "Please fix the following errors:\n\n" + "\n".join(errors)
+                "Please fix the following errors:\n\n" + "\n".join(errors),
             )
             return
 
@@ -383,7 +379,7 @@ class SettingsDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     "Validation Error",
-                    "Please fix the following errors:\n\n" + "\n".join(errors)
+                    "Please fix the following errors:\n\n" + "\n".join(errors),
                 )
                 return
 

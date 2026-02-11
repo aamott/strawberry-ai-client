@@ -95,16 +95,12 @@ class TenVAD(VADBackend):
         """
         # TEN VAD only supports 16kHz
         if sample_rate != 16000:
-            raise ValueError(
-                f"TEN VAD requires 16000 Hz sample rate, got {sample_rate}"
-            )
+            raise ValueError(f"TEN VAD requires 16000 Hz sample rate, got {sample_rate}")
 
         # Validate hop_size
         hop_size = int(hop_size)  # Handle string from settings
         if hop_size not in (160, 256):
-            raise ValueError(
-                f"TEN VAD hop_size must be 160 or 256, got {hop_size}"
-            )
+            raise ValueError(f"TEN VAD hop_size must be 160 or 256, got {hop_size}")
 
         self._sample_rate = sample_rate
         self._threshold = threshold

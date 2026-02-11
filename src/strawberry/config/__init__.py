@@ -44,4 +44,3 @@ __all__ = [
     "load_config",
     "get_settings",
 ]
-

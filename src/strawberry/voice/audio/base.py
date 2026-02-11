@@ -83,4 +83,3 @@ class AudioBackend(ABC):
         """Context manager exit - stop stream."""
         self.stop()
         return False
-

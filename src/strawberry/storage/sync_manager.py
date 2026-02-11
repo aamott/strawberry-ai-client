@@ -211,7 +211,9 @@ class SyncManager:
         """Sync a delete_session operation."""
         hub_session_id = op.payload.get("hub_session_id")
         if not hub_session_id:
-            logger.debug("delete_session operation missing hub_session_id, already local-only")
+            logger.debug(
+                "delete_session operation missing hub_session_id, already local-only"
+            )
             return True
 
         try:
@@ -249,7 +251,9 @@ class SyncManager:
         self.db.update_session(local_id, sync_status=SyncStatus.SYNCED)
         return True
 
-    async def _sync_session_messages(self, local_session_id: str, hub_session_id: str) -> None:
+    async def _sync_session_messages(
+        self, local_session_id: str, hub_session_id: str
+    ) -> None:
         """Sync all unsynced messages for a session."""
         unsynced = self.db.get_unsynced_messages(local_session_id)
 

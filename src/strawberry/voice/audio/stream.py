@@ -162,4 +162,3 @@ class AudioStream:
         """Context manager exit - stop stream."""
         self.stop()
         return False
-

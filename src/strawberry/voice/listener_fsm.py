@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 class ListenerState(Enum):
     """States for the listener FSM."""
 
-    IDLE = auto()        # Waiting for wakeword or PTT
-    LISTENING = auto()   # Recording speech (VAD active)
+    IDLE = auto()  # Waiting for wakeword or PTT
+    LISTENING = auto()  # Recording speech (VAD active)
     PROCESSING = auto()  # STT transcription in progress
 
 

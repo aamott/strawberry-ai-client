@@ -46,7 +46,9 @@ def skill_service(temp_skills_dir: Path) -> SkillService:
 
 
 @pytest.mark.asyncio
-async def test_search_skills_tool_returns_skill_paths(skill_service: SkillService) -> None:
+async def test_search_skills_tool_returns_skill_paths(
+    skill_service: SkillService,
+) -> None:
     """`search_skills` should return JSON describing available skills."""
     result = await skill_service.execute_tool_async("search_skills", {"query": "weather"})
     assert "result" in result
@@ -55,7 +57,9 @@ async def test_search_skills_tool_returns_skill_paths(skill_service: SkillServic
 
 
 @pytest.mark.asyncio
-async def test_describe_function_tool_returns_signature(skill_service: SkillService) -> None:
+async def test_describe_function_tool_returns_signature(
+    skill_service: SkillService,
+) -> None:
     """`describe_function` should return a full signature + docstring."""
     result = await skill_service.execute_tool_async(
         "describe_function",

@@ -83,7 +83,10 @@ class VoiceSettingsHelper:
             ("tts.order", to_order_string(cfg.tts_backend)),
             ("vad.order", to_order_string(cfg.vad_backend)),
             ("wakeword.order", to_order_string(cfg.wake_backend)),
-            ("wakeword.phrase", ",".join(cfg.wake_words) if cfg.wake_words else "hey barista"),
+            (
+                "wakeword.phrase",
+                ",".join(cfg.wake_words) if cfg.wake_words else "hey barista",
+            ),
             ("wakeword.sensitivity", cfg.sensitivity),
             ("audio.sample_rate", str(cfg.sample_rate)),
             ("audio.feedback_enabled", cfg.audio_feedback_enabled),

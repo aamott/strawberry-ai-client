@@ -20,7 +20,7 @@ def main():
     ]
 
     for file_path in test_files:
-        with open(file_path, 'w') as f:
+        with open(file_path, "w") as f:
             f.write("test audio data")
 
     print("=== Music Control Skill Demo ===\n")
@@ -52,7 +52,9 @@ def main():
 
     # 4. Advanced features - create playlist
     print("4. Creating playlist 'Summer Mix':")
-    result = advanced_control.create_playlist("Summer Mix", ["summer_vibes", "chill_beats"])
+    result = advanced_control.create_playlist(
+        "Summer Mix", ["summer_vibes", "chill_beats"]
+    )
     print(f"   {result}")
     print()
 

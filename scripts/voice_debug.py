@@ -83,9 +83,7 @@ async def main() -> None:
     def on_event(evt) -> None:
         ts = time.time()
         if isinstance(evt, VoiceStateChanged):
-            print(
-                f"[{ts:.3f}] STATE {evt.old_state.name} -> {evt.new_state.name}"
-            )
+            print(f"[{ts:.3f}] STATE {evt.old_state.name} -> {evt.new_state.name}")
             state_changes.append((ts, f"{evt.old_state.name}->{evt.new_state.name}"))
         elif isinstance(evt, VoiceWakeWordDetected):
             print(f"[{ts:.3f}] WAKE {evt.keyword} (idx={evt.keyword_index})")

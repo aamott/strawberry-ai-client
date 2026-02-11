@@ -17,9 +17,12 @@ _POCKET_AVAILABLE = False
 _POCKET_IMPORT_ERROR: str | None = None
 try:
     from pocket_tts import TTSModel  # noqa: F401
+
     _POCKET_AVAILABLE = True
 except ImportError as e:
-    _POCKET_IMPORT_ERROR = f"pocket-tts not installed. Install with: pip install pocket-tts. ({e})"
+    _POCKET_IMPORT_ERROR = (
+        f"pocket-tts not installed. Install with: pip install pocket-tts. ({e})"
+    )
 
 
 class PocketTTS(TTSEngine):
@@ -44,7 +47,9 @@ class PocketTTS(TTSEngine):
 
     # Module metadata for discovery
     name = "Pocket-TTS (Kyutai)"
-    description = "Lightweight on-device TTS with voice cloning support. No API key required."
+    description = (
+        "Lightweight on-device TTS with voice cloning support. No API key required."
+    )
 
     # Class-level cache for model and voice state
     _cached_model = None
@@ -111,6 +116,7 @@ class PocketTTS(TTSEngine):
         # Load model (cached at class level)
         if PocketTTS._cached_model is None:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.info("Loading Pocket-TTS model (this may take a few seconds)...")
             PocketTTS._cached_model = TTSModel.load_model()
@@ -188,9 +194,7 @@ class PocketTTS(TTSEngine):
         Yields:
             Audio chunks as they are decoded (typically ~80 ms each).
         """
-        for audio_tensor in self._model.generate_audio_stream(
-            self._voice_state, text
-        ):
+        for audio_tensor in self._model.generate_audio_stream(self._voice_state, text):
             audio = (audio_tensor.numpy() * 32767).astype(np.int16)
             if len(audio) > 0:
                 yield AudioChunk(audio=audio, sample_rate=self._sample_rate_val)

@@ -23,6 +23,7 @@ class VADConfig:
         long_talk_threshold: Seconds before aggressive decay kicks in
         decay_multiplier_rate: How fast decay accelerates after threshold
     """
+
     max_buffer: float = 2.0
     initial_buffer: float = 1.5
     base_decay: float = 1.0
@@ -101,18 +102,17 @@ class VADProcessor:
             # Refill buffer faster than it drains (reward speech)
             self._counter = min(
                 self.config.max_buffer,
-                self._counter + (self._frame_duration * self.config.growth_rate)
+                self._counter + (self._frame_duration * self.config.growth_rate),
             )
         else:
             # Calculate decay multiplier (increases over time for long sessions)
             time_over_threshold = max(
-                0.0,
-                self._session_duration - self.config.long_talk_threshold
+                0.0, self._session_duration - self.config.long_talk_threshold
             )
             multiplier = 1.0 + (time_over_threshold * self.config.decay_multiplier_rate)
 
             # Drain the buffer
-            self._counter -= (self._frame_duration * self.config.base_decay * multiplier)
+            self._counter -= self._frame_duration * self.config.base_decay * multiplier
 
         # Check if recording should end
         if self._counter <= 0:
@@ -148,4 +148,3 @@ class VADProcessor:
         """Force stop recording (e.g., on timeout)."""
         self._is_recording = False
         self._counter = 0.0
-

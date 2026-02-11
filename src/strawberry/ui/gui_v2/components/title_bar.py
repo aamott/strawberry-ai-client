@@ -92,7 +92,9 @@ class TitleBar(QFrame):
     def _on_maximize_clicked(self) -> None:
         """Handle maximize button click."""
         self._is_maximized = not self._is_maximized
-        self._maximize_btn.setText(Icons.RESTORE if self._is_maximized else Icons.MAXIMIZE)
+        self._maximize_btn.setText(
+            Icons.RESTORE if self._is_maximized else Icons.MAXIMIZE
+        )
         self._maximize_btn.setToolTip("Restore" if self._is_maximized else "Maximize")
         self.maximize_clicked.emit()
 
@@ -123,7 +125,10 @@ class TitleBar(QFrame):
 
     def mouseMoveEvent(self, event) -> None:
         """Move window during drag."""
-        if self._drag_position is not None and event.buttons() == Qt.MouseButton.LeftButton:
+        if (
+            self._drag_position is not None
+            and event.buttons() == Qt.MouseButton.LeftButton
+        ):
             window = self.window()
             if window and not self._is_maximized:
                 window.move(event.globalPosition().toPoint() - self._drag_position)

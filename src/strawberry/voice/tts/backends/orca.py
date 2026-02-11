@@ -16,6 +16,7 @@ _ORCA_AVAILABLE = False
 _ORCA_IMPORT_ERROR: str | None = None
 try:
     import pvorca  # noqa: F401
+
     _ORCA_AVAILABLE = True
 except ImportError as e:
     _ORCA_IMPORT_ERROR = f"pvorca not installed. Install with: pip install pvorca. ({e})"
@@ -83,7 +84,6 @@ class OrcaTTS(TTSEngine):
                 description="Optional path to custom Orca model file",
             ),
         ]
-
 
     def __init__(
         self,
@@ -214,4 +214,3 @@ if __name__ == "__main__":
         sample_rate=chunk.sample_rate,
         blocking=True,
     )
-

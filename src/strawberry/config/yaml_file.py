@@ -43,7 +43,7 @@ def _format_scalar(value: Any) -> str:
     if not needs_quotes:
         return text
 
-    escaped = text.replace('"', "\\\"")
+    escaped = text.replace('"', '\\"')
     return f'"{escaped}"'
 
 
@@ -129,7 +129,9 @@ def _set_scalar_in_block(
     lines.insert(insert_at, new_line)
 
 
-def apply_yaml_updates_preserve_comments(config_path: Path, updates: Iterable[YamlUpdate]) -> None:
+def apply_yaml_updates_preserve_comments(
+    config_path: Path, updates: Iterable[YamlUpdate]
+) -> None:
     """Apply scalar updates to a YAML file while preserving comments.
 
     This is intended for user-editable config files that contain helpful

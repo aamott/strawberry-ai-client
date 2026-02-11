@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ExecutionResult:
     """Result from sandbox execution."""
+
     success: bool
     output: Optional[str] = None
     error: Optional[str] = None
@@ -45,6 +46,7 @@ class _DirectSkillProxy:
             instance = self._loader.get_skill(self._skill_name).instance
             func = instance.__class__.__dict__[method_name]
             return func(instance, *args, **kwargs)
+
         return method
 
 
@@ -69,15 +71,19 @@ class _DirectDeviceProxy:
         results = []
         for skill in self._loader.get_all_skills():
             for method in skill.methods:
-                if (not query
-                        or query.lower() in method.name.lower()
-                        or query.lower() in skill.name.lower()
-                        or (method.docstring and query.lower() in method.docstring.lower())):
-                    results.append({
-                        "path": f"{skill.name}.{method.name}",
-                        "signature": method.signature,
-                        "summary": (method.docstring or "").split("\n")[0],
-                    })
+                if (
+                    not query
+                    or query.lower() in method.name.lower()
+                    or query.lower() in skill.name.lower()
+                    or (method.docstring and query.lower() in method.docstring.lower())
+                ):
+                    results.append(
+                        {
+                            "path": f"{skill.name}.{method.name}",
+                            "signature": method.signature,
+                            "summary": (method.docstring or "").split("\n")[0],
+                        }
+                    )
         return results
 
     def describe_function(self, path: str) -> str:
@@ -92,10 +98,7 @@ class _DirectDeviceProxy:
         for method in skill.methods:
             if method.name == method_name:
                 doc = method.docstring or "No description"
-                return (
-                    f"def {method.signature}:\n"
-                    f'    """{doc}"""'
-                )
+                return f'def {method.signature}:\n    """{doc}"""'
         return f"Method not found: {method_name}"
 
 
@@ -180,7 +183,9 @@ class SandboxExecutor:
 
         self._initialized = False
 
-    def _handle_skill_call(self, path: str, args: List[Any], kwargs: Dict[str, Any]) -> Any:
+    def _handle_skill_call(
+        self, path: str, args: List[Any], kwargs: Dict[str, Any]
+    ) -> Any:
         """Handle a skill call from the sandbox.
 
         Called by the bridge when guest code calls device.Skill.method().
@@ -220,12 +225,16 @@ class SandboxExecutor:
             try:
                 output = await asyncio.wait_for(
                     self._bridge.execute(code, proxy_code),
-                    timeout=self.config.timeout_seconds
+                    timeout=self.config.timeout_seconds,
                 )
-                return ExecutionResult(success=True, output=output.strip() if output else None)
+                return ExecutionResult(
+                    success=True, output=output.strip() if output else None
+                )
 
             except asyncio.TimeoutError:
-                logger.error(f"Sandbox execution timeout ({self.config.timeout_seconds}s)")
+                logger.error(
+                    f"Sandbox execution timeout ({self.config.timeout_seconds}s)"
+                )
                 # Kill and restart sandbox
                 await self._cleanup()
                 return ExecutionResult(
@@ -248,22 +257,17 @@ class SandboxExecutor:
             logger.error(f"Bridge error: {e}")
             await self._cleanup()
             return ExecutionResult(
-                success=False,
-                error=f"Sandbox communication error: {e}"
+                success=False, error=f"Sandbox communication error: {e}"
             )
 
         except RuntimeError as e:
             # Error from sandbox execution
-            return ExecutionResult(
-                success=False,
-                error=self._sanitize_error(str(e))
-            )
+            return ExecutionResult(success=False, error=self._sanitize_error(str(e)))
 
         except Exception as e:
             logger.error(f"Unexpected sandbox error: {e}", exc_info=True)
             return ExecutionResult(
-                success=False,
-                error=f"Sandbox error: {self._sanitize_error(str(e))}"
+                success=False, error=f"Sandbox error: {self._sanitize_error(str(e))}"
             )
 
     def _execute_direct(self, code: str) -> ExecutionResult:
@@ -285,14 +289,16 @@ class SandboxExecutor:
             sys.stdout = stdout_capture
 
             namespace = {
-                'device': device,
-                'print': print,
+                "device": device,
+                "print": print,
             }
 
             exec(code, namespace)
 
             output = stdout_capture.getvalue()
-            return ExecutionResult(success=True, output=output.strip() if output else None)
+            return ExecutionResult(
+                success=True, output=output.strip() if output else None
+            )
 
         except Exception as e:
             return ExecutionResult(success=False, error=str(e))
@@ -307,7 +313,7 @@ class SandboxExecutor:
         error = re.sub(r'File "[^"]+",', 'File "<sandbox>",', error)
 
         # Remove internal function references
-        error = re.sub(r'in <module>|in \w+_proxy', 'in <code>', error)
+        error = re.sub(r"in <module>|in \w+_proxy", "in <code>", error)
 
         # Limit length
         if len(error) > 500:
@@ -324,4 +330,3 @@ class SandboxExecutor:
         """Refresh skill proxies after skill changes."""
         self.proxy_generator.invalidate()
         self.gatekeeper.refresh()
-

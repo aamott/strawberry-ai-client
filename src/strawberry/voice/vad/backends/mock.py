@@ -20,7 +20,6 @@ class MockVAD(VADBackend):
     name = "Mock VAD"
     description = "Mock VAD backend for testing. Returns configurable results."
 
-
     def __init__(
         self,
         sample_rate: int = 16000,
@@ -90,4 +89,3 @@ class MockVAD(VADBackend):
     def frame_count(self) -> int:
         """Number of frames processed so far."""
         return self._frame_count
-

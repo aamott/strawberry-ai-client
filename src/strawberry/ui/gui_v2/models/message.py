@@ -8,6 +8,7 @@ from typing import List, Optional, Union
 
 class MessageRole(Enum):
     """Role of the message sender."""
+
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
@@ -15,6 +16,7 @@ class MessageRole(Enum):
 
 class SegmentType(Enum):
     """Type of content segment within a message."""
+
     TEXT = "text"
     TOOL_CALL = "tool_call"
 
@@ -22,6 +24,7 @@ class SegmentType(Enum):
 @dataclass
 class TextSegment:
     """A markdown text segment within a message."""
+
     content: str = ""
     type: SegmentType = field(default=SegmentType.TEXT, init=False)
 
@@ -38,6 +41,7 @@ class ToolCallSegment:
         duration_ms: Execution time in milliseconds
         expanded: UI state - whether details are expanded
     """
+
     tool_name: str = ""
     arguments: Optional[dict] = None
     result: Optional[str] = None
@@ -65,6 +69,7 @@ class Message:
         segments: Ordered list of content segments
         is_streaming: Whether the message is currently being streamed
     """
+
     id: str
     role: MessageRole
     timestamp: datetime = field(default_factory=datetime.now)
@@ -74,8 +79,7 @@ class Message:
     def get_text_content(self) -> str:
         """Get all text content concatenated."""
         return "".join(
-            seg.content for seg in self.segments
-            if isinstance(seg, TextSegment)
+            seg.content for seg in self.segments if isinstance(seg, TextSegment)
         )
 
     def add_text(self, content: str) -> None:
@@ -120,10 +124,12 @@ class Message:
             True if a tool call was updated, False if not found.
         """
         for seg in self.segments:
-            if (isinstance(seg, ToolCallSegment) and
-                seg.tool_name == tool_name and
-                seg.result is None and
-                seg.error is None):
+            if (
+                isinstance(seg, ToolCallSegment)
+                and seg.tool_name == tool_name
+                and seg.result is None
+                and seg.error is None
+            ):
                 seg.result = result
                 seg.error = error
                 seg.duration_ms = duration_ms

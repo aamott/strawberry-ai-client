@@ -172,7 +172,9 @@ class MessageCard(QFrame):
         for segment in self._message.segments:
             self._add_segment_widget(segment)
 
-    def _add_segment_widget(self, segment: ContentSegment) -> Union[TextBlock, ToolCallWidget]:
+    def _add_segment_widget(
+        self, segment: ContentSegment
+    ) -> Union[TextBlock, ToolCallWidget]:
         """Create and add a widget for a content segment.
 
         Args:
@@ -227,10 +229,12 @@ class MessageCard(QFrame):
         Args:
             content: Text to append
         """
-        if (self._message.segments and
-            isinstance(self._message.segments[-1], TextSegment) and
-            self._segment_widgets and
-            isinstance(self._segment_widgets[-1], TextBlock)):
+        if (
+            self._message.segments
+            and isinstance(self._message.segments[-1], TextSegment)
+            and self._segment_widgets
+            and isinstance(self._segment_widgets[-1], TextBlock)
+        ):
             # Append to existing text segment
             self._message.segments[-1].content += content
             self._segment_widgets[-1].append_content(content)
@@ -286,13 +290,16 @@ class MessageCard(QFrame):
         Returns:
             True if a tool call was updated, False if not found
         """
-        for i, (segment, widget) in enumerate(zip(self._message.segments, self._segment_widgets)):
-            if (isinstance(segment, ToolCallSegment) and
-                isinstance(widget, ToolCallWidget) and
-                segment.tool_name == tool_name and
-                segment.result is None and
-                segment.error is None):
-
+        for i, (segment, widget) in enumerate(
+            zip(self._message.segments, self._segment_widgets)
+        ):
+            if (
+                isinstance(segment, ToolCallSegment)
+                and isinstance(widget, ToolCallWidget)
+                and segment.tool_name == tool_name
+                and segment.result is None
+                and segment.error is None
+            ):
                 # Update model
                 segment.result = result
                 segment.error = error
@@ -320,14 +327,18 @@ class MessageCard(QFrame):
     def collapse_all_tool_calls(self) -> None:
         """Collapse all tool call widgets."""
         for segment, widget in zip(self._message.segments, self._segment_widgets):
-            if isinstance(segment, ToolCallSegment) and isinstance(widget, ToolCallWidget):
+            if isinstance(segment, ToolCallSegment) and isinstance(
+                widget, ToolCallWidget
+            ):
                 segment.expanded = False
                 widget.set_expanded(False)
 
     def expand_all_tool_calls(self) -> None:
         """Expand all tool call widgets."""
         for segment, widget in zip(self._message.segments, self._segment_widgets):
-            if isinstance(segment, ToolCallSegment) and isinstance(widget, ToolCallWidget):
+            if isinstance(segment, ToolCallSegment) and isinstance(
+                widget, ToolCallWidget
+            ):
                 segment.expanded = True
                 widget.set_expanded(True)
 
@@ -355,7 +366,8 @@ class MessageCard(QFrame):
         """
         self._read_aloud_loading = loading
         self._read_aloud_btn.setProperty(
-            "loading", "true" if loading else "false",
+            "loading",
+            "true" if loading else "false",
         )
         self._read_aloud_btn.style().unpolish(self._read_aloud_btn)
         self._read_aloud_btn.style().polish(self._read_aloud_btn)
@@ -378,9 +390,7 @@ class MessageCard(QFrame):
         """Cycle through loading animation frames."""
         frame = self._LOADING_FRAMES[self._loading_frame]
         self._read_aloud_btn.setText(frame)
-        self._loading_frame = (
-            (self._loading_frame + 1) % len(self._LOADING_FRAMES)
-        )
+        self._loading_frame = (self._loading_frame + 1) % len(self._LOADING_FRAMES)
 
     def get_text_content(self) -> str:
         """Extract concatenated text from all TextSegments."""

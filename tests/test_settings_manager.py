@@ -134,10 +134,13 @@ class TestSettingsManager:
         """Test updating multiple values at once."""
         settings_manager.register("test", "Test", sample_schema)
 
-        errors = settings_manager.update("test", {
-            "name": "updated",
-            "count": 50,
-        })
+        errors = settings_manager.update(
+            "test",
+            {
+                "name": "updated",
+                "count": 50,
+            },
+        )
 
         assert errors == {}
         assert settings_manager.get("test", "name") == "updated"

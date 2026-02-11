@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 class PipelineState(Enum):
     """States of the conversation pipeline."""
 
-    IDLE = auto()        # Not started
-    LISTENING = auto()   # Waiting for wake word
-    RECORDING = auto()   # Capturing user speech
+    IDLE = auto()  # Not started
+    LISTENING = auto()  # Waiting for wake word
+    RECORDING = auto()  # Capturing user speech
     PROCESSING = auto()  # Transcribing / waiting for response
-    SPEAKING = auto()    # Playing TTS response
-    PAUSED = auto()      # Temporarily paused
+    SPEAKING = auto()  # Playing TTS response
+    PAUSED = auto()  # Temporarily paused
 
 
 @dataclass
@@ -45,6 +45,7 @@ class PipelineConfig:
         processing_timeout: Maximum seconds for STT + LLM processing
         vad_config: VAD algorithm configuration
     """
+
     max_recording_duration: float = 30.0
     lookback_frames: int = 10
     interrupt_enabled: bool = True
@@ -147,10 +148,13 @@ class ConversationPipeline:
         """Change pipeline state and emit event."""
         old_state = self._state
         self._state = new_state
-        self._emit(EventType.STATE_CHANGED, {
-            "old_state": old_state,
-            "new_state": new_state,
-        })
+        self._emit(
+            EventType.STATE_CHANGED,
+            {
+                "old_state": old_state,
+                "new_state": new_state,
+            },
+        )
 
     def start(self) -> None:
         """Start the conversation pipeline."""
@@ -329,10 +333,13 @@ class ConversationPipeline:
             processing_thread.join(timeout=self.config.processing_timeout)
             if processing_thread.is_alive():
                 # Processing timed out
-                self._emit(EventType.ERROR, {
-                    "error": f"Processing timeout after {self.config.processing_timeout}s",
-                    "stage": "processing"
-                })
+                self._emit(
+                    EventType.ERROR,
+                    {
+                        "error": f"Processing timeout after {self.config.processing_timeout}s",
+                        "stage": "processing",
+                    },
+                )
                 # Force state back to listening
                 if not self._stop_event.is_set():
                     self._set_state(PipelineState.LISTENING)
@@ -354,10 +361,13 @@ class ConversationPipeline:
             self._set_state(PipelineState.LISTENING)
             return
 
-        self._emit(EventType.TRANSCRIPTION_COMPLETE, {
-            "text": result.text,
-            "confidence": result.confidence,
-        })
+        self._emit(
+            EventType.TRANSCRIPTION_COMPLETE,
+            {
+                "text": result.text,
+                "confidence": result.confidence,
+            },
+        )
 
         if self._stop_event.is_set():
             return
@@ -401,9 +411,7 @@ class ConversationPipeline:
 
         try:
             # Open a persistent audio stream for gap-free playback
-            self._audio_player.start_stream(
-                sample_rate=self._tts_engine.sample_rate
-            )
+            self._audio_player.start_stream(sample_rate=self._tts_engine.sample_rate)
 
             for chunk in self._tts_engine.synthesize_stream(text):
                 if self._stop_event.is_set():
@@ -413,10 +421,13 @@ class ConversationPipeline:
                     # Interrupted
                     self._audio_player.stop()
                     break
-                self._emit(EventType.TTS_CHUNK, {
-                    "samples": len(chunk.audio),
-                    "duration": chunk.duration_sec,
-                })
+                self._emit(
+                    EventType.TTS_CHUNK,
+                    {
+                        "samples": len(chunk.audio),
+                        "duration": chunk.duration_sec,
+                    },
+                )
                 self._audio_player.write_chunk(chunk.audio)
 
             # Drain the audio buffer cleanly
@@ -437,10 +448,13 @@ class ConversationPipeline:
         # For now, we'll check for wake word
         keyword_index = self._wake_detector.process(frame)
         if keyword_index >= 0:
-            self._emit(EventType.WAKE_WORD_DETECTED, {
-                "keyword": self._wake_detector.keywords[keyword_index],
-                "interrupt": True,
-            })
+            self._emit(
+                EventType.WAKE_WORD_DETECTED,
+                {
+                    "keyword": self._wake_detector.keywords[keyword_index],
+                    "interrupt": True,
+                },
+            )
             self._start_recording()
 
     # --- Synchronous API for testing ---
@@ -457,4 +471,3 @@ class ConversationPipeline:
             Response text
         """
         return self._response_handler(text)
-

@@ -7,6 +7,7 @@ from typing import Optional
 
 class ConnectionStatus(Enum):
     """Hub connection status."""
+
     CONNECTED = "connected"
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
@@ -14,13 +15,15 @@ class ConnectionStatus(Enum):
 
 class MessageSource(Enum):
     """How a user message was produced."""
+
     TYPED = "typed"
     VOICE_RECORD = "voice_record"  # Record button (tap or hold)
-    VOICE_MODE = "voice_mode"      # Voice mode (wakeword listening)
+    VOICE_MODE = "voice_mode"  # Voice mode (wakeword listening)
 
 
 class VoiceStatus(Enum):
     """Voice mode status."""
+
     IDLE = "idle"
     READY = "ready"
     STARTING = "starting"
@@ -45,6 +48,7 @@ class UIState:
         offline_mode: Whether running in offline mode
         settings_panel_open: Whether settings panel is visible
     """
+
     sidebar_expanded: bool = False
     current_session_id: Optional[str] = None
     connection_status: ConnectionStatus = ConnectionStatus.DISCONNECTED

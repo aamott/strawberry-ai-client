@@ -77,7 +77,10 @@ class HubAgentRunner(AgentRunner):
         self._emit = emit
 
     async def _dispatch_stream_event(
-        self, event_type: str, event: dict, session: "ChatSession",
+        self,
+        event_type: str,
+        event: dict,
+        session: "ChatSession",
     ) -> tuple[bool, Optional[str]]:
         """Dispatch a single Hub SSE event.
 
@@ -115,9 +118,7 @@ class HubAgentRunner(AgentRunner):
         if event_type == "content_delta":
             delta = str(event.get("delta") or "")
             if delta:
-                await self._emit(
-                    StreamingDelta(session_id=session.id, delta=delta)
-                )
+                await self._emit(StreamingDelta(session_id=session.id, delta=delta))
             return False, None
 
         if event_type == "assistant_message":
@@ -164,7 +165,9 @@ class HubAgentRunner(AgentRunner):
                         break
 
                     should_abort, content = await self._dispatch_stream_event(
-                        event_type, event, session,
+                        event_type,
+                        event,
+                        session,
                     )
                     if should_abort:
                         return None
@@ -231,7 +234,9 @@ class LocalAgentRunner(AgentRunner):
         self._clear_mode_notice = clear_mode_notice
 
     async def _emit_assistant_message(
-        self, session: "ChatSession", content: str,
+        self,
+        session: "ChatSession",
+        content: str,
     ) -> None:
         """Add an assistant message to the session and emit the event."""
         session.add_message("assistant", content)
@@ -283,9 +288,7 @@ class LocalAgentRunner(AgentRunner):
                 continue
 
             # Check for legacy code blocks (models without native tool calls)
-            legacy_code_blocks = self._extract_legacy_code_blocks(
-                response.content or ""
-            )
+            legacy_code_blocks = self._extract_legacy_code_blocks(response.content or "")
             if legacy_code_blocks:
                 if response.content:
                     await self._emit_assistant_message(session, response.content)
@@ -429,9 +432,7 @@ class LocalAgentRunner(AgentRunner):
             )
 
             # Execute via python_exec tool
-            result = await self._skills.execute_tool_async(
-                "python_exec", {"code": code}
-            )
+            result = await self._skills.execute_tool_async("python_exec", {"code": code})
 
             success = "error" not in result
             result_text = result.get("result", result.get("error", ""))
@@ -480,20 +481,32 @@ class LocalAgentRunner(AgentRunner):
         for match in matches:
             code = match.strip()
             # Only include if it looks like a skill call
-            if any(prefix in code for prefix in [
-                "device.", "devices.", "device_manager.",
-                "print(device.", "print(devices."
-            ]):
+            if any(
+                prefix in code
+                for prefix in [
+                    "device.",
+                    "devices.",
+                    "device_manager.",
+                    "print(device.",
+                    "print(devices.",
+                ]
+            ):
                 code_blocks.append(code)
 
         # Also check for bare device calls not in code blocks
         if not code_blocks:
             for line in content.splitlines():
                 stripped = line.strip()
-                if stripped.startswith((
-                    "device.", "devices.", "device_manager.",
-                    "print(device.", "print(devices.", "print(device_manager."
-                )):
+                if stripped.startswith(
+                    (
+                        "device.",
+                        "devices.",
+                        "device_manager.",
+                        "print(device.",
+                        "print(devices.",
+                        "print(device_manager.",
+                    )
+                ):
                     code_blocks.append(stripped)
 
         return code_blocks

@@ -155,4 +155,3 @@ def execute_restricted(
         return ExecutionResult(success=False, error=f"SyntaxError: {e}")
     except Exception as e:
         return ExecutionResult(success=False, error=f"Execution error: {e}")
-

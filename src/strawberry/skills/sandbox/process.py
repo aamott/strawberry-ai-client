@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class DenoNotFoundError(Exception):
     """Raised when Deno is not installed or not in PATH."""
+
     pass
 
 
@@ -84,11 +85,11 @@ class DenoProcessManager:
             "run",
             # Security: Minimal permissions
             "--allow-read=" + str(self.host_script.parent),  # Only sandbox dir
-            "--deny-net",              # No network access
-            "--deny-env",              # No environment variables
-            "--deny-run",              # Can't spawn processes
-            "--deny-write",            # Can't write files
-            "--no-prompt",             # Don't prompt for permissions
+            "--deny-net",  # No network access
+            "--deny-env",  # No environment variables
+            "--deny-run",  # Can't spawn processes
+            "--deny-write",  # Can't write files
+            "--no-prompt",  # Don't prompt for permissions
             # Resource limits via V8 flags
             f"--v8-flags=--max-old-space-size={self.memory_limit_mb}",
             str(self.host_script),
@@ -113,7 +114,7 @@ class DenoProcessManager:
         try:
             ready_line = await asyncio.wait_for(
                 self._stdout.readline(),
-                timeout=30.0  # Pyodide takes a while to load
+                timeout=30.0,  # Pyodide takes a while to load
             )
             if b"READY" not in ready_line:
                 logger.warning(f"Unexpected ready signal: {ready_line}")
@@ -144,10 +145,7 @@ class DenoProcessManager:
         if self._process:
             try:
                 self._process.kill()
-                await asyncio.wait_for(
-                    self._process.wait(),
-                    timeout=2.0
-                )
+                await asyncio.wait_for(self._process.wait(), timeout=2.0)
             except (ProcessLookupError, asyncio.TimeoutError):
                 pass
             finally:
@@ -160,4 +158,3 @@ class DenoProcessManager:
         """Kill and restart the process."""
         await self.kill()
         return await self.start()
-

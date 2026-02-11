@@ -2,6 +2,7 @@
 
 This module contains the configuration dataclasses for VoiceCore and its components.
 """
+
 from dataclasses import dataclass, field
 from typing import List, Sequence
 

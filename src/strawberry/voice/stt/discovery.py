@@ -84,11 +84,13 @@ def list_stt_modules() -> list[dict]:
     result = []
 
     for module_name, cls in modules.items():
-        result.append({
-            "name": module_name,
-            "display_name": getattr(cls, "name", module_name),
-            "description": getattr(cls, "description", ""),
-            "has_settings": len(cls.get_settings_schema()) > 0,
-        })
+        result.append(
+            {
+                "name": module_name,
+                "display_name": getattr(cls, "name", module_name),
+                "description": getattr(cls, "description", ""),
+                "has_settings": len(cls.get_settings_schema()) > 0,
+            }
+        )
 
     return result

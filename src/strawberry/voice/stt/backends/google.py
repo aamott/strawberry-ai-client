@@ -73,10 +73,7 @@ class GoogleSTT(STTEngine):
         audio_payload = speech.RecognitionAudio(content=content)
 
         try:
-            response = self._client.recognize(
-                config=self._config,
-                audio=audio_payload
-            )
+            response = self._client.recognize(config=self._config, audio=audio_payload)
         except Exception as e:
             raise RuntimeError(f"Google STT transcription failed: {e}") from e
 
@@ -98,7 +95,7 @@ class GoogleSTT(STTEngine):
             # Google confidence is 0.0-1.0
             confidence=confidence,
             is_final=True,
-            language="en-US"
+            language="en-US",
         )
 
     @classmethod

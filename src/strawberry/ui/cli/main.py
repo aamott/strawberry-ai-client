@@ -106,6 +106,8 @@ def _load_core_types() -> None:
     SpokeCore = _SpokeCore
     ToolCallResult = _ToolCallResult
     ToolCallStarted = _ToolCallStarted
+
+
 logger = logging.getLogger(__name__)
 
 # Suppress console output from libraries
@@ -198,6 +200,7 @@ class CLIApp:
 
         if use_aioconsole:
             from aioconsole import ainput
+
             return (await ainput("")).strip()
         return (await asyncio.to_thread(sys.stdin.readline)).strip()
 
@@ -220,6 +223,7 @@ class CLIApp:
         """Handle user input."""
         try:
             from aioconsole import ainput  # noqa: F401
+
             use_aioconsole = True
         except ImportError:
             use_aioconsole = False
@@ -298,7 +302,8 @@ class CLIApp:
     def _on_tool_call_started(self, event) -> None:
         if event.tool_name == "python_exec" and "code" in event.arguments:
             renderer.print_tool_call(
-                event.tool_name, str(event.arguments.get("code") or ""),
+                event.tool_name,
+                str(event.arguments.get("code") or ""),
             )
         else:
             args_preview = ", ".join(
@@ -310,7 +315,10 @@ class CLIApp:
     def _on_tool_call_result(self, event) -> None:
         output = event.result if event.success else event.error
         renderer.print_tool_result(
-            event.tool_name, event.success, event.result, event.error,
+            event.tool_name,
+            event.success,
+            event.result,
+            event.error,
         )
         self._last_tool_result = output
         self._pending_tool_calls.pop(event.tool_name, None)
@@ -424,7 +432,9 @@ class CLIApp:
             if await self._voice_core.start():
                 self._voice_enabled = True
                 wake_words = ", ".join(voice_config.wake_words)
-                renderer.print_system(f"Voice mode enabled. Say '{wake_words}' to activate.")
+                renderer.print_system(
+                    f"Voice mode enabled. Say '{wake_words}' to activate."
+                )
             else:
                 renderer.print_error("Failed to start voice mode")
                 self._voice_core = None
@@ -471,7 +481,9 @@ class CLIApp:
         elif isinstance(event, VoiceTranscription):
             if event.is_final and event.text:
                 # Print transcription as user-like message
-                print(f"\n{renderer.styled('🗣️ You:', renderer.Colors.GREEN)} {event.text}")
+                print(
+                    f"\n{renderer.styled('🗣️ You:', renderer.Colors.GREEN)} {event.text}"
+                )
                 # Also send to SpokeCore if we have a session
                 if self._session_id:
                     # Schedule async send

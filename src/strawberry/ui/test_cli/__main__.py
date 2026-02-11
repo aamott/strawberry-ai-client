@@ -153,6 +153,7 @@ def create_stream_handler(formatter, quiet: bool):
     Returns:
         Event handler function.
     """
+
     def handler(event_type: str, data) -> None:
         if quiet:
             return
@@ -309,9 +310,7 @@ async def run_interactive(
 
                     user_input = await ainput("test> ")
                 except ImportError:
-                    user_input = await asyncio.to_thread(
-                        input, "test> "
-                    )
+                    user_input = await asyncio.to_thread(input, "test> ")
 
                 user_input = user_input.strip()
                 if not user_input:

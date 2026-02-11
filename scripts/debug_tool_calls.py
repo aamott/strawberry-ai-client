@@ -68,15 +68,17 @@ async def run_agent_loop(prompt: str, max_iterations: int = 10) -> None:
     logger.info(f"User prompt: {prompt}")
 
     for iteration in range(max_iterations):
-        logger.info(f"\n{'='*60}")
+        logger.info(f"\n{'=' * 60}")
         logger.info(f"ITERATION {iteration + 1}/{max_iterations}")
-        logger.info(f"{'='*60}")
+        logger.info(f"{'=' * 60}")
 
         try:
             # Call TensorZero
             from strawberry.llm.tensorzero_client import ChatMessage
 
-            chat_messages = [ChatMessage(role=m["role"], content=m["content"]) for m in messages]
+            chat_messages = [
+                ChatMessage(role=m["role"], content=m["content"]) for m in messages
+            ]
             response = await client.chat(chat_messages, system_prompt=system_prompt)
 
             content_preview = response.content[:200] if response.content else "(empty)"
@@ -89,9 +91,9 @@ async def run_agent_loop(prompt: str, max_iterations: int = 10) -> None:
 
             if not response.tool_calls:
                 logger.info("No tool calls - ending loop")
-                print(f"\n{'='*60}")
+                print(f"\n{'=' * 60}")
                 print("FINAL RESPONSE:")
-                print(f"{'='*60}")
+                print(f"{'=' * 60}")
                 print(response.content)
                 return
 
@@ -126,14 +128,16 @@ async def run_agent_loop(prompt: str, max_iterations: int = 10) -> None:
                     if "Unknown tool" in result.get("error", ""):
                         result["error"] += (
                             " Use python_exec to call skills. Example: "
-                            "python_exec({\"code\": \"print(device.SkillName.method())\"})"
+                            'python_exec({"code": "print(device.SkillName.method())"})'
                         )
 
-                tool_results.append({
-                    "id": tool_call.id,
-                    "name": tool_call.name or "unknown_tool",
-                    "result": result.get("result", result.get("error", "")),
-                })
+                tool_results.append(
+                    {
+                        "id": tool_call.id,
+                        "name": tool_call.name or "unknown_tool",
+                        "result": result.get("result", result.get("error", "")),
+                    }
+                )
 
             # Add assistant message and tool results to conversation
             messages.append({"role": "assistant", "content": response.content or ""})
@@ -155,9 +159,9 @@ async def run_agent_loop(prompt: str, max_iterations: int = 10) -> None:
 
             if not response.tool_calls:
                 logger.info("No more tool calls - ending loop")
-                print(f"\n{'='*60}")
+                print(f"\n{'=' * 60}")
                 print("FINAL RESPONSE:")
-                print(f"{'='*60}")
+                print(f"{'=' * 60}")
                 print(response.content)
                 return
 

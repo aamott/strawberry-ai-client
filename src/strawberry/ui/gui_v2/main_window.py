@@ -94,10 +94,7 @@ class MainWindow(QMainWindow):
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
 
         # Frameless window with custom title bar
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.Window
-        )
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
 
         # Enable window shadow on supported platforms
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
@@ -334,7 +331,9 @@ class MainWindow(QMainWindow):
         self._voice_service.listening_started.connect(self._on_voice_listening)
         self._voice_service.error_occurred.connect(self._on_voice_error)
         self._voice_service.voice_mode_changed.connect(self._on_voice_mode_changed)
-        self._voice_service.availability_changed.connect(self._on_voice_availability_changed)
+        self._voice_service.availability_changed.connect(
+            self._on_voice_availability_changed
+        )
 
     def _on_record_tapped(self) -> None:
         """Handle record button tap → trigger immediate recording."""

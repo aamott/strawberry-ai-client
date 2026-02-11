@@ -117,9 +117,12 @@ class TestBuildSkillClass:
         assert callable(cls.do_thing)
 
     def test_class_has_docstring(self) -> None:
-        info = _make_server_info("firebase", tools=[
-            MCPToolInfo(name="deploy", description="Deploy app.", input_schema={}),
-        ])
+        info = _make_server_info(
+            "firebase",
+            tools=[
+                MCPToolInfo(name="deploy", description="Deploy app.", input_schema={}),
+            ],
+        )
         cls = build_skill_class(info, _make_fake_call_tool())
         assert "firebase" in cls.__doc__
         assert "1 tool" in cls.__doc__
@@ -172,17 +175,20 @@ class TestBuildSkillClass:
 
     def test_method_calls_tool_fn(self) -> None:
         """Method delegates to the call_tool_fn with correct args."""
-        info = _make_server_info("srv", tools=[
-            MCPToolInfo(
-                name="ping",
-                description="Ping.",
-                input_schema={
-                    "type": "object",
-                    "properties": {"host": {"type": "string"}},
-                    "required": ["host"],
-                },
-            ),
-        ])
+        info = _make_server_info(
+            "srv",
+            tools=[
+                MCPToolInfo(
+                    name="ping",
+                    description="Ping.",
+                    input_schema={
+                        "type": "object",
+                        "properties": {"host": {"type": "string"}},
+                        "required": ["host"],
+                    },
+                ),
+            ],
+        )
         mock_fn = _make_fake_call_tool()
         cls = build_skill_class(info, mock_fn)
         instance = cls()
@@ -274,7 +280,7 @@ DynamicSkill.__module__ = __name__
             repo_dir.mkdir()
 
             (repo_dir / "skill.py").write_text(
-                '''
+                """
 def _make_skill(name, method_name, return_val):
     def method(self):
         return return_val
@@ -289,7 +295,7 @@ def _make_skill(name, method_name, return_val):
 
 AlphaSkill = _make_skill("AlphaSkill", "greet", "hello")
 BetaSkill = _make_skill("BetaSkill", "farewell", "goodbye")
-'''.lstrip()
+""".lstrip()
             )
 
             loader = SkillLoader(skills_dir)

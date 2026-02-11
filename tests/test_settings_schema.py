@@ -22,7 +22,15 @@ class TestFieldType:
 
     def test_expected_types_exist(self):
         """All expected field types should be defined."""
-        expected = ["text", "password", "number", "checkbox", "select", "dynamic_select", "action"]
+        expected = [
+            "text",
+            "password",
+            "number",
+            "checkbox",
+            "select",
+            "dynamic_select",
+            "action",
+        ]
         actual = [ft.value for ft in FieldType]
         for exp in expected:
             assert exp in actual, f"Missing field type: {exp}"
@@ -66,7 +74,9 @@ class TestSettingField:
 
     def test_dynamic_select_requires_provider(self):
         """DYNAMIC_SELECT field must have options_provider."""
-        with pytest.raises(ValueError, match="DYNAMIC_SELECT type requires options_provider"):
+        with pytest.raises(
+            ValueError, match="DYNAMIC_SELECT type requires options_provider"
+        ):
             SettingField(
                 key="test.dynamic",
                 label="Test Dynamic",

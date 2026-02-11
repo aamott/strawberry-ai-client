@@ -22,24 +22,26 @@ logger = logging.getLogger(__name__)
 
 class FeedbackSound(Enum):
     """Available feedback sounds."""
-    WAKE_DETECTED = auto()     # Wake word heard - start listening
-    RECORDING_START = auto()   # Recording has started
-    RECORDING_END = auto()     # Recording complete, processing
-    PROCESSING = auto()        # Waiting for response (subtle)
-    SUCCESS = auto()           # Operation successful
-    ERROR = auto()             # Something went wrong
-    READY = auto()             # System ready / startup
+
+    WAKE_DETECTED = auto()  # Wake word heard - start listening
+    RECORDING_START = auto()  # Recording has started
+    RECORDING_END = auto()  # Recording complete, processing
+    PROCESSING = auto()  # Waiting for response (subtle)
+    SUCCESS = auto()  # Operation successful
+    ERROR = auto()  # Something went wrong
+    READY = auto()  # System ready / startup
 
 
 @dataclass
 class ToneConfig:
     """Configuration for a generated tone."""
-    frequencies: list[float]   # Hz - can be multiple for chord
-    duration: float            # seconds
-    volume: float = 0.3        # 0.0 to 1.0
-    fade_in: float = 0.01      # seconds
-    fade_out: float = 0.05     # seconds
-    wave_type: str = "sine"    # sine, square, triangle
+
+    frequencies: list[float]  # Hz - can be multiple for chord
+    duration: float  # seconds
+    volume: float = 0.3  # 0.0 to 1.0
+    fade_in: float = 0.01  # seconds
+    fade_out: float = 0.05  # seconds
+    wave_type: str = "sine"  # sine, square, triangle
 
 
 # Sound definitions - pleasant, non-intrusive tones
@@ -127,7 +129,9 @@ class AudioFeedback:
 
     @staticmethod
     def _generate_waveform(
-        freq: float, t: np.ndarray, wave_type: str,
+        freq: float,
+        t: np.ndarray,
+        wave_type: str,
     ) -> np.ndarray:
         """Generate a single-frequency waveform."""
         if wave_type == "square":
@@ -158,7 +162,9 @@ class AudioFeedback:
                 wave = np.zeros(num_samples, dtype=np.float32)
                 if wave_len > 0:
                     wave[delay_samples:] = self._generate_waveform(
-                        freq, t[:wave_len], config.wave_type,
+                        freq,
+                        t[:wave_len],
+                        config.wave_type,
                     )
             else:
                 wave = self._generate_waveform(freq, t, config.wave_type)
@@ -213,6 +219,7 @@ class AudioFeedback:
 
         try:
             import sounddevice as sd
+
             sd.play(audio, self.sample_rate)
             sd.wait()
         except Exception as e:
@@ -273,4 +280,3 @@ def get_feedback(enabled: bool = True) -> AudioFeedback:
     else:
         _feedback_instance.set_enabled(enabled)
     return _feedback_instance
-

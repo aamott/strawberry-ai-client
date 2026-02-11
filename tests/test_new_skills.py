@@ -55,7 +55,9 @@ class TestInternetSkills:
         loader.load_all()
 
         # Test Python search
-        results = loader.call_method("InternetSearchSkill", "search_web", "python programming")
+        results = loader.call_method(
+            "InternetSearchSkill", "search_web", "python programming"
+        )
         assert isinstance(results, list)
         assert len(results) > 0
         assert any("Python" in result["title"] for result in results)
@@ -74,8 +76,10 @@ class TestInternetSkills:
         """Test open_website method."""
         loader.load_all()
 
-        with patch('webbrowser.open') as mock_open:
-            result = loader.call_method("InternetSearchSkill", "open_website", "https://example.com")
+        with patch("webbrowser.open") as mock_open:
+            result = loader.call_method(
+                "InternetSearchSkill", "open_website", "https://example.com"
+            )
             assert "example.com" in result
             mock_open.assert_called_once()
 
@@ -83,7 +87,9 @@ class TestInternetSkills:
         """Test get_website_info method."""
         loader.load_all()
 
-        info = loader.call_method("InternetSearchSkill", "get_website_info", "https://example.com")
+        info = loader.call_method(
+            "InternetSearchSkill", "get_website_info", "https://example.com"
+        )
         assert "example.com" in info["url"]
         assert info["safe"]
 

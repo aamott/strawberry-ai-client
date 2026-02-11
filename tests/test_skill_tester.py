@@ -22,16 +22,16 @@ def tmp_skills_dir(tmp_path):
     skill_repo.mkdir(parents=True)
 
     (skill_repo / "skill.py").write_text(
-        'class CalcSkill:\n'
+        "class CalcSkill:\n"
         '    """A simple calculator."""\n'
-        '\n'
-        '    def add(self, a: int, b: int) -> int:\n'
+        "\n"
+        "    def add(self, a: int, b: int) -> int:\n"
         '        """Add two numbers."""\n'
-        '        return a + b\n'
-        '\n'
-        '    def multiply(self, a: int, b: int) -> int:\n'
+        "        return a + b\n"
+        "\n"
+        "    def multiply(self, a: int, b: int) -> int:\n"
         '        """Multiply two numbers."""\n'
-        '        return a * b\n',
+        "        return a * b\n",
         encoding="utf-8",
     )
     return tmp_path / "skills"
@@ -44,23 +44,27 @@ def tmp_config_dir(tmp_path):
     tools_dir.mkdir(parents=True)
 
     (tools_dir / "search_skills.json").write_text(
-        json.dumps({
-            "type": "object",
-            "description": "Search for skills.",
-            "properties": {
-                "query": {"type": "string", "default": ""},
-            },
-        }),
+        json.dumps(
+            {
+                "type": "object",
+                "description": "Search for skills.",
+                "properties": {
+                    "query": {"type": "string", "default": ""},
+                },
+            }
+        ),
         encoding="utf-8",
     )
     (tools_dir / "python_exec.json").write_text(
-        json.dumps({
-            "type": "object",
-            "description": "Execute Python code.",
-            "properties": {
-                "code": {"type": "string"},
-            },
-        }),
+        json.dumps(
+            {
+                "type": "object",
+                "description": "Execute Python code.",
+                "properties": {
+                    "code": {"type": "string"},
+                },
+            }
+        ),
         encoding="utf-8",
     )
     return tmp_path / "config"
@@ -134,29 +138,25 @@ class TestToolExecution:
 
     def test_search_skills_with_query(self, tester):
         """search_skills filters by query."""
-        result = tester._execute_tool(
-            "search_skills", {"query": "multiply"}
-        )
+        result = tester._execute_tool("search_skills", {"query": "multiply"})
         assert "result" in result
         assert "CalcSkill.multiply" in result["result"]
 
     def test_describe_function(self, tester):
         """describe_function returns signature and docstring."""
-        result = tester._execute_tool(
-            "describe_function", {"path": "CalcSkill.add"}
-        )
+        result = tester._execute_tool("describe_function", {"path": "CalcSkill.add"})
         assert "result" in result
         assert "add" in result["result"]
         assert "Add two numbers" in result["result"]
 
     def test_describe_function_not_found(self, tester):
         """describe_function returns error for unknown path."""
-        result = tester._execute_tool(
-            "describe_function", {"path": "FakeSkill.nope"}
-        )
+        result = tester._execute_tool("describe_function", {"path": "FakeSkill.nope"})
         assert "result" in result
         # Should contain an error message about not found
-        assert "not found" in result["result"].lower() or "error" in result["result"].lower()
+        assert (
+            "not found" in result["result"].lower() or "error" in result["result"].lower()
+        )
 
     def test_python_exec(self, tester):
         """python_exec runs code and returns output."""
@@ -224,9 +224,7 @@ class TestInputParsing:
 
     def test_describe_function(self, tester):
         """'describe_function Skill.method' parses correctly."""
-        result = tester._parse_tool_call(
-            "describe_function CalcSkill.add"
-        )
+        result = tester._parse_tool_call("describe_function CalcSkill.add")
         assert result == ("describe_function", {"path": "CalcSkill.add"})
 
     def test_describe_function_empty_returns_none(self, tester):
@@ -241,9 +239,7 @@ class TestInputParsing:
 
     def test_python_exec_json_format(self, tester):
         """python_exec with JSON argument parses correctly."""
-        result = tester._parse_tool_call(
-            'python_exec {"code": "print(42)"}'
-        )
+        result = tester._parse_tool_call('python_exec {"code": "print(42)"}')
         assert result == ("python_exec", {"code": "print(42)"})
 
     def test_empty_input_returns_none(self, tester):

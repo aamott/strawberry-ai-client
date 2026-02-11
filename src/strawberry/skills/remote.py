@@ -52,6 +52,7 @@ class RemoteSkillResult:
 
     Skills are grouped by (class, method, signature) with a list of devices.
     """
+
     path: str  # "SkillClass.method" (without device prefix)
     signature: str
     summary: str
@@ -65,6 +66,7 @@ class RemoteSkillResult:
 @dataclass
 class RemoteExecutionResult:
     """Result from executing a remote skill."""
+
     success: bool
     result: Any = None
     error: Optional[str] = None
@@ -106,7 +108,7 @@ class RemoteSkillClassProxy:
         self._skill_name = skill_name
 
     def __getattr__(self, method_name: str) -> RemoteSkillProxy:
-        if method_name.startswith('_'):
+        if method_name.startswith("_"):
             raise AttributeError(f"Cannot access private method: {method_name}")
         return RemoteSkillProxy(
             self._device_manager,
@@ -124,7 +126,7 @@ class LocalDeviceProxy:
 
     def __getattr__(self, skill_name: str):
         """Get a local skill proxy."""
-        if skill_name.startswith('_'):
+        if skill_name.startswith("_"):
             raise AttributeError(f"Cannot access private attribute: {skill_name}")
 
         skill = self._local_loader.get_skill(skill_name)
@@ -146,7 +148,7 @@ class RemoteDeviceProxy:
         self._skills: Dict[str, RemoteSkillClassProxy] = {}
 
     def __getattr__(self, skill_name: str) -> RemoteSkillClassProxy:
-        if skill_name.startswith('_'):
+        if skill_name.startswith("_"):
             raise AttributeError(f"Cannot access private attribute: {skill_name}")
 
         if skill_name not in self._skills:
@@ -210,7 +212,7 @@ class DeviceManager:
 
     def __getattr__(self, device_name: str):
         """Get proxy for a device (local or remote)."""
-        if device_name.startswith('_'):
+        if device_name.startswith("_"):
             raise AttributeError(f"Cannot access private attribute: {device_name}")
 
         # Check if this is the local device
@@ -222,7 +224,9 @@ class DeviceManager:
             self._devices[device_name] = RemoteDeviceProxy(self, device_name)
         return self._devices[device_name]
 
-    def search_skills(self, query: str = "", device_limit: int = 10) -> List[Dict[str, Any]]:
+    def search_skills(
+        self, query: str = "", device_limit: int = 10
+    ) -> List[Dict[str, Any]]:
         """Search for skills across all connected devices.
 
         Args:
@@ -260,9 +264,11 @@ class DeviceManager:
             results = []
 
             for skill in skills:
-                if (query_lower in skill.path.lower() or
-                    query_lower in skill.signature.lower() or
-                    query_lower in skill.summary.lower()):
+                if (
+                    query_lower in skill.path.lower()
+                    or query_lower in skill.signature.lower()
+                    or query_lower in skill.summary.lower()
+                ):
                     results.append(self._skill_to_dict(skill))
 
         # Prioritize local skills (already sorted by Hub, but ensure local first)
@@ -317,16 +323,18 @@ class DeviceManager:
 
         results = []
         for skill in skills_data:
-            results.append(RemoteSkillResult(
-                path=skill.get('path', ''),
-                signature=skill.get('signature', ''),
-                summary=skill.get('summary', ''),
-                docstring=skill.get('docstring', ''),
-                devices=skill.get('devices', []),
-                device_names=skill.get('device_names', []),
-                device_count=skill.get('device_count', 0),
-                is_local=skill.get('is_local', False),
-            ))
+            results.append(
+                RemoteSkillResult(
+                    path=skill.get("path", ""),
+                    signature=skill.get("signature", ""),
+                    summary=skill.get("summary", ""),
+                    docstring=skill.get("docstring", ""),
+                    devices=skill.get("devices", []),
+                    device_names=skill.get("device_names", []),
+                    device_count=skill.get("device_count", 0),
+                    is_local=skill.get("is_local", False),
+                )
+            )
 
         return results
 
@@ -344,7 +352,7 @@ class DeviceManager:
                     devices_info = f"Available on: {', '.join(skill.devices[:5])}"
                     if skill.device_count > 5:
                         devices_info += f" (+{skill.device_count - 5} more)"
-                    return f"def {skill.signature}:\n    \"\"\"{doc}\"\"\"\n\n# {devices_info}"
+                    return f'def {skill.signature}:\n    """{doc}"""\n\n# {devices_info}'
 
         return f"Function not found: {path}"
 
@@ -427,14 +435,14 @@ REMOTE_MODE_PROMPT = (
     "```python\n"
     "device_manager: DeviceManager  # Manages all connected devices\n"
     "\n"
-    "device_manager.search_skills(query: str = \"\") -> List[dict]\n"
+    'device_manager.search_skills(query: str = "") -> List[dict]\n'
     "# Search for skills across all devices\n"
-    "# Returns: [{\"path\": \"Skill.method\", \"signature\": \"...\", "
-    "\"summary\": \"...\", \"devices\": [\"device1\", ...], \"device_count\": N}]\n"
+    '# Returns: [{"path": "Skill.method", "signature": "...", '
+    '"summary": "...", "devices": ["device1", ...], "device_count": N}]\n'
     "\n"
     "device_manager.describe_function(path: str) -> str\n"
     "# Get full function signature with docstring\n"
-    "# Path format: \"SkillClass.method_name\"\n"
+    '# Path format: "SkillClass.method_name"\n'
     "\n"
     "device_manager.DeviceName.SkillClass.method(...)\n"
     "# Call a skill on a specific device\n"
@@ -461,13 +469,13 @@ LOCAL_MODE_PROMPT = (
     "```python\n"
     "device: Device  # Container for local skills\n"
     "\n"
-    "device.search_skills(query: str = \"\") -> List[dict]\n"
+    'device.search_skills(query: str = "") -> List[dict]\n'
     "# Search for skills by keyword\n"
-    "# Returns: [{\"path\": \"Skill.method\", \"signature\": \"...\", \"summary\": \"...\"}]\n"
+    '# Returns: [{"path": "Skill.method", "signature": "...", "summary": "..."}]\n'
     "\n"
     "device.describe_function(path: str) -> str\n"
     "# Get full function signature with docstring\n"
-    "# Path format: \"SkillClass.method_name\"\n"
+    '# Path format: "SkillClass.method_name"\n'
     "\n"
     "device.SkillClass.method(...)\n"
     "# Call a skill directly\n"
@@ -481,21 +489,20 @@ LOCAL_MODE_PROMPT = (
     "4. Search for skills first if you're not sure what's available"
 )
 
-SWITCHED_TO_REMOTE_PROMPT = '''<system>
+SWITCHED_TO_REMOTE_PROMPT = """<system>
 Automated Message: The device switched to online mode and now has access to skills on other devices.
 
 The available tools have changed:
 - device_manager.search_skills(query) - Search skills across all devices
 - device_manager.describe_function(path) - Get function details (path: DeviceName.SkillClass.method)
 - device_manager.DeviceName.SkillClass.method() - Call remote skill
-</system>'''
+</system>"""
 
-SWITCHED_TO_LOCAL_PROMPT = '''<system>
+SWITCHED_TO_LOCAL_PROMPT = """<system>
 Automated Message: The device switched to offline mode. Only local skills are available.
 
 The available tools have changed:
 - device.search_skills(query) - Search local skills
 - device.describe_function(path) - Get function details (path: SkillClass.method)
 - device.SkillClass.method() - Call local skill
-</system>'''
-
+</system>"""

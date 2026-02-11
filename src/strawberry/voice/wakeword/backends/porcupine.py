@@ -26,7 +26,9 @@ class PorcupineDetector(WakeWordDetector):
 
     # Module metadata for discovery
     name = "Porcupine (Picovoice)"
-    description = "On-device wake word detection using Picovoice Porcupine. Requires license key."
+    description = (
+        "On-device wake word detection using Picovoice Porcupine. Requires license key."
+    )
 
     @classmethod
     def get_settings_schema(cls) -> List:
@@ -86,7 +88,7 @@ class PorcupineDetector(WakeWordDetector):
         keyword_paths = []
 
         for kw in keywords:
-            if kw.endswith('.ppn') or '/' in kw or '\\' in kw:
+            if kw.endswith(".ppn") or "/" in kw or "\\" in kw:
                 keyword_paths.append(kw)
             else:
                 keyword_names.append(kw)
@@ -139,4 +141,3 @@ class PorcupineDetector(WakeWordDetector):
         if self._porcupine is not None:
             self._porcupine.delete()
             self._porcupine = None
-

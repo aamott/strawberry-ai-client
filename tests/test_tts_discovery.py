@@ -1,6 +1,5 @@
 """Tests for TTS module discovery."""
 
-
 from strawberry.voice.tts import (
     TTSEngine,
     discover_tts_modules,

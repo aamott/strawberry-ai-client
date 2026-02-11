@@ -19,6 +19,7 @@ from tenacity import (
 try:
     import websockets
     from websockets.asyncio.client import ClientConnection
+
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
     WEBSOCKETS_AVAILABLE = False
@@ -67,6 +68,7 @@ def _normalize_hub_url(url: str) -> str:
 @dataclass
 class HubConfig:
     """Configuration for Hub connection."""
+
     url: str
     token: str
     timeout: float = 30.0
@@ -92,6 +94,7 @@ __all__ = ["ChatMessage", "ChatResponse", "HubConfig", "HubClient", "HubError"]
 
 class HubError(Exception):
     """Error from Hub API."""
+
     def __init__(self, message: str, status_code: int = 0):
         super().__init__(message)
         self.status_code = status_code
@@ -105,6 +108,7 @@ class HubError(Exception):
 
 class RetryableHubError(HubError):
     """Hub error that should be retried."""
+
     pass
 
 
@@ -417,7 +421,9 @@ class HubClient:
 
     @_retry_config
     async def search_skills(
-        self, query: str = "", device_limit: int = 10,
+        self,
+        query: str = "",
+        device_limit: int = 10,
     ) -> List[Dict[str, Any]]:
         """Search for skills across all devices.
 
@@ -437,7 +443,9 @@ class HubClient:
 
     @_retry_config
     def search_skills_sync(
-        self, query: str = "", device_limit: int = 10,
+        self,
+        query: str = "",
+        device_limit: int = 10,
     ) -> List[Dict[str, Any]]:
         """Synchronous version of search_skills.
 
@@ -677,10 +685,7 @@ class HubClient:
     # WebSocket Connection
     # =========================================================================
 
-    def set_connection_callback(
-        self,
-        callback: Callable[[bool], Awaitable[None]]
-    ):
+    def set_connection_callback(self, callback: Callable[[bool], Awaitable[None]]):
         """Set callback for connection status changes.
 
         Args:
@@ -689,8 +694,7 @@ class HubClient:
         self._connection_callback = callback
 
     def set_skill_callback(
-        self,
-        callback: Callable[[str, str, list, dict], Awaitable[Any]]
+        self, callback: Callable[[str, str, list, dict], Awaitable[Any]]
     ):
         """Set callback for handling incoming skill execution requests.
 
@@ -746,9 +750,9 @@ class HubClient:
         while True:
             try:
                 # Build WebSocket URL
-                ws_url = self.config.url.replace(
-                    "http://", "ws://"
-                ).replace("https://", "wss://")
+                ws_url = self.config.url.replace("http://", "ws://").replace(
+                    "https://", "wss://"
+                )
                 ws_url = f"{ws_url}/ws/device?token={self.config.token}"
 
                 logger.info("Connecting to WebSocket: %s", ws_url)
@@ -806,7 +810,8 @@ class HubClient:
 
         else:
             logger.warning(
-                "Unknown WebSocket message type: %s", msg_type,
+                "Unknown WebSocket message type: %s",
+                msg_type,
             )
 
     async def _handle_skill_request(self, request: dict):
@@ -852,5 +857,5 @@ class HubClient:
         # Send response back to Hub
         if self._websocket:
             import json
-            await self._websocket.send(json.dumps(response))
 
+            await self._websocket.send(json.dumps(response))

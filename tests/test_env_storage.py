@@ -30,7 +30,9 @@ def temp_dir() -> Path:
 class TestEnvStorageSave:
     """Tests for EnvStorage.save()."""
 
-    def test_save_preserves_comments_and_order_and_updates_keys(self, temp_dir: Path) -> None:
+    def test_save_preserves_comments_and_order_and_updates_keys(
+        self, temp_dir: Path
+    ) -> None:
         """save() should preserve comments and update only targeted keys."""
 
         env_path = temp_dir / ".env"
@@ -63,7 +65,9 @@ class TestEnvStorageSave:
         assert contents[5] == "BAR=keep"
         assert contents[-1] == "BAZ=added"
 
-    def test_save_drops_later_duplicates_keeps_first(self, temp_dir: Path, caplog) -> None:
+    def test_save_drops_later_duplicates_keeps_first(
+        self, temp_dir: Path, caplog
+    ) -> None:
         """save() should keep the first key and drop later duplicate definitions."""
 
         env_path = temp_dir / ".env"
@@ -94,7 +98,9 @@ class TestEnvStorageSave:
 class TestSettingsManagerEnvMerge:
     """Tests for SettingsManager.save() interaction with .env."""
 
-    def test_manager_save_merges_env_without_wiping_unrelated(self, temp_dir: Path) -> None:
+    def test_manager_save_merges_env_without_wiping_unrelated(
+        self, temp_dir: Path
+    ) -> None:
         """SettingsManager.save() should not wipe unrelated .env entries or comments."""
 
         env_path = temp_dir / ".env"

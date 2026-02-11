@@ -7,18 +7,21 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class CoreEvent:
     """Base class for all core events."""
+
     pass
 
 
 @dataclass
 class CoreReady(CoreEvent):
     """Core is initialized and ready."""
+
     pass
 
 
 @dataclass
 class CoreError(CoreEvent):
     """Core encountered an error."""
+
     error: str
     exception: Optional[Exception] = None
 
@@ -26,12 +29,14 @@ class CoreError(CoreEvent):
 @dataclass
 class SessionCreated(CoreEvent):
     """A new chat session was created."""
+
     session_id: str
 
 
 @dataclass
 class MessageAdded(CoreEvent):
     """A message was added to a session."""
+
     session_id: str
     role: str  # "user", "assistant", "system"
     content: str
@@ -40,6 +45,7 @@ class MessageAdded(CoreEvent):
 @dataclass
 class ToolCallStarted(CoreEvent):
     """A tool call has started."""
+
     session_id: str
     tool_name: str
     arguments: Dict[str, Any] = field(default_factory=dict)
@@ -48,6 +54,7 @@ class ToolCallStarted(CoreEvent):
 @dataclass
 class ToolCallResult(CoreEvent):
     """A tool call completed."""
+
     session_id: str
     tool_name: str
     success: bool
@@ -58,6 +65,7 @@ class ToolCallResult(CoreEvent):
 @dataclass
 class StreamingDelta(CoreEvent):
     """A streaming text chunk from the assistant response."""
+
     session_id: str
     delta: str  # The new text chunk to append
 
@@ -65,12 +73,14 @@ class StreamingDelta(CoreEvent):
 @dataclass
 class SettingsChanged(CoreEvent):
     """Configuration settings have changed."""
+
     changed_keys: List[str] = field(default_factory=list)
 
 
 @dataclass
 class ConnectionChanged(CoreEvent):
     """Hub connection status changed."""
+
     connected: bool
     url: Optional[str] = None
     error: Optional[str] = None
@@ -79,6 +89,7 @@ class ConnectionChanged(CoreEvent):
 @dataclass
 class ModeChanged(CoreEvent):
     """Online/offline mode changed."""
+
     online: bool
     message: str = ""
 
@@ -90,6 +101,7 @@ class SkillsLoaded(CoreEvent):
     Carries plain-dict summaries so the GUI never needs to import
     SkillInfo or SkillLoadFailure.
     """
+
     skills: List[Dict[str, Any]] = field(default_factory=list)
     failures: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -97,10 +109,10 @@ class SkillsLoaded(CoreEvent):
 @dataclass
 class SkillStatusChanged(CoreEvent):
     """A skill's enabled/disabled status changed."""
+
     skill_name: str
     enabled: bool
 
 
 # Alias for backward compatibility
 CoreSettingsChanged = SettingsChanged
-

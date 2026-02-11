@@ -30,7 +30,13 @@ logger = logging.getLogger(__name__)
 
 
 # Re-export for backward compatibility
-__all__ = ["ChatMessage", "ChatResponse", "ToolCall", "TensorZeroClient", "TensorZeroError"]
+__all__ = [
+    "ChatMessage",
+    "ChatResponse",
+    "ToolCall",
+    "TensorZeroClient",
+    "TensorZeroError",
+]
 
 
 class TensorZeroError(Exception):
@@ -134,7 +140,9 @@ def _parse_response_content(
     for i, block in enumerate(blocks):
         logger.debug(
             "%sBlock %d: type=%s, attrs=%s",
-            label, i, type(block).__name__,
+            label,
+            i,
+            type(block).__name__,
             [a for a in dir(block) if not a.startswith("_")],
         )
 
@@ -148,7 +156,9 @@ def _parse_response_content(
         if tc:
             logger.debug(
                 "%sTool call: name=%r, arguments=%r",
-                label, tc.name, tc.arguments,
+                label,
+                tc.name,
+                tc.arguments,
             )
             tool_calls.append(tc)
 
@@ -263,7 +273,8 @@ class TensorZeroClient:
     # ------------------------------------------------------------------
 
     def _build_tz_messages(
-        self, messages: List[ChatMessage],
+        self,
+        messages: List[ChatMessage],
     ) -> list[dict[str, Any]]:
         """Convert ChatMessages to TensorZero message format.
 
@@ -364,7 +375,8 @@ class TensorZeroClient:
             )
 
             content, tool_calls = _parse_response_content(
-                response, label="[chat_with_tool_results] ",
+                response,
+                label="[chat_with_tool_results] ",
             )
             return _build_chat_response(response, content, tool_calls)
 

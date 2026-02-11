@@ -78,9 +78,9 @@ def _print_help_llm() -> None:
     print("   strawberry-test --show-failure 2")
     print("   strawberry-test --tail-log 200")
     print("   strawberry-test --list-logs")
-    print("   strawberry-test --grep \"FAILURES\"")
-    print("   strawberry-test --grep \"AssertionError\" --after 20")
-    print("   strawberry-test --grep \"test_foo\" --from-line 1200 --to-line 1500")
+    print('   strawberry-test --grep "FAILURES"')
+    print('   strawberry-test --grep "AssertionError" --after 20')
+    print('   strawberry-test --grep "test_foo" --from-line 1200 --to-line 1500')
     print()
     print("Log file (default): .test-logs/latest.log")
 
@@ -170,7 +170,9 @@ def _print_log_files(log_dir: Path) -> int:
     return 0
 
 
-def _slice_line_range(lines: list[str], start_line: int | None, end_line: int | None) -> list[str]:
+def _slice_line_range(
+    lines: list[str], start_line: int | None, end_line: int | None
+) -> list[str]:
     if start_line is None and end_line is None:
         return lines
     start = 1 if start_line is None else max(1, start_line)
@@ -275,7 +277,7 @@ def _extract_failures_from_pytest_log(log_text: str) -> list[str]:
         return []
 
     section_lines: list[str] = []
-    for line in lines[failures_start + 1:]:
+    for line in lines[failures_start + 1 :]:
         match = _SECTION_TITLE_RE.match(line.rstrip("\n"))
         if match is not None:
             title = match.group(1).strip().upper()
@@ -451,10 +453,15 @@ def _parse_line_range(args) -> tuple[int | None, int | None]:
 
 
 def _inline_search(
-    text: str, pattern: str, flags: int,
-    before: int, after: int,
-    from_line: int | None, to_line: int | None,
-    log_file: Path, label: str = "Pattern",
+    text: str,
+    pattern: str,
+    flags: int,
+    before: int,
+    after: int,
+    from_line: int | None,
+    to_line: int | None,
+    log_file: Path,
+    label: str = "Pattern",
 ) -> int:
     """Search through already-loaded text and print matches with context."""
     all_lines = text.splitlines(keepends=False)
@@ -495,8 +502,15 @@ def _cmd_test(args, log_file: Path) -> int:
     if args.hide_warnings:
         text = _read_log_text(log_file, True)
         return _inline_search(
-            text, re.escape(str(args.test)), re.IGNORECASE,
-            before, after, from_line, to_line, log_file, "Test",
+            text,
+            re.escape(str(args.test)),
+            re.IGNORECASE,
+            before,
+            after,
+            from_line,
+            to_line,
+            log_file,
+            "Test",
         )
 
     return _search_log(
@@ -533,11 +547,18 @@ def _cmd_grep(args, log_file: Path) -> int:
 
         text = _read_log_text(log_file, True)
         flags = re.IGNORECASE if bool(args.ignore_case) else 0
-        pattern = re.escape(str(args.grep)) if bool(args.fixed_strings) else str(args.grep)
+        pattern = (
+            re.escape(str(args.grep)) if bool(args.fixed_strings) else str(args.grep)
+        )
         return _inline_search(
-            text, pattern, flags,
-            int(args.before), int(args.after),
-            from_line, to_line, log_file,
+            text,
+            pattern,
+            flags,
+            int(args.before),
+            int(args.after),
+            from_line,
+            to_line,
+            log_file,
         )
     except re.error as exc:
         print(f"Invalid regex for --grep: {exc}")
@@ -740,4 +761,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

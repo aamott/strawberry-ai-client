@@ -410,7 +410,8 @@ class PathFieldWidget(BaseFieldWidget):
     def _build_input(self) -> None:
         self._line_edit = QLineEdit()
         self._line_edit.setPlaceholderText(
-            "Select file..." if self.field.type == FieldType.FILE_PATH
+            "Select file..."
+            if self.field.type == FieldType.FILE_PATH
             else "Select directory..."
         )
         self._line_edit.setStyleSheet(_INPUT_STYLE)
@@ -437,9 +438,7 @@ class PathFieldWidget(BaseFieldWidget):
                 if self.field.metadata
                 else "All Files (*)"
             )
-            path, _ = QFileDialog.getOpenFileName(
-                self, "Select File", "", file_filter
-            )
+            path, _ = QFileDialog.getOpenFileName(self, "Select File", "", file_filter)
         else:
             path = QFileDialog.getExistingDirectory(self, "Select Directory")
 
@@ -561,9 +560,7 @@ class DateTimeFieldWidget(BaseFieldWidget):
             return
         try:
             if self.field.type == FieldType.DATE:
-                self._picker.setDate(
-                    QDate.fromString(str(value), Qt.DateFormat.ISODate)
-                )
+                self._picker.setDate(QDate.fromString(str(value), Qt.DateFormat.ISODate))
             elif self.field.type == FieldType.TIME:
                 self._picker.setTime(QTime.fromString(str(value), "HH:mm"))
             else:

@@ -48,10 +48,10 @@ class PipelineEvent:
         data: Event-specific data
         timestamp: When the event occurred
     """
+
     type: EventType
     data: Optional[Any] = None
     timestamp: datetime = field(default_factory=datetime.now)
 
     def __repr__(self) -> str:
         return f"PipelineEvent({self.type.name}, data={self.data!r})"
-

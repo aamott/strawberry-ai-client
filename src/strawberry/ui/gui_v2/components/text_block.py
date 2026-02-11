@@ -33,17 +33,17 @@ except ImportError:
         def markdown_to_html(text: str) -> str:  # type: ignore[misc]
             """Minimal regex markdown to HTML conversion."""
             # Bold
-            text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-            text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
+            text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+            text = re.sub(r"__(.+?)__", r"<b>\1</b>", text)
             # Italic
-            text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
-            text = re.sub(r'_(.+?)_', r'<i>\1</i>', text)
+            text = re.sub(r"\*(.+?)\*", r"<i>\1</i>", text)
+            text = re.sub(r"_(.+?)_", r"<i>\1</i>", text)
             # Code
-            text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+            text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
             # Links
-            text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', text)
+            text = re.sub(r"\[(.+?)\]\((.+?)\)", r'<a href="\2">\1</a>', text)
             # Line breaks
-            text = text.replace('\n', '<br>')
+            text = text.replace("\n", "<br>")
             return text
 
 

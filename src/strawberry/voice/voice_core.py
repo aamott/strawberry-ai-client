@@ -246,7 +246,9 @@ class VoiceCore:
             logger.warning("Pipeline rejected wakeword")
             return
 
-        self.event_emitter.emit(VoiceWakeWordDetected(keyword="<manual>", keyword_index=-1))
+        self.event_emitter.emit(
+            VoiceWakeWordDetected(keyword="<manual>", keyword_index=-1)
+        )
         self._start_recording()
 
     def push_to_talk_start(self) -> None:
@@ -444,7 +446,9 @@ class VoiceCore:
             # Tell pipeline no speech was detected
             has_buffered = self._pipeline.on_no_speech_detected()
             self.event_emitter.emit(
-                VoiceStateChanged(old_state=VoiceState.LISTENING, new_state=VoiceState.IDLE)
+                VoiceStateChanged(
+                    old_state=VoiceState.LISTENING, new_state=VoiceState.IDLE
+                )
             )
 
             # Resume any interrupted speech
@@ -457,7 +461,9 @@ class VoiceCore:
         # Transition listener to PROCESSING
         self._pipeline.on_speech_end()
         self.event_emitter.emit(
-            VoiceStateChanged(old_state=VoiceState.LISTENING, new_state=VoiceState.PROCESSING)
+            VoiceStateChanged(
+                old_state=VoiceState.LISTENING, new_state=VoiceState.PROCESSING
+            )
         )
 
         if self._recording_buffer:
@@ -473,7 +479,9 @@ class VoiceCore:
         ).start()
 
     def _get_ordered_backends(
-        self, names: list[str] | None, active: str | None,
+        self,
+        names: list[str] | None,
+        active: str | None,
     ) -> list[str]:
         """Build deduplicated backend list with active backend first."""
         backends = list(names or [])
@@ -622,7 +630,9 @@ class VoiceCore:
             self._pipeline.finish_speaking()
             if self.state == VoiceState.IDLE:
                 self.event_emitter.emit(
-                    VoiceStateChanged(old_state=VoiceState.SPEAKING, new_state=VoiceState.IDLE)
+                    VoiceStateChanged(
+                        old_state=VoiceState.SPEAKING, new_state=VoiceState.IDLE
+                    )
                 )
 
     def _synthesize_with_fallback(self, text: str) -> None:
@@ -656,7 +666,7 @@ class VoiceCore:
             if tts_mismatch:
                 if not asyncio.run_coroutine_threadsafe(
                     self.component_manager.init_tts_backend(name),
-                    self.event_emitter._event_loop
+                    self.event_emitter._event_loop,
                 ).result():
                     continue
 
@@ -672,6 +682,7 @@ class VoiceCore:
             True if playback completed successfully.
         """
         from .speaker_fsm import SpeakerState
+
         tts = self.component_manager.components.tts
         player = self.component_manager.components.audio_player
         try:
@@ -702,7 +713,9 @@ class VoiceCore:
             elapsed = now - self._last_frame_time
             if elapsed > self._frame_timeout:
                 logger.error(f"Watchdog: No audio frames for {elapsed:.1f}s")
-                self.event_emitter.emit(VoiceError(error="Audio stream stopped unexpectedly"))
+                self.event_emitter.emit(
+                    VoiceError(error="Audio stream stopped unexpectedly")
+                )
                 # Reset listener FSM
                 self._pipeline.listener.reset()
                 self._recording_buffer.clear()

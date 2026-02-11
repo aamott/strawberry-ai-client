@@ -77,7 +77,7 @@ class WakeWordDetector(ABC):
     def get_default_settings(cls) -> Dict[str, Any]:
         """Return default values for all settings."""
         schema = cls.get_settings_schema()
-        return {field.key: field.default for field in schema if hasattr(field, 'key')}
+        return {field.key: field.default for field in schema if hasattr(field, "key")}
 
     def cleanup(self) -> None:
         """Release any resources held by the detector.

@@ -18,7 +18,6 @@ class MockSTT(STTEngine):
     name = "Mock STT"
     description = "Mock STT engine for testing. Returns preconfigured responses."
 
-
     def __init__(
         self,
         sample_rate: int = 16000,
@@ -90,4 +89,3 @@ class MockSTT(STTEngine):
         self._call_count = 0
         self._response_index = 0
         self._last_audio = None
-

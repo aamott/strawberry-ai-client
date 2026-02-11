@@ -43,7 +43,7 @@ class SoundDeviceBackend(AudioBackend):
         self._stream = sd.InputStream(
             samplerate=self.sample_rate,
             channels=1,
-            dtype='int16',
+            dtype="int16",
             blocksize=self.frame_length,
             device=self._device,
             callback=self._callback,
@@ -88,4 +88,3 @@ class SoundDeviceBackend(AudioBackend):
     def is_active(self) -> bool:
         """Check if stream is currently active."""
         return self._stream is not None and self._stream.active
-

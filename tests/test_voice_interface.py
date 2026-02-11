@@ -1,6 +1,5 @@
 """Tests for VoiceInterface."""
 
-
 from strawberry.ui.voice_interface import VoiceInterface
 
 
