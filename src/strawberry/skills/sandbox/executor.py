@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from ..proxies import DeviceProxy
 from .bridge import BridgeClient, BridgeError
 from .gatekeeper import Gatekeeper
 from .process import DenoNotFoundError, DenoProcessManager
@@ -32,74 +33,6 @@ class SandboxConfig:
     memory_limit_mb: int = 128
     deno_path: str = "deno"
     enabled: bool = True  # Can disable for development
-
-
-class _DirectSkillProxy:
-    """Proxy for a single skill's methods in direct (non-sandbox) mode."""
-
-    def __init__(self, loader, skill_name: str):
-        self._loader = loader
-        self._skill_name = skill_name
-
-    def __getattr__(self, method_name: str):
-        def method(*args, **kwargs):
-            instance = self._loader.get_skill(self._skill_name).instance
-            func = instance.__class__.__dict__[method_name]
-            return func(instance, *args, **kwargs)
-
-        return method
-
-
-class _DirectDeviceProxy:
-    """Proxy for the ``device`` object in direct (non-sandbox) mode.
-
-    Provides ``search_skills`` and ``describe_function`` alongside
-    attribute access to individual skill proxies.
-    """
-
-    def __init__(self, loader):
-        self._loader = loader
-
-    def __getattr__(self, name: str):
-        skill = self._loader.get_skill(name)
-        if skill is None:
-            raise AttributeError(f"Skill '{name}' not found")
-        return _DirectSkillProxy(self._loader, name)
-
-    def search_skills(self, query: str = "") -> list:
-        """Search loaded skills by name/docstring."""
-        results = []
-        for skill in self._loader.get_all_skills():
-            for method in skill.methods:
-                if (
-                    not query
-                    or query.lower() in method.name.lower()
-                    or query.lower() in skill.name.lower()
-                    or (method.docstring and query.lower() in method.docstring.lower())
-                ):
-                    results.append(
-                        {
-                            "path": f"{skill.name}.{method.name}",
-                            "signature": method.signature,
-                            "summary": (method.docstring or "").split("\n")[0],
-                        }
-                    )
-        return results
-
-    def describe_function(self, path: str) -> str:
-        """Describe a single skill method by dotted path."""
-        parts = path.split(".")
-        if len(parts) != 2:
-            return f"Invalid path: {path}"
-        skill_name, method_name = parts
-        skill = self._loader.get_skill(skill_name)
-        if not skill:
-            return f"Skill not found: {skill_name}"
-        for method in skill.methods:
-            if method.name == method_name:
-                doc = method.docstring or "No description"
-                return f'def {method.signature}:\n    """{doc}"""'
-        return f"Method not found: {method_name}"
 
 
 class SandboxExecutor:
@@ -279,7 +212,7 @@ class SandboxExecutor:
         import io
         import sys
 
-        device = _DirectDeviceProxy(self.gatekeeper.loader)
+        device = DeviceProxy(self.gatekeeper.loader)
 
         # Capture stdout
         stdout_capture = io.StringIO()

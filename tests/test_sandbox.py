@@ -55,6 +55,14 @@ def mock_loader(mock_skill_info):
     loader = Mock(spec=SkillLoader)
     loader.get_all_skills.return_value = [mock_skill_info]
     loader.get_skill.return_value = mock_skill_info
+
+    # Wire up call_method to delegate to the skill instance
+    def _call_method(skill_name, method_name, *args, **kwargs):
+        skill = loader.get_skill(skill_name)
+        method = getattr(skill.instance, method_name)
+        return method(*args, **kwargs)
+
+    loader.call_method.side_effect = _call_method
     return loader
 
 
