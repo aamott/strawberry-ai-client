@@ -472,47 +472,56 @@ class VoiceCore:
             daemon=True,
         ).start()
 
+    def _get_ordered_backends(
+        self, names: list[str] | None, active: str | None,
+    ) -> list[str]:
+        """Build deduplicated backend list with active backend first."""
+        backends = list(names or [])
+        if active and active not in backends:
+            backends.insert(0, active)
+        return backends
+
+    def _try_stt_backends(self, audio: np.ndarray):
+        """Try each STT backend in order, returning the first successful result.
+
+        Returns:
+            Transcription result, or None if all backends fail.
+        """
+        backends = self._get_ordered_backends(
+            self.component_manager.stt_backend_names,
+            self.component_manager.active_stt_backend,
+        )
+        tried: list[str] = []
+        for name in backends:
+            if name in tried:
+                continue
+            tried.append(name)
+
+            stt_mismatch = (
+                name != self.component_manager.active_stt_backend
+                or not self.component_manager.components.stt
+            )
+            if stt_mismatch:
+                try:
+                    self.component_manager.init_stt_backend(name)
+                except Exception:
+                    continue
+
+            try:
+                return self.component_manager.components.stt.transcribe(audio)
+            except Exception as e:
+                logger.error(f"STT backend '{name}' failed: {e}")
+                self.event_emitter.emit(VoiceError(error=str(e), exception=e))
+        return None
+
     def _process_audio_sync(self, audio: np.ndarray) -> None:
         try:
-            stt = self.component_manager.components.stt
-
-            # STT Fallback & Ensure Active
-            if not stt:
+            if not self.component_manager.components.stt:
                 self._safe_transition_to(VoiceState.IDLE)
                 return
 
-            tried = []
-
-            # Try available backends
-            backends = self.component_manager.stt_backend_names or []
-            if self.component_manager.active_stt_backend:
-                if self.component_manager.active_stt_backend not in backends:
-                    backends.insert(0, self.component_manager.active_stt_backend)
-
-            for name in backends:
-                if name in tried:
-                    continue
-                tried.append(name)
-
-                # Switch if needed
-                stt_mismatch = name != self.component_manager.active_stt_backend
-                if stt_mismatch or not self.component_manager.components.stt:
-                    try:
-                        self.component_manager.init_stt_backend(name)
-                        stt = self.component_manager.components.stt
-                    except Exception:
-                        continue
-
-                # Transcribe
-                try:
-                    result = stt.transcribe(audio)
-                    break
-                except Exception as e:
-                    logger.error(f"STT backend '{name}' failed: {e}")
-                    self.event_emitter.emit(VoiceError(error=str(e), exception=e))
-                    continue
-            else:
-                # All failed
+            result = self._try_stt_backends(audio)
+            if result is None:
                 logger.error("All STT backends failed")
                 self._safe_transition_to(VoiceState.IDLE)
                 return
@@ -520,8 +529,9 @@ class VoiceCore:
             text = result.text.strip() if result.text else ""
             if not text:
                 logger.info("Empty transcription")
-                # No valid text - check if we should resume
-                buffered = self._pipeline.on_transcription_complete(has_valid_text=False)
+                buffered = self._pipeline.on_transcription_complete(
+                    has_valid_text=False,
+                )
                 self.event_emitter.emit(
                     VoiceStateChanged(
                         old_state=VoiceState.PROCESSING, new_state=VoiceState.IDLE
@@ -534,7 +544,6 @@ class VoiceCore:
             logger.info(f"Transcription: {text}")
             self.event_emitter.emit(VoiceTranscription(text=text, is_final=True))
 
-            # Valid speech detected - clear any buffered speech
             self._pipeline.on_transcription_complete(has_valid_text=True)
             self.event_emitter.emit(
                 VoiceStateChanged(
@@ -624,61 +633,65 @@ class VoiceCore:
         without audible gaps.  Falls back through available TTS backends on
         failure.
         """
-        tried = []
-
-        # Check if speaker was interrupted
         from .speaker_fsm import SpeakerState
+
         if self._pipeline.speaker.state == SpeakerState.INTERRUPTED:
             logger.info("Skipping speech playback due to interrupt")
             return
 
-        # Get fallback list
-        backends = self.component_manager.tts_backend_names or []
-        if self.component_manager.active_tts_backend:
-            if self.component_manager.active_tts_backend not in backends:
-                backends.insert(0, self.component_manager.active_tts_backend)
-
+        backends = self._get_ordered_backends(
+            self.component_manager.tts_backend_names,
+            self.component_manager.active_tts_backend,
+        )
+        tried: list[str] = []
         for name in backends:
             if name in tried:
                 continue
             tried.append(name)
 
-            # Switch if needed
-            tts_mismatch = name != self.component_manager.active_tts_backend
-            if tts_mismatch or not self.component_manager.components.tts:
+            tts_mismatch = (
+                name != self.component_manager.active_tts_backend
+                or not self.component_manager.components.tts
+            )
+            if tts_mismatch:
                 if not asyncio.run_coroutine_threadsafe(
                     self.component_manager.init_tts_backend(name),
                     self.event_emitter._event_loop
                 ).result():
                     continue
 
-            tts = self.component_manager.components.tts
-            player = self.component_manager.components.audio_player
-
-            try:
-                # Open a persistent audio stream for gap-free playback
-                player.start_stream(sample_rate=tts.sample_rate)
-
-                for chunk in tts.synthesize_stream(text):
-                    # Check for interrupt via speaker FSM state
-                    speaker_state = self._pipeline.speaker.state
-                    if speaker_state == SpeakerState.INTERRUPTED:
-                        player.stop()
-                        logger.info("Stopping playback due to interrupt")
-                        return
-                    if speaker_state != SpeakerState.SPEAKING:
-                        player.stop()
-                        return
-                    player.write_chunk(chunk.audio)
-
-                # Drain the audio buffer cleanly
-                player.finish_stream()
-                return  # Success
-            except Exception as e:
-                logger.error(f"TTS backend '{name}' failed: {e}")
-                player.finish_stream()
+            if self._try_tts_playback(text):
+                return
 
         raise RuntimeError(f"All TTS backends failed. Tried: {tried}")
+
+    def _try_tts_playback(self, text: str) -> bool:
+        """Attempt TTS playback with the currently active backend.
+
+        Returns:
+            True if playback completed successfully.
+        """
+        from .speaker_fsm import SpeakerState
+        tts = self.component_manager.components.tts
+        player = self.component_manager.components.audio_player
+        try:
+            player.start_stream(sample_rate=tts.sample_rate)
+            for chunk in tts.synthesize_stream(text):
+                speaker_state = self._pipeline.speaker.state
+                if speaker_state == SpeakerState.INTERRUPTED:
+                    player.stop()
+                    logger.info("Stopping playback due to interrupt")
+                    return True  # Intentional stop, not a failure
+                if speaker_state != SpeakerState.SPEAKING:
+                    player.stop()
+                    return True
+                player.write_chunk(chunk.audio)
+            player.finish_stream()
+            return True
+        except Exception as e:
+            logger.error(f"TTS backend failed: {e}")
+            player.finish_stream()
+            return False
 
     def _watchdog_loop(self) -> None:
         while not self._watchdog_stop.wait(timeout=1.0):

@@ -528,13 +528,51 @@ Direct skill call (for comparison with python_exec output):
             lines.append(line)
         return "\n".join(lines)
 
+    @staticmethod
+    def _strip_call_parens(text: str) -> str:
+        """Remove surrounding parentheses from a call-style argument."""
+        if text.startswith("(") and text.endswith(")"):
+            return text[1:-1].strip()
+        return text
+
+    @staticmethod
+    def _strip_kw_prefix(text: str, prefix: str) -> str:
+        """Strip a keyword prefix like 'query=' or 'code=' and surrounding quotes."""
+        if text.startswith(prefix):
+            return text[len(prefix):].strip().strip('"').strip("'")
+        return text
+
+    def _parse_search_skills(self, rest: str) -> tuple[str, Dict[str, Any]]:
+        rest = self._strip_call_parens(rest)
+        query = self._strip_kw_prefix(rest, "query=")
+        return ("search_skills", {"query": query})
+
+    def _parse_describe_function(self, rest: str) -> Optional[tuple[str, Dict[str, Any]]]:
+        rest = self._strip_call_parens(rest)
+        rest = self._strip_kw_prefix(rest, "path=")
+        if not rest:
+            print(_s("Usage: describe_function SkillName.method_name", _C.YELLOW))
+            return None
+        return ("describe_function", {"path": rest})
+
+    def _parse_python_exec(self, rest: str) -> Optional[tuple[str, Dict[str, Any]]]:
+        rest = self._strip_call_parens(rest)
+        rest = self._strip_kw_prefix(rest, "code=")
+        if rest.startswith("{") and rest.endswith("}"):
+            try:
+                parsed = json.loads(rest)
+                rest = parsed.get("code", rest)
+            except json.JSONDecodeError:
+                pass
+        if not rest:
+            rest = self._read_multiline_code()
+        return ("python_exec", {"code": rest}) if rest.strip() else None
+
     def _parse_tool_call(self, user_input: str) -> Optional[tuple[str, Dict[str, Any]]]:
         """Parse user input into a tool call.
 
         Supported formats:
-            search_skills
-            search_skills weather
-            search_skills query="weather"
+            search_skills / search_skills weather / search_skills query="weather"
             describe_function WeatherSkill.get_current_weather
             python_exec print(device.TimeSkill.get_current_time())
             exec  (opens multi-line editor)
@@ -549,62 +587,66 @@ Direct skill call (for comparison with python_exec output):
         if not stripped:
             return None
 
-        # Multi-line code editor shortcut
         if stripped.lower() == "exec":
             code = self._read_multiline_code()
-            if code.strip():
-                return ("python_exec", {"code": code})
-            return None
+            return ("python_exec", {"code": code}) if code.strip() else None
 
-        # search_skills [query]
-        if stripped.lower().startswith("search_skills"):
-            rest = stripped[len("search_skills"):].strip()
-            query = rest
-            # Handle search_skills query="..." or search_skills(query="...")
-            if rest.startswith("(") and rest.endswith(")"):
-                rest = rest[1:-1].strip()
-            if rest.startswith("query="):
-                query = rest[6:].strip().strip('"').strip("'")
-            return ("search_skills", {"query": query})
-
-        # describe_function <path>
-        if stripped.lower().startswith("describe_function"):
-            rest = stripped[len("describe_function"):].strip()
-            if rest.startswith("(") and rest.endswith(")"):
-                rest = rest[1:-1].strip()
-            if rest.startswith("path="):
-                rest = rest[5:].strip().strip('"').strip("'")
-            if not rest:
-                print(_s("Usage: describe_function SkillName.method_name", _C.YELLOW))
-                return None
-            return ("describe_function", {"path": rest})
-
-        # python_exec <code>
-        if stripped.lower().startswith("python_exec"):
-            rest = stripped[len("python_exec"):].strip()
-            # Handle python_exec(code="...") or python_exec({"code": "..."})
-            if rest.startswith("(") and rest.endswith(")"):
-                rest = rest[1:-1].strip()
-            if rest.startswith("code="):
-                rest = rest[5:].strip().strip('"').strip("'")
-            if rest.startswith("{") and rest.endswith("}"):
-                try:
-                    parsed = json.loads(rest)
-                    rest = parsed.get("code", rest)
-                except json.JSONDecodeError:
-                    pass
-            if not rest:
-                # Fall back to multi-line editor
-                rest = self._read_multiline_code()
-            if rest.strip():
-                return ("python_exec", {"code": rest})
-            return None
+        # Dispatch by prefix
+        lower = stripped.lower()
+        tool_parsers: list[tuple[str, Any]] = [
+            ("search_skills", self._parse_search_skills),
+            ("describe_function", self._parse_describe_function),
+            ("python_exec", self._parse_python_exec),
+        ]
+        for prefix, parser in tool_parsers:
+            if lower.startswith(prefix):
+                rest = stripped[len(prefix):].strip()
+                return parser(rest)
 
         return None
 
     # ------------------------------------------------------------------
     # Main REPL
     # ------------------------------------------------------------------
+
+    def _dispatch_slash_command(self, stripped: str) -> bool:
+        """Handle a slash command. Returns True to continue, False to quit."""
+        cmd = stripped.lower().split()[0]
+
+        # Dispatch table for simple commands
+        simple_cmds: dict[str, Any] = {
+            "/prompt": self._show_prompt,
+            "/tools": self._show_tools,
+            "/skills": self._show_skills,
+            "/reload": self._reload,
+            "/history": self._show_history,
+            "/help": self._show_help,
+        }
+        if cmd in ("/quit", "/q", "/exit"):
+            print(_s("Goodbye!", _C.DIM))
+            return False
+        if cmd in simple_cmds:
+            simple_cmds[cmd]()
+        elif cmd == "/clear":
+            self._history.clear()
+            print(_s("History cleared", _C.DIM))
+        elif cmd == "/call":
+            self._direct_call(stripped[5:].strip())
+        else:
+            print(_s(f"Unknown command: {cmd}. Type /help for help.", _C.RED))
+        return True
+
+    def _print_tool_help(self) -> None:
+        """Print available tool call formats."""
+        print(_s("Not recognized as a tool call. Available tools:", _C.YELLOW))
+        for line in [
+            "  search_skills [query]",
+            "  describe_function SkillName.method_name",
+            "  python_exec <code>",
+            "  exec  (multi-line editor)",
+            "  /call SkillName.method arg=val  (direct comparison)",
+        ]:
+            print(_s(line, _C.CYAN))
 
     def run(self) -> None:
         """Run the interactive REPL."""
@@ -623,58 +665,16 @@ Direct skill call (for comparison with python_exec output):
             if not stripped:
                 continue
 
-            # Slash commands
             if stripped.startswith("/"):
-                cmd = stripped.lower().split()[0]
-                if cmd in ("/quit", "/q", "/exit"):
-                    print(_s("Goodbye!", _C.DIM))
+                if not self._dispatch_slash_command(stripped):
                     break
-                elif cmd == "/prompt":
-                    self._show_prompt()
-                elif cmd == "/tools":
-                    self._show_tools()
-                elif cmd == "/skills":
-                    self._show_skills()
-                elif cmd == "/reload":
-                    self._reload()
-                elif cmd == "/history":
-                    self._show_history()
-                elif cmd == "/clear":
-                    self._history.clear()
-                    print(_s("History cleared", _C.DIM))
-                elif cmd == "/help":
-                    self._show_help()
-                elif cmd == "/call":
-                    rest = stripped[5:].strip()
-                    self._direct_call(rest)
-                else:
-                    print(_s(f"Unknown command: {cmd}. Type /help for help.", _C.RED))
                 continue
 
-            # Try to parse as tool call
             parsed = self._parse_tool_call(stripped)
             if parsed:
-                tool_name, arguments = parsed
-                self._execute_tool(tool_name, arguments)
+                self._execute_tool(*parsed)
             else:
-                print(
-                    _s("Not recognized as a tool call. Available tools:", _C.YELLOW)
-                )
-                print(
-                    _s("  search_skills [query]", _C.CYAN)
-                )
-                print(
-                    _s("  describe_function SkillName.method_name", _C.CYAN)
-                )
-                print(
-                    _s("  python_exec <code>", _C.CYAN)
-                )
-                print(
-                    _s("  exec  (multi-line editor)", _C.CYAN)
-                )
-                print(
-                    _s("  /call SkillName.method arg=val  (direct comparison)", _C.CYAN)
-                )
+                self._print_tool_help()
 
     def _print_banner(self) -> None:
         """Print the welcome banner."""

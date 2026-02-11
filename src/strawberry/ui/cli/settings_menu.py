@@ -194,9 +194,7 @@ class CLISettingsMenu:
 
     def _edit_field(self, namespace: str, key: str, field: "SettingField") -> None:
         """Edit a single field."""
-        from strawberry.shared.settings.schema import FieldType
 
-        field_type = field.type
         label = field.label or key
         current = self._settings.get(namespace, key)
 
@@ -211,38 +209,40 @@ class CLISettingsMenu:
                 print(f"  {line}")
 
         try:
-            if field_type == FieldType.CHECKBOX:
-                new_value = self._edit_checkbox(current, label)
-            elif field_type == FieldType.SELECT:
-                new_value = self._edit_select(current, field.options or [], label)
-            elif field_type == FieldType.PASSWORD:
-                new_value = self._edit_password(current, label)
-            elif field_type == FieldType.ACTION:
-                # Actions are not editable
-                renderer.print_system("Action fields cannot be edited here.")
-                return
-            elif field_type == FieldType.LIST or field_type == FieldType.PROVIDER_SELECT:
-                # Check for specialized backend order editor
-                backend_options = self._get_backend_options(key)
-                if backend_options:
-                    new_value = self._edit_backend_order(current, backend_options, label)
-                else:
-                    new_value = self._edit_list(current, label)
-            else:
-                # Legacy check (fallback)
-                backend_options = self._get_backend_options(key)
-                if backend_options:
-                    new_value = self._edit_backend_order(current, backend_options, label)
-                else:
-                    new_value = self._edit_text(current, label)
-
+            new_value = self._dispatch_edit(field.type, key, current, field, label)
             if new_value is not None:
                 self._settings.set(namespace, key, new_value)
                 renderer.print_system(f"Updated {label}")
-
         except (EOFError, KeyboardInterrupt):
             print()
             renderer.print_system("Cancelled")
+
+    def _dispatch_edit(
+        self, field_type, key: str, current: Any,
+        field: "SettingField", label: str,
+    ) -> Any:
+        """Dispatch to the appropriate editor for a field type."""
+        from strawberry.shared.settings.schema import FieldType
+
+        if field_type == FieldType.ACTION:
+            renderer.print_system("Action fields cannot be edited here.")
+            return None
+        if field_type == FieldType.CHECKBOX:
+            return self._edit_checkbox(current, label)
+        if field_type == FieldType.SELECT:
+            return self._edit_select(current, field.options or [], label)
+        if field_type == FieldType.PASSWORD:
+            return self._edit_password(current, label)
+        if field_type in (FieldType.LIST, FieldType.PROVIDER_SELECT):
+            backend_options = self._get_backend_options(key)
+            if backend_options:
+                return self._edit_backend_order(current, backend_options, label)
+            return self._edit_list(current, label)
+        # Default: text or backend-order fallback
+        backend_options = self._get_backend_options(key)
+        if backend_options:
+            return self._edit_backend_order(current, backend_options, label)
+        return self._edit_text(current, label)
 
     def _edit_text(self, current: Any, label: str = "value") -> Optional[str]:
         """Edit a text field."""
@@ -265,19 +265,13 @@ class CLISettingsMenu:
         Returns:
             New comma-separated value, or None if cancelled
         """
-        # Parse current order
-        current_list = []
-        if isinstance(current, list):
-            current_list = [str(x) for x in current]
-        elif current:
-            current_list = [b.strip() for b in str(current).split(",") if b.strip()]
+        current_list = self._parse_current_order(current)
 
         print(f"  Current: {current or '(not set)'}")
         print()
         print("  Available backends:")
         for i, backend in enumerate(available, 1):
-            in_current = backend in current_list
-            marker = " <-- in current order" if in_current else ""
+            marker = " <-- in current order" if backend in current_list else ""
             print(f"    {i}. {backend}{marker}")
 
         print()
@@ -288,42 +282,41 @@ class CLISettingsMenu:
         if not choice:
             return None
 
-        # Parse the input - could be numbers or names
         parts = [p.strip() for p in choice.split(",") if p.strip()]
-        result = []
-
-        for part in parts:
-            # Try as number first
-            try:
-                idx = int(part) - 1
-                if 0 <= idx < len(available):
-                    result.append(available[idx])
-                    continue
-            except ValueError:
-                pass
-
-            # Try as backend name (case-insensitive match)
-            part_lower = part.lower()
-            for backend in available:
-                if backend.lower() == part_lower:
-                    result.append(backend)
-                    break
-            else:
-                # Not found - use as-is (might be a new/unknown backend)
-                result.append(part)
+        result = [self._resolve_backend_part(part, available) for part in parts]
 
         if result:
-            # Return as list for LIST/PROVIDER_SELECT types
-            # (The renderer logic implies we want to keep it compatible with what expects it)
-            # But SettingsManager expects correct type.
-            # If the original value was a list, return a list.
-            if isinstance(current, list):
-                return result
-            # Legacy fallback: return string
-            return ",".join(result)
+            return result if isinstance(current, list) else ",".join(result)
 
         renderer.print_error("No valid backends selected")
         return None
+
+    @staticmethod
+    def _parse_current_order(current: Any) -> list[str]:
+        """Parse a current order value into a list of backend names."""
+        if isinstance(current, list):
+            return [str(x) for x in current]
+        if current:
+            return [b.strip() for b in str(current).split(",") if b.strip()]
+        return []
+
+    @staticmethod
+    def _resolve_backend_part(part: str, available: list[str]) -> str:
+        """Resolve a single user input part to a backend name."""
+        # Try as 1-based index first
+        try:
+            idx = int(part) - 1
+            if 0 <= idx < len(available):
+                return available[idx]
+        except ValueError:
+            pass
+        # Try case-insensitive name match
+        part_lower = part.lower()
+        for backend in available:
+            if backend.lower() == part_lower:
+                return backend
+        # Unknown - use as-is
+        return part
 
     def _edit_list(self, current: Any, label: str = "list") -> Optional[list[str]]:
         """Edit a generic list field."""

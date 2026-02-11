@@ -1025,66 +1025,11 @@ class SkillService:
         try:
             mode = self._get_effective_mode()
             if tool_name == "search_skills":
-                query = arguments.get("query", "")
-                device_limit = int(arguments.get("device_limit", 10) or 10)
-                if mode == SkillMode.REMOTE and self.hub_client:
-                    results = await self.hub_client.search_skills(
-                        query=query,
-                        device_limit=device_limit,
-                    )
-                    return {"result": self._format_search_results(results)}
-
-                result = self._execute_search_skills(query, device_limit=device_limit)
-                return {"result": result}
-
+                return await self._tool_search_skills(arguments, mode)
             elif tool_name == "describe_function":
-                path = arguments.get("path", "")
-                if mode == SkillMode.REMOTE and self.hub_client:
-                    query = ""
-                    if path:
-                        query = path.split(".")[0]
-
-                    results = await self.hub_client.search_skills(
-                        query=query,
-                        device_limit=10,
-                    )
-
-                    for skill in results:
-                        if skill.get("path") == path:
-                            signature = skill.get("signature", "")
-                            doc = skill.get("docstring", "") or skill.get("summary", "")
-                            devices = skill.get("devices", [])
-                            device_count = int(skill.get("device_count", 0) or 0)
-
-                            devices_info = ""
-                            if devices:
-                                devices_info = (
-                                    "\n\n# Available on: " + ", ".join(devices[:5])
-                                )
-                                if device_count > 5:
-                                    devices_info += f" (+{device_count - 5} more)"
-
-                            return {
-                                "result": (
-                                    f"def {signature}:\n    \"\"\"{doc}\"\"\""
-                                    + devices_info
-                                )
-                            }
-
-                    return {"error": f"Function not found: {path}"}
-
-                result = self._execute_describe_function(path)
-                return {"result": result}
-
+                return await self._tool_describe_function(arguments, mode)
             elif tool_name == "python_exec":
-                code = arguments.get("code", "")
-                code = self._prepare_python_exec_code(code)
-                result = await self.execute_code_async(code)
-                if result.success:
-                    return {"result": result.result or "(no output)"}
-                else:
-                    return {"error": _enrich_exec_error(result.error or "")}
-
+                return await self._tool_python_exec(arguments)
             else:
                 return {
                     "error": (
@@ -1099,6 +1044,72 @@ class SkillService:
         except Exception as e:
             import traceback
             return {"error": f"{type(e).__name__}: {e}\n{traceback.format_exc()}"}
+
+    async def _tool_search_skills(
+        self, arguments: Dict[str, Any], mode: "SkillMode",
+    ) -> Dict[str, Any]:
+        """Handle the search_skills tool call."""
+        query = arguments.get("query", "")
+        device_limit = int(arguments.get("device_limit", 10) or 10)
+        if mode == SkillMode.REMOTE and self.hub_client:
+            results = await self.hub_client.search_skills(
+                query=query,
+                device_limit=device_limit,
+            )
+            return {"result": self._format_search_results(results)}
+
+        result = self._execute_search_skills(query, device_limit=device_limit)
+        return {"result": result}
+
+    async def _tool_describe_function(
+        self, arguments: Dict[str, Any], mode: "SkillMode",
+    ) -> Dict[str, Any]:
+        """Handle the describe_function tool call."""
+        path = arguments.get("path", "")
+        if mode == SkillMode.REMOTE and self.hub_client:
+            return await self._describe_function_remote(path)
+
+        result = self._execute_describe_function(path)
+        return {"result": result}
+
+    async def _describe_function_remote(self, path: str) -> Dict[str, Any]:
+        """Describe a function via the Hub (remote mode)."""
+        query = path.split(".")[0] if path else ""
+        results = await self.hub_client.search_skills(
+            query=query, device_limit=10,
+        )
+
+        for skill in results:
+            if skill.get("path") == path:
+                signature = skill.get("signature", "")
+                doc = skill.get("docstring", "") or skill.get("summary", "")
+                devices = skill.get("devices", [])
+                device_count = int(skill.get("device_count", 0) or 0)
+
+                devices_info = ""
+                if devices:
+                    devices_info = "\n\n# Available on: " + ", ".join(devices[:5])
+                    if device_count > 5:
+                        devices_info += f" (+{device_count - 5} more)"
+
+                return {
+                    "result": (
+                        f'def {signature}:\n    """{doc}"""'
+                        + devices_info
+                    )
+                }
+
+        return {"error": f"Function not found: {path}"}
+
+    async def _tool_python_exec(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle the python_exec tool call."""
+        code = arguments.get("code", "")
+        code = self._prepare_python_exec_code(code)
+        result = await self.execute_code_async(code)
+        if result.success:
+            return {"result": result.result or "(no output)"}
+        else:
+            return {"error": _enrich_exec_error(result.error or "")}
 
     @staticmethod
     def _format_search_results(results: List[Dict[str, Any]]) -> str:
@@ -1338,16 +1349,36 @@ class _DeviceProxy:
         Returns:
             List of matching skills with path, signature, summary
         """
+        query_words = self._parse_query_words(query)
+        candidates = self._build_search_candidates(query_words)
+        matched = self._match_candidates(candidates, query_words)
+
         results = []
-        # Strip common stop words to improve search precision.
-        # "turn on the lamp" → ["turn", "lamp"] instead of matching "the" everywhere.
+        for skill, method in matched:
+            summary = ""
+            if method.docstring:
+                summary = method.docstring.split("\n")[0].strip()
+            results.append({
+                "path": f"{skill.name}.{method.name}",
+                "signature": method.signature,
+                "summary": summary,
+            })
+        return results
+
+    @staticmethod
+    def _parse_query_words(query: str) -> list[str]:
+        """Parse a query into search words, stripping stop words."""
         raw_words = query.lower().split() if query else []
         query_words = [w for w in raw_words if w not in _SEARCH_STOP_WORDS]
-        # If stripping removed everything, fall back to original words
+        # Fall back to original words if stop-word stripping removed everything
         if not query_words and raw_words:
             query_words = raw_words
+        return query_words
 
-        # Collect all (skill, method) pairs with their searchable text
+    def _build_search_candidates(
+        self, query_words: list[str],
+    ) -> list[tuple]:
+        """Build (skill, method, searchable_text) triples."""
         candidates: list[tuple] = []
         for skill in self._loader.get_all_skills():
             for method in skill.methods:
@@ -1360,33 +1391,26 @@ class _DeviceProxy:
                         f"{method.docstring or ''}"
                     ).lower()
                     candidates.append((skill, method, searchable))
+        return candidates
 
-        # Try all-words first for precision, fall back to any-word.
-        if query_words:
+    @staticmethod
+    def _match_candidates(
+        candidates: list[tuple], query_words: list[str],
+    ) -> list[tuple]:
+        """Match candidates against query words (all-words first, then any-word)."""
+        if not query_words:
+            return [(s, m) for s, m, _ in candidates]
+
+        matched = [
+            (s, m) for s, m, txt in candidates
+            if txt is True or all(w in txt for w in query_words)
+        ]
+        if not matched:
             matched = [
                 (s, m) for s, m, txt in candidates
-                if txt is True or all(w in txt for w in query_words)
+                if txt is True or any(w in txt for w in query_words)
             ]
-            if not matched:
-                matched = [
-                    (s, m) for s, m, txt in candidates
-                    if txt is True or any(w in txt for w in query_words)
-                ]
-        else:
-            matched = [(s, m) for s, m, _ in candidates]
-
-        for skill, method in matched:
-            # Get first line of docstring as summary
-            summary = ""
-            if method.docstring:
-                summary = method.docstring.split("\n")[0].strip()
-
-            results.append({
-                "path": f"{skill.name}.{method.name}",
-                "signature": method.signature,
-                "summary": summary,
-            })
-        return results
+        return matched
 
     def describe_function(self, path: str) -> str:
         """Get full function details including docstring.
@@ -1410,12 +1434,10 @@ class _DeviceProxy:
         for method in skill.methods:
             if method.name == method_name:
                 doc = method.docstring or "No description available"
-                # Build a ready-to-use example call so the LLM doesn't
-                # have to figure out the python_exec invocation itself.
                 example = _build_example_call(skill_name, method)
                 result = f"def {method.signature}:\n    \"\"\"\n    {doc}\n    \"\"\""
                 if example:
-                    result += f"\n\nExample:\n  python_exec(code=\"{example}\")"
+                    result += f'\n\nExample:\n  python_exec(code="{example}")'
                 return result
 
         return f"Error: Method '{method_name}' not found in {skill_name}"
@@ -1517,81 +1539,88 @@ class _DeviceManagerProxy:
             List of skills with path, signature, summary, and devices list
         """
         device_limit = max(1, min(int(device_limit or 10), 100))
-
-        # Group skills by signature to deduplicate
         skill_map: Dict[str, Dict[str, Any]] = {}
 
-        # Add local skills
+        self._add_local_skills(query, skill_map)
+        self._add_remote_skills(query, skill_map, device_limit)
+
+        return list(skill_map.values())
+
+    def _add_local_skills(
+        self, query: str, skill_map: Dict[str, Dict[str, Any]],
+    ) -> None:
+        """Add matching local skills to the skill map."""
+        query_lower = query.lower() if query else ""
         for skill in self._local_loader.get_all_skills():
             for method in skill.methods:
-                query_lower = query.lower() if query else ""
-                matches = (
-                    not query or
-                    query_lower in method.name.lower() or
-                    query_lower in skill.name.lower() or
-                    query_lower in method.signature.lower() or
-                    (method.docstring and query_lower in method.docstring.lower())
-                )
+                if not self._skill_matches(
+                    query_lower, method.name, skill.name,
+                    method.signature, method.docstring or "",
+                ):
+                    continue
+                key = f"{skill.name}.{method.name}"
+                summary = (method.docstring or "").split("\n")[0].strip()
+                if key not in skill_map:
+                    skill_map[key] = {
+                        "path": key,
+                        "signature": method.signature,
+                        "summary": summary,
+                        "devices": [],
+                        "device_count": 0,
+                    }
+                if self._local_device_name not in skill_map[key]["devices"]:
+                    skill_map[key]["devices"].append(self._local_device_name)
+                skill_map[key]["device_count"] += 1
 
-                if matches:
-                    key = f"{skill.name}.{method.name}"
-                    summary = ""
-                    if method.docstring:
-                        summary = method.docstring.split("\n")[0].strip()
-
-                    if key not in skill_map:
-                        skill_map[key] = {
-                            "path": key,
-                            "signature": method.signature,
-                            "summary": summary,
-                            "devices": [],
-                            "device_count": 0,
-                        }
-                    if self._local_device_name not in skill_map[key]["devices"]:
-                        skill_map[key]["devices"].append(self._local_device_name)
-                    skill_map[key]["device_count"] += 1
-
-        # Add remote device skills
+    def _add_remote_skills(
+        self, query: str, skill_map: Dict[str, Dict[str, Any]],
+        device_limit: int,
+    ) -> None:
+        """Add matching remote device skills to the skill map."""
+        query_lower = query.lower() if query else ""
         for device_name, device_info in self._connected_devices.items():
             if not device_info.get("online", False):
                 continue
-
             for skill_data in device_info.get("skills", []):
-                query_lower = query.lower() if query else ""
                 skill_name = skill_data.get("class_name", "")
                 method_name = skill_data.get("function_name", "")
                 signature = skill_data.get("signature", "")
                 docstring = skill_data.get("docstring", "")
+                if not self._skill_matches(
+                    query_lower, method_name, skill_name, signature, docstring,
+                ):
+                    continue
+                key = f"{skill_name}.{method_name}"
+                summary = docstring.split("\n")[0].strip() if docstring else ""
+                if key not in skill_map:
+                    skill_map[key] = {
+                        "path": key,
+                        "signature": signature,
+                        "summary": summary,
+                        "devices": [],
+                        "device_count": 0,
+                    }
+                skill_map[key]["device_count"] += 1
+                if (
+                    device_name not in skill_map[key]["devices"]
+                    and len(skill_map[key]["devices"]) < device_limit
+                ):
+                    skill_map[key]["devices"].append(device_name)
 
-                matches = (
-                    not query or
-                    query_lower in method_name.lower() or
-                    query_lower in skill_name.lower() or
-                    query_lower in signature.lower() or
-                    query_lower in docstring.lower()
-                )
-
-                if matches:
-                    key = f"{skill_name}.{method_name}"
-                    summary = docstring.split("\n")[0].strip() if docstring else ""
-
-                    if key not in skill_map:
-                        skill_map[key] = {
-                            "path": key,
-                            "signature": signature,
-                            "summary": summary,
-                            "devices": [],
-                            "device_count": 0,
-                        }
-                    # Always count device availability; sample list is capped
-                    skill_map[key]["device_count"] += 1
-                    if (
-                        device_name not in skill_map[key]["devices"]
-                        and len(skill_map[key]["devices"]) < device_limit
-                    ):
-                        skill_map[key]["devices"].append(device_name)
-
-        return list(skill_map.values())
+    @staticmethod
+    def _skill_matches(
+        query_lower: str, method_name: str, skill_name: str,
+        signature: str, docstring: str,
+    ) -> bool:
+        """Return True if a skill method matches the search query."""
+        if not query_lower:
+            return True
+        return (
+            query_lower in method_name.lower()
+            or query_lower in skill_name.lower()
+            or query_lower in signature.lower()
+            or query_lower in docstring.lower()
+        )
 
     def describe_function(self, path: str) -> str:
         """Get full function details including docstring.
@@ -1604,32 +1633,21 @@ class _DeviceManagerProxy:
         """
         parts = path.split(".")
 
-        # Handle both "SkillName.method" and "device.SkillName.method"
         if len(parts) == 2:
             skill_name, method_name = parts
-            # Try local first
-            skill = self._local_loader.get_skill(skill_name)
-            if skill:
-                for method in skill.methods:
-                    if method.name == method_name:
-                        doc = method.docstring or "No description available"
-                        return f"def {method.signature}:\n    \"\"\"\n    {doc}\n    \"\"\""
-            return f"Error: Method '{method_name}' not found in {skill_name}"
+            return self._describe_local_method(skill_name, method_name)
 
         elif len(parts) == 3:
             device_name, skill_name, method_name = parts
             device_name = normalize_device_name(device_name)
 
-            # Check if it's the local device
+            # Local device
             if device_name == self._local_device_name:
-                skill = self._local_loader.get_skill(skill_name)
-                if skill:
-                    for method in skill.methods:
-                        if method.name == method_name:
-                            doc = method.docstring or "No description available"
-                            return f"def {method.signature}:\n    \"\"\"\n    {doc}\n    \"\"\""
+                result = self._describe_local_method(skill_name, method_name)
+                if not result.startswith("Error:"):
+                    return result
 
-            # Check remote devices
+            # Remote devices
             device_info = self._connected_devices.get(device_name)
             if device_info:
                 for skill_data in device_info.get("skills", []):
@@ -1637,11 +1655,21 @@ class _DeviceManagerProxy:
                             skill_data.get("function_name") == method_name):
                         sig = skill_data.get("signature", f"{method_name}()")
                         doc = skill_data.get("docstring", "No description available")
-                        return f"def {sig}:\n    \"\"\"\n    {doc}\n    \"\"\""
+                        return f'def {sig}:\n    """\n    {doc}\n    """'
 
             return f"Error: Function '{path}' not found"
 
         return f"Error: Invalid path '{path}'. Use 'SkillName.method' or 'device.SkillName.method'"
+
+    def _describe_local_method(self, skill_name: str, method_name: str) -> str:
+        """Describe a method from the local skill loader."""
+        skill = self._local_loader.get_skill(skill_name)
+        if skill:
+            for method in skill.methods:
+                if method.name == method_name:
+                    doc = method.docstring or "No description available"
+                    return f'def {method.signature}:\n    """\n    {doc}\n    """'
+        return f"Error: Method '{method_name}' not found in {skill_name}"
 
     def __getattr__(self, name: str) -> "_RemoteDeviceProxy":
         """Get a device by name for skill calls.

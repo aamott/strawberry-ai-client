@@ -125,6 +125,18 @@ class AudioFeedback:
         for sound_type, config in SOUND_CONFIGS.items():
             self._sounds[sound_type] = self._generate_tone(config)
 
+    @staticmethod
+    def _generate_waveform(
+        freq: float, t: np.ndarray, wave_type: str,
+    ) -> np.ndarray:
+        """Generate a single-frequency waveform."""
+        if wave_type == "square":
+            return np.sign(np.sin(2 * np.pi * freq * t))
+        if wave_type == "triangle":
+            return 2 * np.abs(2 * (t * freq - np.floor(t * freq + 0.5))) - 1
+        # Default: sine
+        return np.sin(2 * np.pi * freq * t)
+
     def _generate_tone(self, config: ToneConfig) -> np.ndarray:
         """Generate a tone or chord based on configuration.
 
@@ -136,56 +148,30 @@ class AudioFeedback:
         """
         num_samples = int(self.sample_rate * config.duration)
         t = np.linspace(0, config.duration, num_samples, dtype=np.float32)
-
-        # Generate each frequency and mix
         audio = np.zeros(num_samples, dtype=np.float32)
+        is_arpeggio = len(config.frequencies) > 2
 
         for i, freq in enumerate(config.frequencies):
-            # Optional: stagger frequencies for arpeggio effect
-            if len(config.frequencies) > 2:
-                # Stagger start times for arpeggio
+            if is_arpeggio:
                 delay_samples = int(i * 0.03 * self.sample_rate)
-                wave = np.zeros(num_samples, dtype=np.float32)
                 wave_len = num_samples - delay_samples
-
+                wave = np.zeros(num_samples, dtype=np.float32)
                 if wave_len > 0:
-                    t_wave = t[:wave_len]
-                    if config.wave_type == "sine":
-                        wave[delay_samples:] = np.sin(2 * np.pi * freq * t_wave)
-                    elif config.wave_type == "square":
-                        wave[delay_samples:] = np.sign(np.sin(2 * np.pi * freq * t_wave))
-                    elif config.wave_type == "triangle":
-                        wave[delay_samples:] = (
-                            2
-                            * np.abs(
-                                2 * (t_wave * freq - np.floor(t_wave * freq + 0.5))
-                            )
-                            - 1
-                        )
+                    wave[delay_samples:] = self._generate_waveform(
+                        freq, t[:wave_len], config.wave_type,
+                    )
             else:
-                # Simple wave, no stagger
-                if config.wave_type == "sine":
-                    wave = np.sin(2 * np.pi * freq * t)
-                elif config.wave_type == "square":
-                    wave = np.sign(np.sin(2 * np.pi * freq * t))
-                elif config.wave_type == "triangle":
-                    wave = 2 * np.abs(2 * (t * freq - np.floor(t * freq + 0.5))) - 1
-
+                wave = self._generate_waveform(freq, t, config.wave_type)
             audio += wave
 
-        # Normalize by number of frequencies
+        # Normalize, apply volume and fade envelope
         audio /= len(config.frequencies)
-
-        # Apply volume
         audio *= config.volume
 
-        # Apply fade in/out envelope
         fade_in_samples = int(config.fade_in * self.sample_rate)
         fade_out_samples = int(config.fade_out * self.sample_rate)
-
         if fade_in_samples > 0:
             audio[:fade_in_samples] *= np.linspace(0, 1, fade_in_samples)
-
         if fade_out_samples > 0:
             audio[-fade_out_samples:] *= np.linspace(1, 0, fade_out_samples)
 

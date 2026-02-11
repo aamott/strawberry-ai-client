@@ -190,11 +190,36 @@ class CLIApp:
             logger.warning(f"Hub connection failed: {e}")
             # Will show as local mode in welcome
 
+    async def _read_user_input(self, use_aioconsole: bool) -> str:
+        """Show prompt and read one line of user input."""
+        prompt = renderer.print_prompt(voice_active=self._voice_enabled)
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+
+        if use_aioconsole:
+            from aioconsole import ainput
+            return (await ainput("")).strip()
+        return (await asyncio.to_thread(sys.stdin.readline)).strip()
+
+    async def _wait_until_ready(self) -> bool:
+        """Wait until the session is not busy and response event is set.
+
+        Returns:
+            True if ready for input, False if loop should skip.
+        """
+        if self._session_id:
+            session = self._core.get_session(self._session_id)
+            if session and session.busy:
+                await asyncio.sleep(0.05)
+                return False
+        if not self._response_event.is_set():
+            await self._response_event.wait()
+        return True
+
     async def _input_loop(self) -> None:
         """Handle user input."""
         try:
-            # Try to use aioconsole for non-blocking input
-            from aioconsole import ainput
+            from aioconsole import ainput  # noqa: F401
             use_aioconsole = True
         except ImportError:
             use_aioconsole = False
@@ -202,26 +227,10 @@ class CLIApp:
 
         while self._running:
             try:
-                if self._session_id:
-                    session = self._core.get_session(self._session_id)
-                    if session and session.busy:
-                        await asyncio.sleep(0.05)
-                        continue
+                if not await self._wait_until_ready():
+                    continue
 
-                if not self._response_event.is_set():
-                    await self._response_event.wait()
-
-                # Green prompt when voice is active
-                prompt = renderer.print_prompt(voice_active=self._voice_enabled)
-                sys.stdout.write(prompt)
-                sys.stdout.flush()
-
-                if use_aioconsole:
-                    user_input = await ainput("")
-                else:
-                    user_input = await asyncio.to_thread(sys.stdin.readline)
-
-                user_input = user_input.strip()
+                user_input = await self._read_user_input(use_aioconsole)
                 if not user_input:
                     continue
 
@@ -229,13 +238,9 @@ class CLIApp:
                     sys.stdout.write(f"{user_input}\n")
                     sys.stdout.flush()
 
-                # Handle slash commands
                 if user_input.startswith("/"):
                     await self._handle_command(user_input)
-                    continue
-
-                # Send message to core
-                if self._session_id:
+                elif self._session_id:
                     self._response_event.clear()
                     await self._core.send_message(self._session_id, user_input)
                     await self._response_event.wait()
@@ -261,62 +266,63 @@ class CLIApp:
         Args:
             event: The event to handle
         """
-        if isinstance(event, CoreReady):
-            logger.info("Core ready")
+        # Dispatch by event type
+        handler = {
+            CoreReady: self._on_core_ready,
+            CoreError: self._on_core_error,
+            MessageAdded: self._on_message_added,
+            ToolCallStarted: self._on_tool_call_started,
+            ToolCallResult: self._on_tool_call_result,
+            ConnectionChanged: self._on_connection_changed,
+            ModeChanged: self._on_mode_changed,
+        }.get(type(event))
+        if handler:
+            handler(event)
 
-        elif isinstance(event, CoreError):
-            renderer.print_error(event.error)
+    def _on_core_ready(self, event) -> None:
+        logger.info("Core ready")
+
+    def _on_core_error(self, event) -> None:
+        renderer.print_error(event.error)
+        self._response_event.set()
+
+    def _on_message_added(self, event) -> None:
+        if event.role == "assistant":
+            renderer.print_assistant(event.content)
             self._response_event.set()
+            if self._voice_enabled and self._voice_core:
+                self._voice_core.speak(event.content)
+        elif event.role == "system":
+            renderer.print_system(event.content)
 
-        elif isinstance(event, MessageAdded):
-            if event.role == "assistant":
-                renderer.print_assistant(event.content)
-                self._response_event.set()
-
-                # Speak response if voice is enabled
-                if self._voice_enabled and self._voice_core:
-                    self._voice_core.speak(event.content)
-
-            elif event.role == "system":
-                renderer.print_system(event.content)
-            # User messages are not echoed (user already sees their input)
-
-        elif isinstance(event, ToolCallStarted):
-            if event.tool_name == "python_exec" and "code" in event.arguments:
-                renderer.print_tool_call(
-                    event.tool_name,
-                    str(event.arguments.get("code") or ""),
-                )
-            else:
-                # Build args preview
-                args_preview = ", ".join(
-                    f"{k}={v!r}" for k, v in list(event.arguments.items())[:2]
-                )
-                renderer.print_tool_call(event.tool_name, args_preview)
-            # Track for /last command
-            self._pending_tool_calls[event.tool_name] = event.arguments
-
-        elif isinstance(event, ToolCallResult):
-            # Update the tool call line with result
-            output = event.result if event.success else event.error
-            renderer.print_tool_result(
-                event.tool_name,
-                event.success,
-                event.result,
-                event.error,
+    def _on_tool_call_started(self, event) -> None:
+        if event.tool_name == "python_exec" and "code" in event.arguments:
+            renderer.print_tool_call(
+                event.tool_name, str(event.arguments.get("code") or ""),
             )
-            # Store for /last command
-            self._last_tool_result = output
-            self._pending_tool_calls.pop(event.tool_name, None)
+        else:
+            args_preview = ", ".join(
+                f"{k}={v!r}" for k, v in list(event.arguments.items())[:2]
+            )
+            renderer.print_tool_call(event.tool_name, args_preview)
+        self._pending_tool_calls[event.tool_name] = event.arguments
 
-        elif isinstance(event, ConnectionChanged):
-            if event.connected:
-                renderer.print_system(f"Connected to Hub ({event.url})")
-            elif event.error:
-                renderer.print_system(f"Hub: {event.error}")
+    def _on_tool_call_result(self, event) -> None:
+        output = event.result if event.success else event.error
+        renderer.print_tool_result(
+            event.tool_name, event.success, event.result, event.error,
+        )
+        self._last_tool_result = output
+        self._pending_tool_calls.pop(event.tool_name, None)
 
-        elif isinstance(event, ModeChanged):
-            renderer.print_system(event.message)
+    def _on_connection_changed(self, event) -> None:
+        if event.connected:
+            renderer.print_system(f"Connected to Hub ({event.url})")
+        elif event.error:
+            renderer.print_system(f"Hub: {event.error}")
+
+    def _on_mode_changed(self, event) -> None:
+        renderer.print_system(event.message)
 
     async def _handle_command(self, command: str) -> None:
         """Handle a slash command.
@@ -326,54 +332,61 @@ class CLIApp:
         """
         cmd = command.lower().split()[0]
 
-        if cmd in ("/help", "/h"):
-            renderer.print_help()
+        # Dispatch table for simple sync handlers
+        sync_handlers = {
+            "/help": lambda: renderer.print_help(),
+            "/h": lambda: renderer.print_help(),
+            "/settings": lambda: self._settings_menu.show(),
+            "/last": self._cmd_last,
+        }
+        if cmd in sync_handlers:
+            sync_handlers[cmd]()
+            return
 
-        elif cmd in ("/quit", "/q", "/exit"):
+        # Commands that need special handling
+        if cmd in ("/quit", "/q", "/exit"):
             renderer.print_system("Goodbye!")
             self._running = False
-
         elif cmd == "/clear":
-            session = self._core.get_session(self._session_id) if self._session_id else None
-            if session:
-                session.clear()
-            renderer.clear_screen()
-            renderer.print_welcome(
-                model=self._core.get_model_info(),
-                online=self._core.is_online(),
-            )
-            renderer.print_system("Conversation cleared")
-
-        elif cmd == "/last":
-            if self._last_tool_result:
-                print(f"\n{self._last_tool_result}\n")
-            else:
-                renderer.print_system("No tool output available")
-
+            self._cmd_clear()
         elif cmd == "/voice":
             await self._toggle_voice()
-
         elif cmd == "/connect":
-            renderer.print_system("Connecting to Hub...")
-            connected = await self._core.connect_hub()
-            if connected:
-                renderer.print_system("Connected!")
-            else:
-                renderer.print_system("Connection failed")
-
+            await self._cmd_connect()
         elif cmd == "/status":
-            online = self._core.is_online()
-            model = self._core.get_model_info()
-            voice = "ON" if self._voice_enabled else "OFF"
-            status = "Online (Hub)" if online else "Local"
-            renderer.print_status(f"Mode: {status} | Model: {model} | Voice: {voice}")
-
-        elif cmd == "/settings":
-            self._settings_menu.show()
-
+            self._cmd_status()
         else:
             renderer.print_error(f"Unknown command: {cmd}")
             renderer.print_system("Type /help for available commands")
+
+    def _cmd_last(self) -> None:
+        if self._last_tool_result:
+            print(f"\n{self._last_tool_result}\n")
+        else:
+            renderer.print_system("No tool output available")
+
+    def _cmd_clear(self) -> None:
+        session = self._core.get_session(self._session_id) if self._session_id else None
+        if session:
+            session.clear()
+        renderer.clear_screen()
+        renderer.print_welcome(
+            model=self._core.get_model_info(),
+            online=self._core.is_online(),
+        )
+        renderer.print_system("Conversation cleared")
+
+    async def _cmd_connect(self) -> None:
+        renderer.print_system("Connecting to Hub...")
+        connected = await self._core.connect_hub()
+        renderer.print_system("Connected!" if connected else "Connection failed")
+
+    def _cmd_status(self) -> None:
+        online = self._core.is_online()
+        model = self._core.get_model_info()
+        voice = "ON" if self._voice_enabled else "OFF"
+        status = "Online (Hub)" if online else "Local"
+        renderer.print_status(f"Mode: {status} | Model: {model} | Voice: {voice}")
 
     # -------------------------------------------------------------------------
     # Voice Support

@@ -76,6 +76,60 @@ class HubAgentRunner(AgentRunner):
         self._get_hub_client = get_hub_client
         self._emit = emit
 
+    async def _dispatch_stream_event(
+        self, event_type: str, event: dict, session: "ChatSession",
+    ) -> tuple[bool, Optional[str]]:
+        """Dispatch a single Hub SSE event.
+
+        Returns:
+            (should_break, final_content_if_any)
+        """
+        if event_type == "tool_call_started":
+            arguments = event.get("arguments")
+            if not isinstance(arguments, dict):
+                arguments = {}
+            await self._emit(
+                ToolCallStarted(
+                    session_id=session.id,
+                    tool_name=str(event.get("tool_name") or ""),
+                    arguments=arguments,
+                )
+            )
+            return False, None
+
+        if event_type == "tool_call_result":
+            success = bool(event.get("success"))
+            result = event.get("result")
+            error = event.get("error")
+            await self._emit(
+                ToolCallResult(
+                    session_id=session.id,
+                    tool_name=str(event.get("tool_name") or ""),
+                    success=success,
+                    result=str(result) if (success and result is not None) else None,
+                    error=str(error) if ((not success) and error is not None) else None,
+                )
+            )
+            return False, None
+
+        if event_type == "content_delta":
+            delta = str(event.get("delta") or "")
+            if delta:
+                await self._emit(
+                    StreamingDelta(session_id=session.id, delta=delta)
+                )
+            return False, None
+
+        if event_type == "assistant_message":
+            return False, str(event.get("content") or "")
+
+        if event_type == "error":
+            error_msg = str(event.get("error") or "Hub stream error")
+            await self._emit(CoreError(error=error_msg))
+            return True, None  # signal caller to return None
+
+        return False, None
+
     async def run(
         self,
         session: "ChatSession",
@@ -90,80 +144,32 @@ class HubAgentRunner(AgentRunner):
             return None
 
         # Build messages for Hub (exclude system messages)
-        messages: list[ChatMessage] = []
-        for msg in session.messages:
-            if msg.role != "system":
-                messages.append(ChatMessage(role=msg.role, content=msg.content))
+        messages: list[ChatMessage] = [
+            ChatMessage(role=msg.role, content=msg.content)
+            for msg in session.messages
+            if msg.role != "system"
+        ]
 
-        # Stream from Hub so tool call events can be emitted incrementally.
         try:
             final_content: Optional[str] = None
 
-            stream = hub_client.chat_stream(
-                messages=messages,
-                enable_tools=True,
-            )
+            stream = hub_client.chat_stream(messages=messages, enable_tools=True)
             try:
                 while True:
                     event = await stream.__anext__()
                     event_type = str(event.get("type") or "")
 
-                    if event_type == "tool_call_started":
-                        tool_name = str(event.get("tool_name") or "")
-                        arguments = event.get("arguments")
-                        if not isinstance(arguments, dict):
-                            arguments = {}
-                        await self._emit(
-                            ToolCallStarted(
-                                session_id=session.id,
-                                tool_name=tool_name,
-                                arguments=arguments,
-                            )
-                        )
-                        continue
-
-                    if event_type == "tool_call_result":
-                        tool_name = str(event.get("tool_name") or "")
-                        success = bool(event.get("success"))
-                        result = event.get("result")
-                        error = event.get("error")
-                        await self._emit(
-                            ToolCallResult(
-                                session_id=session.id,
-                                tool_name=tool_name,
-                                success=success,
-                                result=str(result) if (success and result is not None) else None,
-                                error=str(error) if ((not success) and error is not None) else None,
-                            )
-                        )
-                        continue
-
-                    if event_type == "content_delta":
-                        delta = str(event.get("delta") or "")
-                        if delta:
-                            await self._emit(
-                                StreamingDelta(
-                                    session_id=session.id,
-                                    delta=delta,
-                                )
-                            )
-                        continue
-
-                    if event_type == "assistant_message":
-                        final_content = str(event.get("content") or "")
-                        continue
-
-                    if event_type == "error":
-                        error_msg = str(event.get("error") or "Hub stream error")
-                        await self._emit(CoreError(error=error_msg))
-                        return None
-
                     if event_type == "done":
-                        # Close the stream explicitly rather than breaking out of an
-                        # async-for loop, which can interrupt the underlying SSE
-                        # iterator mid-yield and produce noisy GeneratorExit errors.
                         await asyncio.shield(stream.aclose())
                         break
+
+                    should_abort, content = await self._dispatch_stream_event(
+                        event_type, event, session,
+                    )
+                    if should_abort:
+                        return None
+                    if content is not None:
+                        final_content = content
 
             except StopAsyncIteration:
                 pass

@@ -212,6 +212,22 @@ class VoiceSettingsHelper:
             return "TTS order cannot be empty"
         return None
 
+    # Maps voice_core key prefixes to module type for re-init
+    _KEY_TO_MODULE: dict[str, str] = {
+        "stt.order": "stt",
+        "tts.order": "tts",
+        "vad.order": "vad",
+        "wakeword.order": "wakeword",
+    }
+
+    # Maps namespace prefixes to (module_type, active_backend_attr, name_index)
+    _NS_PREFIX_MAP: list[tuple[str, str, str, int]] = [
+        ("voice.stt.", "stt", "active_stt_backend", 2),
+        ("voice.tts.", "tts", "active_tts_backend", 2),
+        ("voice.vad.", "vad", "active_vad_backend", 2),
+        ("voice.wakeword.", "wakeword", "active_wake_backend", 3),
+    ]
+
     def _handle_settings_change(self, namespace: str, key: str, value: Any) -> None:
         """Handle settings change event."""
         if not namespace.startswith("voice"):
@@ -220,31 +236,20 @@ class VoiceSettingsHelper:
         # 1. Voice Core main settings
         if namespace == "voice_core":
             self._update_config_value(key, value)
+            module_type = self._KEY_TO_MODULE.get(key)
+            if module_type:
+                self._on_change(module_type)
+            return
 
-            # Map key to module type for re-init
-            if key == "stt.order":
-                self._on_change("stt")
-            elif key == "tts.order":
-                self._on_change("tts")
-            elif key == "vad.order":
-                self._on_change("vad")
-            elif key == "wakeword.order":
-                self._on_change("wakeword")
+        # 2. Backend-specific settings (voice.stt.leopard etc)
+        self._handle_backend_settings_change(namespace)
 
-        # 2. Backend specific settings (voice.stt.leopard etc)
-        elif namespace.startswith("voice.stt."):
-            name = namespace.split(".")[2]
-            if name == self._component_manager.active_stt_backend:
-                self._on_change("stt")
-        elif namespace.startswith("voice.tts."):
-            name = namespace.split(".")[2]
-            if name == self._component_manager.active_tts_backend:
-                self._on_change("tts")
-        elif namespace.startswith("voice.vad."):
-            name = namespace.split(".")[2]
-            if name == self._component_manager.active_vad_backend:
-                self._on_change("vad")
-        elif namespace.startswith("voice.wakeword."):
-            name = namespace.split(".")[3] if len(namespace.split(".")) > 3 else ""
-            if name == self._component_manager.active_wake_backend:
-                self._on_change("wakeword")
+    def _handle_backend_settings_change(self, namespace: str) -> None:
+        """Handle a change in a backend-specific namespace."""
+        for prefix, module_type, attr, idx in self._NS_PREFIX_MAP:
+            if namespace.startswith(prefix):
+                parts = namespace.split(".")
+                name = parts[idx] if len(parts) > idx else ""
+                if name == getattr(self._component_manager, attr):
+                    self._on_change(module_type)
+                return

@@ -114,6 +114,15 @@ class SettingsCLI:
         if field.description:
             print(f"    └─ {field.description}")
 
+    @staticmethod
+    def _format_range(field: SettingField) -> str:
+        """Format the min/max range suffix for numeric fields."""
+        if field.min_value is None and field.max_value is None:
+            return ""
+        min_v = field.min_value if field.min_value is not None else ""
+        max_v = field.max_value if field.max_value is not None else ""
+        return f" [{min_v}..{max_v}]"
+
     def _render_field_value(self, field: SettingField, value: Any) -> str:
         """Render a field value for display.
 
@@ -130,35 +139,19 @@ class SettingsCLI:
         match field.type:
             case FieldType.PASSWORD:
                 return "••••••••" if value else "(not set)"
-
             case FieldType.CHECKBOX:
                 return "[x]" if value else "[ ]"
-
             case FieldType.NUMBER | FieldType.SLIDER:
-                range_str = ""
-                if field.min_value is not None or field.max_value is not None:
-                    min_v = field.min_value if field.min_value is not None else ""
-                    max_v = field.max_value if field.max_value is not None else ""
-                    range_str = f" [{min_v}..{max_v}]"
-                return f"{value}{range_str}"
-
+                return f"{value}{self._format_range(field)}"
             case FieldType.LIST | FieldType.PROVIDER_SELECT:
-                if isinstance(value, list):
-                    return " → ".join(str(v) for v in value)
-                return str(value)
-
+                return " → ".join(str(v) for v in value) if isinstance(value, list) else str(value)
             case FieldType.SELECT | FieldType.DYNAMIC_SELECT:
-                options = field.options or []
-                if options:
-                    return f"{value} (options: {', '.join(options[:3])}...)"
-                return str(value)
-
+                opts = field.options or []
+                return f"{value} (options: {', '.join(opts[:3])}...)" if opts else str(value)
             case FieldType.COLOR:
                 return value if value else "#000000"
-
             case FieldType.ACTION:
                 return f"[{field.label}]"
-
             case _:
                 return str(value) if value else "(empty)"
 
@@ -277,6 +270,80 @@ class SettingsCLI:
         """Get the number of pending changes."""
         return sum(len(v) for v in self.pending_changes.values())
 
+    def _list_cmd_add(self, items: list[str], field: SettingField) -> None:
+        """Handle the 'add' command in the list editor."""
+        available = self._get_available_options(field, items)
+        if available:
+            print("Available options:")
+            for i, opt in enumerate(available, 1):
+                print(f"  {i}. {opt}")
+            choice = input("Select number or enter custom: ").strip()
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(available):
+                    items.append(available[idx])
+                else:
+                    print("Invalid selection")
+                    return
+            except ValueError:
+                if choice and (field.allow_custom or not field.options):
+                    items.append(choice)
+                else:
+                    print("Custom values not allowed")
+                    return
+        else:
+            new_item = input("Enter new item: ").strip()
+            if new_item:
+                items.append(new_item)
+        self._print_list_items(items)
+
+    @staticmethod
+    def _list_cmd_move_up(items: list[str], cmd: str) -> None:
+        """Handle the 'u N' (move up) command."""
+        try:
+            idx = int(cmd[2:]) - 1
+            if 0 < idx < len(items):
+                items[idx - 1], items[idx] = items[idx], items[idx - 1]
+            else:
+                print("Cannot move up")
+        except (ValueError, IndexError):
+            print("Invalid index")
+
+    @staticmethod
+    def _list_cmd_move_down(items: list[str], cmd: str) -> None:
+        """Handle the 'd N' (move down) command."""
+        try:
+            idx = int(cmd[2:]) - 1
+            if 0 <= idx < len(items) - 1:
+                items[idx], items[idx + 1] = items[idx + 1], items[idx]
+            else:
+                print("Cannot move down")
+        except (ValueError, IndexError):
+            print("Invalid index")
+
+    @staticmethod
+    def _list_cmd_remove(items: list[str], cmd: str) -> None:
+        """Handle the 'r N' (remove) command."""
+        try:
+            idx = int(cmd[2:]) - 1
+            if 0 <= idx < len(items):
+                print(f"Removed: {items.pop(idx)}")
+            else:
+                print("Invalid index")
+        except (ValueError, IndexError):
+            print("Invalid index")
+
+    def _list_cmd_view_detail(self, items: list[str], cmd: str, field: SettingField) -> None:
+        """Handle numeric input to view item details."""
+        try:
+            idx = int(cmd) - 1
+            if 0 <= idx < len(items) and field.type == FieldType.PROVIDER_SELECT:
+                self._show_provider_details(field, items[idx])
+            elif not (0 <= idx < len(items)):
+                print("Invalid index")
+        except ValueError:
+            print("Unknown command")
+
     def edit_list_field(self, namespace: str, key: str) -> None:
         """Interactive list editor for LIST/PROVIDER_SELECT fields.
 
@@ -293,12 +360,11 @@ class SettingsCLI:
             print(f"Error: Field '{key}' is not a list type")
             return
 
-        # Get current value
         current = self.get_value(namespace, key)
-        if not isinstance(current, list):
-            current = [current] if current else []
-
-        items = list(current)
+        items = (
+            list(current) if isinstance(current, list)
+            else ([current] if current else [])
+        )
 
         print(f"\n═══ Edit: {field.label} ═══")
         self._print_list_items(items)
@@ -316,90 +382,25 @@ class SettingsCLI:
             cmd = input("\n> ").strip().lower()
 
             if cmd == "q":
-                # Save to pending
                 self.set_value(namespace, key, items)
                 print(f"Saved to pending: {' → '.join(items)}")
                 break
-
             elif cmd == "x":
                 print("Cancelled")
                 break
-
             elif cmd == "a":
-                # Add new item
-                available = self._get_available_options(field, items)
-                if available:
-                    print("Available options:")
-                    for i, opt in enumerate(available, 1):
-                        print(f"  {i}. {opt}")
-                    choice = input("Select number or enter custom: ").strip()
-                    try:
-                        idx = int(choice) - 1
-                        if 0 <= idx < len(available):
-                            items.append(available[idx])
-                        else:
-                            print("Invalid selection")
-                            continue
-                    except ValueError:
-                        if choice and (field.allow_custom or not field.options):
-                            items.append(choice)
-                        else:
-                            print("Custom values not allowed")
-                            continue
-                else:
-                    new_item = input("Enter new item: ").strip()
-                    if new_item:
-                        items.append(new_item)
-
-                self._print_list_items(items)
-
+                self._list_cmd_add(items, field)
             elif cmd.startswith("u "):
-                try:
-                    idx = int(cmd[2:]) - 1
-                    if 0 < idx < len(items):
-                        items[idx - 1], items[idx] = items[idx], items[idx - 1]
-                        self._print_list_items(items)
-                    else:
-                        print("Cannot move up")
-                except (ValueError, IndexError):
-                    print("Invalid index")
-
+                self._list_cmd_move_up(items, cmd)
+                self._print_list_items(items)
             elif cmd.startswith("d "):
-                try:
-                    idx = int(cmd[2:]) - 1
-                    if 0 <= idx < len(items) - 1:
-                        items[idx], items[idx + 1] = items[idx + 1], items[idx]
-                        self._print_list_items(items)
-                    else:
-                        print("Cannot move down")
-                except (ValueError, IndexError):
-                    print("Invalid index")
-
+                self._list_cmd_move_down(items, cmd)
+                self._print_list_items(items)
             elif cmd.startswith("r "):
-                try:
-                    idx = int(cmd[2:]) - 1
-                    if 0 <= idx < len(items):
-                        removed = items.pop(idx)
-                        print(f"Removed: {removed}")
-                        self._print_list_items(items)
-                    else:
-                        print("Invalid index")
-                except (ValueError, IndexError):
-                    print("Invalid index")
-
+                self._list_cmd_remove(items, cmd)
+                self._print_list_items(items)
             else:
-                # Try to parse as number for item details
-                try:
-                    idx = int(cmd) - 1
-                    if 0 <= idx < len(items):
-                        item = items[idx]
-                        # Show provider details if applicable
-                        if field.type == FieldType.PROVIDER_SELECT:
-                            self._show_provider_details(field, item)
-                    else:
-                        print("Invalid index")
-                except ValueError:
-                    print("Unknown command")
+                self._list_cmd_view_detail(items, cmd, field)
 
     def _print_list_items(self, items: List[str]) -> None:
         """Print numbered list of items."""
@@ -471,6 +472,30 @@ class SettingsCLI:
             print(f"  No settings registered for '{namespace}'")
 
 
+def _cmd_set(cli: SettingsCLI, args: List[str]) -> int:
+    """Handle the 'set' settings command."""
+    if len(args) < 3:
+        print("Usage: --settings set <namespace> <key> <value>")
+        return 1
+    value: Any = args[2]
+    if value.startswith("[") and value.endswith("]"):
+        value = [v.strip() for v in value[1:-1].split(",")]
+    error = cli.set_value(args[0], args[1], value)
+    if error:
+        print(f"Error: {error}")
+        return 1
+    print(f"Buffered: {args[0]}.{args[1]} = {value}")
+    return 0
+
+
+def _require_args(args: List[str], count: int, usage: str) -> bool:
+    """Check that args has at least count items, printing usage if not."""
+    if len(args) < count:
+        print(usage)
+        return False
+    return True
+
+
 def run_settings_command(
     settings_manager: SettingsManager,
     command: str,
@@ -488,69 +513,55 @@ def run_settings_command(
     """
     cli = SettingsCLI(settings_manager)
 
+    # No-arg commands
     if command == "list":
         cli.list_namespaces()
         return 0
+    if command == "apply":
+        return 1 if cli.apply_changes() else 0
+    if command == "discard":
+        cli.discard_changes()
+        return 0
+    if command == "interactive":
+        print("Interactive mode not yet implemented")
+        return 1
+    if command == "set":
+        return _cmd_set(cli, args)
 
-    elif command == "show":
-        if not args:
-            print("Usage: --settings show <namespace>")
+    # Commands that need 1 arg
+    if command == "show":
+        if not _require_args(args, 1, "Usage: --settings show <namespace>"):
             return 1
         cli.show_namespace(args[0])
         return 0
 
-    elif command == "get":
-        if len(args) < 2:
-            print("Usage: --settings get <namespace> <key>")
+    # Commands that need 2 args
+    two_arg_cmds: dict[str, tuple[str, Any]] = {
+        "get": (
+            "Usage: --settings get <namespace> <key>",
+            lambda: (
+                print(cli.get_value(args[0], args[1])), 0
+            )[1],
+        ),
+        "edit": (
+            "Usage: --settings edit <namespace> <key>",
+            lambda: (
+                cli.edit_list_field(args[0], args[1]), 0
+            )[1],
+        ),
+        "reset": (
+            "Usage: --settings reset <namespace> <key>",
+            lambda: (
+                cli.reset_field(args[0], args[1]), 0
+            )[1],
+        ),
+    }
+    if command in two_arg_cmds:
+        usage, handler = two_arg_cmds[command]
+        if not _require_args(args, 2, usage):
             return 1
-        value = cli.get_value(args[0], args[1])
-        print(value)
-        return 0
+        return handler()
 
-    elif command == "set":
-        if len(args) < 3:
-            print("Usage: --settings set <namespace> <key> <value>")
-            return 1
-        # Parse value (handle lists)
-        value: Any = args[2]
-        if value.startswith("[") and value.endswith("]"):
-            value = [v.strip() for v in value[1:-1].split(",")]
-
-        error = cli.set_value(args[0], args[1], value)
-        if error:
-            print(f"Error: {error}")
-            return 1
-        print(f"Buffered: {args[0]}.{args[1]} = {value}")
-        return 0
-
-    elif command == "apply":
-        errors = cli.apply_changes()
-        return 1 if errors else 0
-
-    elif command == "discard":
-        cli.discard_changes()
-        return 0
-
-    elif command == "edit":
-        if len(args) < 2:
-            print("Usage: --settings edit <namespace> <key>")
-            return 1
-        cli.edit_list_field(args[0], args[1])
-        return 0
-
-    elif command == "reset":
-        if len(args) < 2:
-            print("Usage: --settings reset <namespace> <key>")
-            return 1
-        cli.reset_field(args[0], args[1])
-        return 0
-
-    elif command == "interactive":
-        # Future: rich/textual TUI
-        print("Interactive mode not yet implemented")
-        return 1
-
-    else:
-        print(f"Unknown settings command: {command}")
-        print("Available: list, show, get, set, apply, discard, edit, reset")
-        return 1
+    print(f"Unknown settings command: {command}")
+    print("Available: list, show, get, set, apply, discard, edit, reset")
+    return 1
