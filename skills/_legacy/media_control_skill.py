@@ -1,31 +1,50 @@
-"""Media playback control skills."""
+"""Media playback control skills (legacy).
 
-import platform
-import subprocess
+Delegates platform-specific dispatch to the shared ``media_dispatch`` module
+in the repo skill directory.
+"""
+
+import sys
+from pathlib import Path
+
+# Ensure the repo skills directory is importable so we can reach
+# media_control_skill.media_dispatch without requiring a package install.
+_skills_dir = Path(__file__).resolve().parent.parent
+if str(_skills_dir) not in sys.path:
+    sys.path.insert(0, str(_skills_dir))
+
+from media_control_skill.media_dispatch import (  # noqa: E402
+    get_system_volume,
+    send_media_command,
+)
 
 
 class MediaControlSkill:
-    """Controls media playback on the device."""
+    """Controls media playback on the device.
+
+    Legacy wrapper — delegates all platform logic to
+    ``media_control_skill.media_dispatch``.
+    """
 
     def play(self) -> str:
         """Resume media playback."""
-        return self._send_media_command("play")
+        return send_media_command("play")
 
     def pause(self) -> str:
         """Pause media playback."""
-        return self._send_media_command("pause")
+        return send_media_command("pause")
 
     def stop(self) -> str:
         """Stop media playback."""
-        return self._send_media_command("stop")
+        return send_media_command("stop")
 
     def next_track(self) -> str:
         """Skip to the next track."""
-        return self._send_media_command("next")
+        return send_media_command("next")
 
     def previous_track(self) -> str:
         """Go back to the previous track."""
-        return self._send_media_command("previous")
+        return send_media_command("previous")
 
     def set_volume(self, volume: int) -> str:
         """Set the media volume.
@@ -42,7 +61,7 @@ class MediaControlSkill:
         if volume < 0 or volume > 100:
             raise ValueError("Volume must be between 0 and 100")
 
-        return self._send_media_command(f"volume {volume}")
+        return send_media_command(f"volume {volume}")
 
     def get_volume(self) -> int:
         """Get the current volume level.
@@ -50,8 +69,10 @@ class MediaControlSkill:
         Returns:
             Current volume level (0-100)
         """
-        # Simulated volume - real implementation would query system
-        return 75
+        volume = get_system_volume()
+        if volume is None:
+            return 75
+        return volume
 
     def get_current_track(self) -> dict:
         """Get information about the currently playing track.
@@ -66,51 +87,6 @@ class MediaControlSkill:
             "duration": "3:45",
             "position": "1:23",
         }
-
-    # Windows SendKeys media key mappings
-    _WIN_MEDIA_KEYS: dict[str, str] = {
-        "play": "{MEDIA_PLAY_PAUSE}",
-        "pause": "{MEDIA_PLAY_PAUSE}",
-        "stop": "{MEDIA_STOP}",
-        "next": "{MEDIA_NEXT_TRACK}",
-        "previous": "{MEDIA_PREV_TRACK}",
-    }
-
-    # macOS AppleScript verb mappings
-    _MAC_MEDIA_VERBS: dict[str, str] = {
-        "play": "play",
-        "pause": "pause",
-        "next": "next track",
-        "previous": "previous track",
-    }
-
-    def _send_media_command(self, command: str) -> str:
-        """Send media control command to the system."""
-        system = platform.system()
-
-        try:
-            if system == "Windows":
-                key = self._WIN_MEDIA_KEYS.get(command)
-                if key:
-                    script = f"(New-Object -ComObject WScript.Shell).SendKeys('{key}')"
-                    subprocess.run(["powershell", script])
-            elif system == "Darwin":
-                verb = self._MAC_MEDIA_VERBS.get(command)
-                if verb:
-                    subprocess.run(
-                        [
-                            "osascript",
-                            "-e",
-                            f'tell application "Spotify" to {verb}',
-                        ]
-                    )
-            elif system == "Linux":
-                subprocess.run(["playerctl", command])
-
-            return f"Media command '{command}' executed"
-
-        except Exception:
-            return f"Media command '{command}' sent (simulated)"
 
 
 class MusicLibrarySkill:
