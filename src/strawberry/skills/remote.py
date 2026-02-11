@@ -3,47 +3,14 @@
 Provides `device_manager` for accessing skills across all connected devices.
 """
 
-import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Coroutine, Dict, List, Optional, TypeVar
+from typing import Any, Dict, List, Optional
 
 from ..hub import HubClient
+from ..utils.async_bridge import run_sync
 
 logger = logging.getLogger(__name__)
-
-# Thread pool for running async code from sync context
-_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="remote_skill_")
-
-T = TypeVar("T")
-
-
-def _run_async(coro: Coroutine[Any, Any, T]) -> T:
-    """Run an async coroutine from a sync context.
-
-    This avoids creating new event loops repeatedly by:
-    1. Using the running loop if available (via run_coroutine_threadsafe)
-    2. Using asyncio.run() if no loop is running (creates one efficiently)
-
-    Args:
-        coro: Coroutine to execute
-
-    Returns:
-        Result from the coroutine
-    """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        # No running loop - safe to use asyncio.run()
-        return asyncio.run(coro)
-
-    # Running loop in this thread: do NOT block it.
-    # Instead, run the coroutine to completion on a separate thread with its own loop.
-    def _runner() -> T:
-        return asyncio.run(coro)
-
-    return _executor.submit(_runner).result(timeout=30.0)
 
 
 @dataclass
@@ -317,7 +284,7 @@ class DeviceManager:
                 device_limit=device_limit,
             )
         else:
-            skills_data = _run_async(
+            skills_data = run_sync(
                 self._hub_client.search_skills(query="", device_limit=device_limit)
             )
 
@@ -388,7 +355,7 @@ class DeviceManager:
                     kwargs=kwargs,
                 )
             else:
-                result = _run_async(
+                result = run_sync(
                     self._hub_client.execute_remote_skill(
                         device_name=device_name,
                         skill_name=skill_name,

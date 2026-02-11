@@ -8,7 +8,6 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 from ..hub import HubClient
 from ..llm.tensorzero_client import TensorZeroClient
 from ..shared.settings import ActionResult, SettingsManager
-from ..skills.service import SkillService
 from .agent_runner import HubAgentRunner, LocalAgentRunner
 from .event_bus import EventBus, Subscription
 from .events import (
@@ -16,14 +15,11 @@ from .events import (
     CoreEvent,
     CoreReady,
     MessageAdded,
-    SkillsLoaded,
-    SkillStatusChanged,
-    ToolCallResult,
-    ToolCallStarted,
 )
 from .hub_connection_manager import HubConnectionManager
 from .session import ChatSession
 from .settings_schema import SPOKE_CORE_SCHEMA
+from .skill_manager import SkillManager
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +56,7 @@ class SpokeCore:
 
         self._settings_manager = settings_manager
         self._llm: Optional[TensorZeroClient] = None
-        self._skills: Optional[SkillService] = None
+        self._skill_mgr: Optional[SkillManager] = None
         self._sessions: Dict[str, ChatSession] = {}
         self._event_bus = EventBus()
         self._started = False
@@ -176,8 +172,8 @@ class SpokeCore:
                 self._schedule_hub_reconnection()
 
             # Update system prompt at runtime when setting changes
-            if section == "llm" and field == "system_prompt" and self._skills:
-                self._skills.set_custom_system_prompt(value or None)
+            if section == "llm" and field == "system_prompt" and self._skill_mgr:
+                self._skill_mgr.set_custom_system_prompt(value or None)
                 logger.info("Updated custom system prompt from settings")
 
     def _schedule_hub_reconnection(self) -> None:
@@ -237,9 +233,9 @@ class SpokeCore:
         return self._settings_manager
 
     @property
-    def skill_service(self) -> Optional["SkillService"]:
+    def skill_service(self):
         """Get the SkillService if core has been started."""
-        return self._skills
+        return self._skill_mgr.service if self._skill_mgr else None
 
     async def start(self) -> None:
         """Initialize core services."""
@@ -252,28 +248,21 @@ class SpokeCore:
             self._llm = TensorZeroClient()
             await self._llm.start()
 
-            # Initialize skills
+            # Initialize skills via SkillManager facade
             use_sandbox = self._get_setting("skills.sandbox.enabled", True)
             device_name = self._get_setting("device.name", "Strawberry Spoke")
             allow_unsafe = self._get_setting("skills.allow_unsafe_exec", False)
-
             custom_prompt = self._get_setting("llm.system_prompt", "")
-            self._skills = SkillService(
+
+            self._skill_mgr = SkillManager(
                 skills_path=self._skills_path,
                 use_sandbox=use_sandbox,
                 device_name=device_name,
                 allow_unsafe_exec=allow_unsafe,
                 custom_system_prompt=custom_prompt or None,
+                emit=self._emit,
             )
-            self._skills.load_skills()
-
-            # Emit SkillsLoaded so the GUI can show toasts for failures
-            await self._emit(
-                SkillsLoaded(
-                    skills=self._skills.get_skill_summaries(),
-                    failures=self._skills.get_load_failures(),
-                )
-            )
+            await self._skill_mgr.load_and_emit()
 
             # Initialize agent runners
             self._hub_runner = HubAgentRunner(
@@ -282,7 +271,7 @@ class SpokeCore:
             )
             self._local_runner = LocalAgentRunner(
                 llm=self._llm,
-                skills=self._skills,
+                skills=self._skill_mgr.service,
                 emit=self._emit,
                 get_mode_notice=lambda: self._pending_mode_notice,
                 clear_mode_notice=lambda: setattr(self, "_pending_mode_notice", None),
@@ -305,9 +294,9 @@ class SpokeCore:
             await self._llm.close()
             self._llm = None
 
-        if self._skills:
-            await self._skills.shutdown()
-            self._skills = None
+        if self._skill_mgr:
+            await self._skill_mgr.shutdown()
+            self._skill_mgr = None
 
         self._started = False
         logger.info("SpokeCore stopped")
@@ -350,101 +339,17 @@ class SpokeCore:
                 MessageAdded(session_id=session_id, role="user", content=text)
             )
 
-            # Deterministic tool execution hooks (for testing).
-            #
-            # Only enabled when testing.deterministic_tool_hooks is True.
-            # When online, the Hub runs the agent loop (including tool calls) and
-            # owns the system prompt, so the Spoke must not execute tools locally.
+            # Deterministic tool execution hooks (testing only).
+            # When online, the Hub owns the agent loop, so skip local hooks.
             deterministic_hooks = self._get_setting(
                 "testing.deterministic_tool_hooks", False
             )
-            if deterministic_hooks and (not self.is_online()) and self._skills:
-                # If the user explicitly requests search_skills, run it immediately.
-                # This makes tool-use tests deterministic and provides the model with
-                # authoritative tool output.
-                requested_search = (
-                    "search_skills" in text.lower() and "use" in text.lower()
+            if deterministic_hooks and (not self.is_online()) and self._skill_mgr:
+                hook_result = await self._skill_mgr.run_deterministic_hooks(
+                    session, text
                 )
-                if requested_search:
-                    await self._emit(
-                        ToolCallStarted(
-                            session_id=session.id,
-                            tool_name="search_skills",
-                            arguments={"query": ""},
-                        )
-                    )
-                    result = await self._skills.execute_tool_async(
-                        "search_skills",
-                        {"query": ""},
-                    )
-                    success = "error" not in result
-                    result_text = result.get("result", result.get("error", ""))
-                    await self._emit(
-                        ToolCallResult(
-                            session_id=session.id,
-                            tool_name="search_skills",
-                            success=success,
-                            result=result_text if success else None,
-                            error=result_text if not success else None,
-                        )
-                    )
-                    tool_msg = (
-                        f"[Tool: search_skills]\n{result_text}\n\n"
-                        "[Now respond naturally to the user based on this result. "
-                        "Do not rerun the same tool call again unless the user asks. ]"
-                    )
-                    session.add_message("user", tool_msg)
-
-                # If the user explicitly requires python_exec
-                # and provides a device.* call,
-                # run it immediately to make tool-use deterministic.
-                normalized = text.lower()
-                requested_python_exec = (
-                    "python_exec" in normalized
-                    and "must" in normalized
-                    and "use" in normalized
-                )
-
-                if requested_python_exec:
-                    import re
-
-                    match = re.search(r"(device\.[A-Za-z0-9_\.]+\([^\)]*\))", text)
-                    if match:
-                        code = f"print({match.group(1)})"
-                        await self._emit(
-                            ToolCallStarted(
-                                session_id=session.id,
-                                tool_name="python_exec",
-                                arguments={"code": code},
-                            )
-                        )
-
-                        result = await self._skills.execute_tool_async(
-                            "python_exec",
-                            {"code": code},
-                        )
-                        success = "error" not in result
-                        result_text = result.get("result", result.get("error", ""))
-                        await self._emit(
-                            ToolCallResult(
-                                session_id=session.id,
-                                tool_name="python_exec",
-                                success=success,
-                                result=result_text if success else None,
-                                error=result_text if not success else None,
-                            )
-                        )
-
-                        session.add_message("assistant", result_text)
-                        await self._emit(
-                            MessageAdded(
-                                session_id=session.id,
-                                role="assistant",
-                                content=result_text,
-                            )
-                        )
-                        result_content = result_text
-                        return result_content
+                if hook_result is not None:
+                    return hook_result
 
             # Run agent loop
             result_content = await self._agent_loop(session)
@@ -469,7 +374,7 @@ class SpokeCore:
 
         Delegates to HubAgentRunner or LocalAgentRunner based on connection state.
         """
-        if not self._skills:
+        if not self._skill_mgr:
             await self._emit(CoreError(error="Core not started"))
             return None
 
@@ -511,9 +416,7 @@ class SpokeCore:
         Returns:
             List of dicts with keys: name, method_count, enabled, source, methods.
         """
-        if self._skills:
-            return self._skills.get_skill_summaries()
-        return []
+        return self._skill_mgr.get_summaries() if self._skill_mgr else []
 
     def get_skill_load_failures(self) -> List[Dict[str, str]]:
         """Get plain-dict list of skills that failed to load.
@@ -521,9 +424,7 @@ class SpokeCore:
         Returns:
             List of dicts with keys: source, error.
         """
-        if self._skills:
-            return self._skills.get_load_failures()
-        return []
+        return self._skill_mgr.get_load_failures() if self._skill_mgr else []
 
     async def set_skill_enabled(self, name: str, enabled: bool) -> bool:
         """Enable or disable a skill and emit a status change event.
@@ -535,20 +436,14 @@ class SpokeCore:
         Returns:
             True if the skill was found and status changed.
         """
-        if not self._skills:
+        if not self._skill_mgr:
             return False
-        if enabled:
-            ok = self._skills.enable_skill(name)
-        else:
-            ok = self._skills.disable_skill(name)
-        if ok:
-            await self._emit(SkillStatusChanged(skill_name=name, enabled=enabled))
-        return ok
+        return await self._skill_mgr.set_enabled(name, enabled)
 
     def get_system_prompt(self) -> str:
         """Get the current system prompt."""
-        if self._skills:
-            return self._skills.get_system_prompt()
+        if self._skill_mgr:
+            return self._skill_mgr.get_system_prompt()
         return "You are a helpful assistant."
 
     def is_online(self) -> bool:
@@ -566,7 +461,9 @@ class SpokeCore:
         Returns:
             True if connection succeeded, False otherwise.
         """
-        return await self._hub_manager.connect(skill_service=self._skills)
+        return await self._hub_manager.connect(
+            skill_service=self._skill_mgr.service if self._skill_mgr else None
+        )
 
     async def disconnect_hub(self) -> None:
         """Disconnect from the Hub."""

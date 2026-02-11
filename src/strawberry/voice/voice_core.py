@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 import numpy as np
 
+from ..utils.async_bridge import schedule_on_loop
 from .component_manager import VoiceComponentManager
 from .config import VoiceConfig
 from .events import (
@@ -349,7 +350,7 @@ class VoiceCore:
             asyncio.get_running_loop()
             asyncio.create_task(_apply())
         except RuntimeError:
-            asyncio.run_coroutine_threadsafe(_apply(), loop)
+            schedule_on_loop(_apply(), loop, timeout=30.0)
 
     # -------------------------------------------------------------------------
     # Internal: Audio Processing
@@ -664,10 +665,11 @@ class VoiceCore:
                 or not self.component_manager.components.tts
             )
             if tts_mismatch:
-                if not asyncio.run_coroutine_threadsafe(
+                if not schedule_on_loop(
                     self.component_manager.init_tts_backend(name),
                     self.event_emitter._event_loop,
-                ).result():
+                    timeout=30.0,
+                ):
                     continue
 
             if self._try_tts_playback(text):
