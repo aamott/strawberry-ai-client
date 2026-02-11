@@ -6,6 +6,7 @@ import ast
 import asyncio
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
@@ -23,12 +24,46 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_device_name(name: str) -> str:
-    """Normalize device name to valid Python identifier."""
-    normalized = name.lower()
+    """Normalize a device name for consistent routing.
+
+    Transforms device names into a canonical form:
+    - Lowercased
+    - Spaces/hyphens converted to underscores
+    - Special characters removed
+    - Unicode normalized to ASCII equivalents
+
+    This implementation must stay in sync with the Hub's
+    ``hub.utils.normalize_device_name``.  The canonical test vectors
+    live in ``docs/test-fixtures/normalize_device_name.json``.
+
+    Args:
+        name: Raw device name (display name).
+
+    Returns:
+        Normalized name suitable for routing.
+    """
+    if not name:
+        return ""
+
+    # Normalize unicode (é -> e, ü -> u, etc.)
+    normalized = unicodedata.normalize("NFKD", name)
+    normalized = normalized.encode("ascii", "ignore").decode("ascii")
+
+    # Lowercase
+    normalized = normalized.lower()
+
+    # Replace spaces and hyphens with underscores
     normalized = re.sub(r"[\s\-]+", "_", normalized)
+
+    # Remove non-alphanumeric characters (except underscores)
     normalized = re.sub(r"[^a-z0-9_]", "", normalized)
-    if normalized and normalized[0].isdigit():
-        normalized = "_" + normalized
+
+    # Collapse multiple underscores
+    normalized = re.sub(r"_+", "_", normalized)
+
+    # Strip leading/trailing underscores
+    normalized = normalized.strip("_")
+
     return normalized
 
 

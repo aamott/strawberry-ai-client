@@ -415,7 +415,9 @@ class TestBargeIn:
 
     def test_barge_in_stops_speaking(self):
         """Wake word detection during SPEAKING should stop TTS and switch to LISTENING."""
-        from strawberry.voice.wakeword.backends.mock import MockWakeWordDetector as MockWakeWord
+        from strawberry.voice.wakeword.backends.mock import (
+            MockWakeWordDetector as MockWakeWord,
+        )
 
         config = make_test_voice_config()
         core = VoiceCore(config)
@@ -444,7 +446,9 @@ class TestInterruptibleSpeech:
 
     def test_interruption_buffers_speech(self):
         """Wake word during speaking should move current and pending speech to resume buffer."""
-        from strawberry.voice.wakeword.backends.mock import MockWakeWordDetector as MockWakeWord
+        from strawberry.voice.wakeword.backends.mock import (
+            MockWakeWordDetector as MockWakeWord,
+        )
 
         config = make_test_voice_config()
         core = VoiceCore(config)
@@ -471,7 +475,9 @@ class TestInterruptibleSpeech:
 
     def test_response_defers_during_listening_after_barge_in(self):
         """Responses arriving while LISTENING should be deferred after barge-in."""
-        from strawberry.voice.wakeword.backends.mock import MockWakeWordDetector as MockWakeWord
+        from strawberry.voice.wakeword.backends.mock import (
+            MockWakeWordDetector as MockWakeWord,
+        )
 
         config = make_test_voice_config()
         core = VoiceCore(config)
@@ -577,7 +583,9 @@ class TestStateMachineFixes:
         """Full cycle: Speaking -> Interrupted -> False Alarm -> Resuming -> Speaking."""
         from strawberry.voice.vad.backends.mock import MockVAD
         from strawberry.voice.vad.processor import VADProcessor
-        from strawberry.voice.wakeword.backends.mock import MockWakeWordDetector as MockWakeWord
+        from strawberry.voice.wakeword.backends.mock import (
+            MockWakeWordDetector as MockWakeWord,
+        )
 
         config = make_test_voice_config()
         core = VoiceCore(config)

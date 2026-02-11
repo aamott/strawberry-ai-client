@@ -279,7 +279,10 @@ class TestTTSBackendHealthStatus:
 
     def test_google_health_matches_availability(self):
         """Google health check should reflect actual package availability."""
-        from strawberry.voice.tts.backends.google import _GOOGLE_TTS_AVAILABLE, GoogleTTS
+        from strawberry.voice.tts.backends.google import (
+            _GOOGLE_TTS_AVAILABLE,
+            GoogleTTS,
+        )
 
         assert GoogleTTS.is_healthy() == _GOOGLE_TTS_AVAILABLE
         if not _GOOGLE_TTS_AVAILABLE:

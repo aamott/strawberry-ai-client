@@ -28,6 +28,11 @@ from ..models import ChatMessage, ChatResponse
 
 logger = logging.getLogger(__name__)
 
+# Wire protocol version sent to Hub on every HTTP request.
+# Must match a version in Hub's SUPPORTED_VERSIONS set.
+PROTOCOL_VERSION = "v1"
+PROTOCOL_VERSION_HEADER = "X-Protocol-Version"
+
 
 try:
     # Python 3.11+
@@ -137,7 +142,9 @@ class HubClient:
         self._sync_client: Optional[httpx.Client] = None
         self._websocket: Optional[ClientConnection] = None
         self._ws_task: Optional[asyncio.Task] = None
-        self._skill_callback: Optional[Callable[[str, str, list, dict], Awaitable[Any]]] = None
+        self._skill_callback: Optional[
+            Callable[[str, str, list, dict], Awaitable[Any]]
+        ] = None
         self._connection_callback: Optional[Callable[[bool], Awaitable[None]]] = None
         self._reconnect_delay = 1.0  # Start with 1 second
 
@@ -147,7 +154,10 @@ class HubClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self.config.url,
-                headers={"Authorization": f"Bearer {self.config.token}"},
+                headers={
+                    "Authorization": f"Bearer {self.config.token}",
+                    PROTOCOL_VERSION_HEADER: PROTOCOL_VERSION,
+                },
                 timeout=self.config.timeout,
             )
         return self._client
@@ -158,7 +168,10 @@ class HubClient:
         if self._sync_client is None:
             self._sync_client = httpx.Client(
                 base_url=self.config.url,
-                headers={"Authorization": f"Bearer {self.config.token}"},
+                headers={
+                    "Authorization": f"Bearer {self.config.token}",
+                    PROTOCOL_VERSION_HEADER: PROTOCOL_VERSION,
+                },
                 timeout=self.config.timeout,
             )
         return self._sync_client
@@ -403,7 +416,9 @@ class HubClient:
         return response.json()["skills"]
 
     @_retry_config
-    async def search_skills(self, query: str = "", device_limit: int = 10) -> List[Dict[str, Any]]:
+    async def search_skills(
+        self, query: str = "", device_limit: int = 10,
+    ) -> List[Dict[str, Any]]:
         """Search for skills across all devices.
 
         Args:
@@ -421,7 +436,9 @@ class HubClient:
         return response.json()["results"]
 
     @_retry_config
-    def search_skills_sync(self, query: str = "", device_limit: int = 10) -> List[Dict[str, Any]]:
+    def search_skills_sync(
+        self, query: str = "", device_limit: int = 10,
+    ) -> List[Dict[str, Any]]:
         """Synchronous version of search_skills.
 
         This is used by the non-sandbox (direct exec) fallback path.
@@ -788,13 +805,16 @@ class HubClient:
             pass
 
         else:
-            logger.warning(f"Unknown WebSocket message type: {msg_type}")
+            logger.warning(
+                "Unknown WebSocket message type: %s", msg_type,
+            )
 
     async def _handle_skill_request(self, request: dict):
         """Handle skill execution request from Hub.
 
         Args:
-            request: Skill request with request_id, skill_name, method_name, args, kwargs
+            request: Skill request with request_id, skill_name,
+                method_name, args, kwargs
         """
         request_id = request.get("request_id")
         skill_name = request.get("skill_name")

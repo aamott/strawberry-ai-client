@@ -177,7 +177,11 @@ class TestSpokeCoreToolExecution:
             )
             await asyncio.sleep(3.0)  # Increased timeout for robustness
 
-            from strawberry.spoke_core import MessageAdded, ToolCallResult, ToolCallStarted
+            from strawberry.spoke_core import (
+                MessageAdded,
+                ToolCallResult,
+                ToolCallStarted,
+            )
 
             tool_starts = [e for e in events if isinstance(e, ToolCallStarted)]
             tool_results = [e for e in events if isinstance(e, ToolCallResult)]
@@ -273,7 +277,12 @@ if __name__ == "__main__":
         print("Running CLI live integration tests...")
         print(f"GOOGLE_AI_STUDIO_API_KEY set: {bool(os.environ.get('GOOGLE_AI_STUDIO_API_KEY'))}")
 
-        from strawberry.spoke_core import MessageAdded, SpokeCore, ToolCallResult, ToolCallStarted
+        from strawberry.spoke_core import (
+            MessageAdded,
+            SpokeCore,
+            ToolCallResult,
+            ToolCallStarted,
+        )
 
         core = SpokeCore()
         await core.start()
