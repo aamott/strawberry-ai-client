@@ -69,6 +69,43 @@ def _load_mcp_config() -> Dict[str, Any]:
 # dispatched to the same loop via run_coroutine_threadsafe().
 
 _bg_loop: asyncio.AbstractEventLoop | None = None
+_bg_thread: threading.Thread | None = None
+
+
+def shutdown_mcp() -> None:
+    """Cleanly shut down the MCP background loop and sessions.
+
+    Safe to call multiple times. Used by test teardown to prevent
+    daemon threads from blocking pytest exit.
+    """
+    global _bg_loop, _exit_stack, _sessions, _bg_thread
+
+    if _bg_loop is None:
+        return
+
+    loop = _bg_loop
+
+    async def _cleanup() -> None:
+        global _exit_stack, _sessions
+        if _exit_stack is not None:
+            try:
+                await _exit_stack.__aexit__(None, None, None)
+            except Exception:
+                pass
+            _exit_stack = None
+        _sessions.clear()
+
+    try:
+        future = asyncio.run_coroutine_threadsafe(_cleanup(), loop)
+        future.result(timeout=5)
+    except Exception:
+        pass
+
+    loop.call_soon_threadsafe(loop.stop)
+    if _bg_thread is not None:
+        _bg_thread.join(timeout=3)
+    _bg_loop = None
+    _bg_thread = None
 
 
 def _start_background_loop() -> asyncio.AbstractEventLoop:
@@ -83,8 +120,9 @@ def _start_background_loop() -> asyncio.AbstractEventLoop:
         asyncio.set_event_loop(lp)
         lp.run_forever()
 
-    thread = threading.Thread(target=_run, args=(loop,), daemon=True)
-    thread.start()
+    global _bg_thread
+    _bg_thread = threading.Thread(target=_run, args=(loop,), daemon=True)
+    _bg_thread.start()
     return loop
 
 
@@ -210,19 +248,28 @@ async def _discover_and_build() -> list:
     return classes
 
 
+_discovery_done = False
+
+
 def _run_discovery() -> list:
     """Run async discovery on the persistent background loop.
 
     The background loop stays alive so MCP sessions are not torn down.
+    This function is idempotent — repeated calls return immediately
+    with an empty list once discovery has already been attempted.
 
     Returns:
         List of skill class types, or empty list on failure.
     """
-    global _bg_loop
+    global _bg_loop, _discovery_done
+
+    if _discovery_done:
+        return []
+    _discovery_done = True
 
     _bg_loop = _start_background_loop()
     future = asyncio.run_coroutine_threadsafe(_discover_and_build(), _bg_loop)
-    return future.result(timeout=120)
+    return future.result(timeout=30)
 
 
 # ── Module-level discovery (runs when SkillLoader imports this file) ────────

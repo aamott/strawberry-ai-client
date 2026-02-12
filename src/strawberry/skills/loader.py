@@ -254,19 +254,24 @@ class SkillLoader:
         repo_name = repo_dir.name
         module_name = f"{self._repo_namespace_root}.{repo_name}"
 
-        # Load as a package so relative imports work.
-        spec = importlib.util.spec_from_file_location(
-            module_name,
-            entrypoint,
-            submodule_search_locations=[str(repo_dir)],
-        )
+        # Reuse already-imported module to avoid re-executing module-level
+        # code (e.g. MCP skill discovery) which can block on network I/O.
+        if module_name in sys.modules:
+            module = sys.modules[module_name]
+        else:
+            # Load as a package so relative imports work.
+            spec = importlib.util.spec_from_file_location(
+                module_name,
+                entrypoint,
+                submodule_search_locations=[str(repo_dir)],
+            )
 
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Could not load spec for {entrypoint}")
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Could not load spec for {entrypoint}")
 
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
 
         # Detect SETTINGS_SCHEMA on the module
         module_schema = getattr(module, "SETTINGS_SCHEMA", None)

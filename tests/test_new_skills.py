@@ -1,5 +1,6 @@
 """Tests for new skills: internet, media control, and system control."""
 
+import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -12,9 +13,12 @@ from strawberry.skills.service import SkillService
 
 @pytest.fixture
 def skills_dir():
-    """Create a temporary skills directory with new skills."""
+    """Create a temporary skills directory with new skills.
+
+    Copies entire repo directories (not just skill.py) so that sibling
+    modules like ``media_dispatch.py`` are available for relative imports.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Copy the new skill repos
         skills_base = Path(__file__).parent.parent / "skills"
 
         repo_names = [
@@ -24,10 +28,11 @@ def skills_dir():
         ]
 
         for repo_name in repo_names:
-            repo_dir = Path(tmpdir) / repo_name
-            repo_dir.mkdir(parents=True, exist_ok=True)
-            (repo_dir / "skill.py").write_text(
-                (skills_base / repo_name / "skill.py").read_text()
+            src = skills_base / repo_name
+            dst = Path(tmpdir) / repo_name
+            shutil.copytree(
+                src, dst,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
             )
 
         yield Path(tmpdir)
