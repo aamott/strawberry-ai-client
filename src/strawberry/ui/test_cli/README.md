@@ -73,17 +73,52 @@ python -m strawberry.ui.test_cli --settings set skills.weather_skill units imper
 python -m strawberry.ui.test_cli --settings apply
 ```
 
-### Interactive TUI
+### Interactive Settings Menu
+
+Launch the full interactive TUI with ANSI colors, breadcrumb navigation,
+type-specific field editors, search, and a pending-changes diff view:
 
 ```bash
-# Browse tabs → namespaces → fields, edit values, apply
+# Either of these launches the interactive menu:
+python -m strawberry.ui.test_cli --settings
 python -m strawberry.ui.test_cli --settings interactive
 ```
 
-Notes:
+**Navigation:**
+
+| Key | Action |
+|-----|--------|
+| `N` | Select item by number |
+| `b` / `back` | Go back one level |
+| `h` / `help` | Show contextual help |
+| `a` / `apply` | Apply pending changes (with diff preview) |
+| `d` / `discard` | Discard pending changes |
+| `p` / `pending` | Show pending changes diff |
+| `s <query>` | Search fields across all namespaces |
+| `r N` | Reset field N to default (in namespace view) |
+| `q` / `quit` | Exit (prompts if changes pending) |
+
+**Field type editors:**
+
+Each of the 17 field types has a dedicated editor:
+
+- **TEXT / MULTILINE** — inline text entry
+- **PASSWORD** — masked input via `getpass`
+- **NUMBER** — with min/max range validation
+- **CHECKBOX** — single-key toggle
+- **SELECT / DYNAMIC_SELECT** — numbered picker
+- **SLIDER** — visual bar with step display
+- **COLOR** — hex validation (`#RRGGBB`)
+- **FILE_PATH / DIRECTORY_PATH** — tilde/var expansion, existence checks
+- **DATE / TIME / DATETIME** — format-validated input
+- **LIST / PROVIDER_SELECT** — sub-editor with add/remove/reorder
+- **ACTION** — display-only (not editable from CLI)
+
+**Notes:**
 
 - The settings loader resolves the skills directory from `spoke_core.skills.path` (default `skills/`).
 - Config directory defaults to `config/` at repo root; override with `--config /path/to/config`.
+- Type badges like `[KEY]`, `[SEL]`, `[CHK]` appear next to each field for quick identification.
 
 ## Exit Codes
 

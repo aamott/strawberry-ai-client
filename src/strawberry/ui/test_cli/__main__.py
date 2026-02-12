@@ -428,11 +428,19 @@ def run_settings_mode(args: argparse.Namespace) -> int:
     # Parse command and args
     settings_args = args.settings or []
     if not settings_args:
-        command = "list"
-        cmd_args = []
-    else:
-        command = settings_args[0]
-        cmd_args = settings_args[1:]
+        # No subcommand → launch the full interactive menu
+        from .settings_menu import run_interactive_menu
+
+        return run_interactive_menu(settings)
+
+    command = settings_args[0]
+    cmd_args = settings_args[1:]
+
+    # Route "interactive" to the rich menu
+    if command == "interactive":
+        from .settings_menu import run_interactive_menu
+
+        return run_interactive_menu(settings)
 
     return run_settings_command(settings, command, cmd_args)
 
