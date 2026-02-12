@@ -547,7 +547,7 @@ class HubClient:
 
     async def list_devices(self) -> List[Dict[str, Any]]:
         """List all devices for the current user."""
-        response = await self.client.get("/devices")
+        response = await self.client.get("/api/device-discovery")
         self._check_response(response)
         return response.json()["devices"]
 
