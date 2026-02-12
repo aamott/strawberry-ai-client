@@ -54,7 +54,13 @@ class TestSpokeCoreToolExecution:
 
     @pytest.fixture
     async def core(self):
-        """Create and start a SpokeCore instance with deterministic test hooks."""
+        """Create and start a SpokeCore instance with deterministic test hooks.
+
+        Per-test scope is required here because EventBus reader tasks are
+        bound to the event loop that was running during ``core.start()``.
+        pytest-asyncio gives each test its own loop, so sharing across tests
+        would leave the reader on a stale loop.
+        """
         from strawberry.spoke_core import SpokeCore
 
         core = SpokeCore()
@@ -103,7 +109,7 @@ class TestSpokeCoreToolExecution:
 
         try:
             await core.send_message(session.id, "Say 'hello' and nothing else.")
-            await asyncio.sleep(0.5)  # Allow events to process
+            await asyncio.sleep(0.5)  # Allow events to propagate
 
             # Should have received at least a MessageAdded event
             from strawberry.spoke_core import MessageAdded
@@ -195,7 +201,7 @@ class TestSpokeCoreToolExecution:
                     "Do not explain, just run the code."
                 ),
             )
-            await asyncio.sleep(3.0)  # Increased timeout for robustness
+            await asyncio.sleep(3.0)  # Allow time for LLM + tool execution
 
             from strawberry.spoke_core import (
                 MessageAdded,

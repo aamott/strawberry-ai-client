@@ -31,128 +31,104 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+# ── Module-scoped TensorZero client so the gateway initializes once ──
+
+_CONFIG_PATH = str(Path(__file__).parent.parent / "config" / "tensorzero.toml")
+
+
+@pytest.fixture(scope="module")
+async def tz_client():
+    """Shared TensorZeroClient for the module.
+
+    Gateway init is the most expensive part (~2-3 s). Reusing the client
+    across tests avoids repeating that cost for every test method.
+    """
+    from strawberry.llm.tensorzero_client import TensorZeroClient
+
+    client = TensorZeroClient(config_path=_CONFIG_PATH)
+    await client.start()
+    yield client
+    await client.close()
+
+
 class TestLiveTensorZeroChat:
     """Live tests for TensorZero embedded gateway chat."""
 
-    @pytest.fixture
-    def config_path(self) -> str:
-        """Get the path to tensorzero.toml config."""
-        return str(Path(__file__).parent.parent / "config" / "tensorzero.toml")
-
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)
-    async def test_tensorzero_gateway_initialization(self, config_path: str):
+    async def test_tensorzero_gateway_initialization(self, tz_client):
         """Test that TensorZero gateway can be initialized."""
-        from strawberry.llm.tensorzero_client import TensorZeroClient
-
-        client = TensorZeroClient(config_path=config_path)
-
-        # Should be able to check health (initializes gateway)
-        is_healthy = await client.health()
+        is_healthy = await tz_client.health()
         assert is_healthy, "TensorZero gateway failed to initialize"
 
-        await client.close()
-
     @pytest.mark.asyncio
     @pytest.mark.timeout(45)
-    async def test_simple_chat_message(self, config_path: str):
+    async def test_simple_chat_message(self, tz_client):
         """Test sending a simple chat message and getting a response."""
-        from strawberry.llm.tensorzero_client import ChatMessage, TensorZeroClient
+        from strawberry.llm.tensorzero_client import ChatMessage
 
-        client = TensorZeroClient(config_path=config_path)
+        messages = [ChatMessage(role="user", content="Say 'hello' and nothing else.")]
+        response = await tz_client.chat(messages)
 
-        try:
-            is_healthy = await client.health()
-            if not is_healthy:
-                pytest.skip("TensorZero gateway is not healthy")
+        if not response.content:
+            pytest.skip(
+                "Live provider returned empty response (likely auth/config issue)"
+            )
+        assert len(response.content) > 0, "Response content should not be empty"
+        assert response.model, "Response should include model name"
+        assert response.variant, "Response should include variant name"
 
-            messages = [ChatMessage(role="user", content="Say 'hello' and nothing else.")]
-            response = await client.chat(messages)
-
-            if not response.content:
-                pytest.skip(
-                    "Live provider returned empty response (likely auth/config issue)"
-                )
-            assert len(response.content) > 0, "Response content should not be empty"
-            assert response.model, "Response should include model name"
-            assert response.variant, "Response should include variant name"
-
-            print(f"\n[Test] Response from '{response.variant}': {response.content[:80]}")
-
-        finally:
-            await client.close()
+        print(f"\n[Test] Response from '{response.variant}': {response.content[:80]}")
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(45)
-    async def test_chat_with_system_prompt(self, config_path: str):
+    async def test_chat_with_system_prompt(self, tz_client):
         """Test chat with a system prompt."""
-        from strawberry.llm.tensorzero_client import ChatMessage, TensorZeroClient
+        from strawberry.llm.tensorzero_client import ChatMessage
 
-        client = TensorZeroClient(config_path=config_path)
+        messages = [ChatMessage(role="user", content="What is 2+2?")]
+        response = await tz_client.chat(
+            messages, system_prompt="You are a math tutor. Answer briefly."
+        )
 
-        try:
-            is_healthy = await client.health()
-            if not is_healthy:
-                pytest.skip("TensorZero gateway is not healthy")
-
-            messages = [ChatMessage(role="user", content="What is 2+2?")]
-            response = await client.chat(
-                messages, system_prompt="You are a math tutor. Answer briefly."
+        if not response.content:
+            pytest.skip(
+                "Live provider returned empty response (likely auth/config issue)"
             )
+        # The response should mention "4" somewhere
+        assert "4" in response.content, (
+            f"Expected '4' in response: {response.content}"
+        )
 
-            if not response.content:
-                pytest.skip(
-                    "Live provider returned empty response (likely auth/config issue)"
-                )
-            # The response should mention "4" somewhere
-            assert "4" in response.content, (
-                f"Expected '4' in response: {response.content}"
-            )
-
-            print(f"\n[Test] Math response: {response.content[:100]}")
-
-        finally:
-            await client.close()
+        print(f"\n[Test] Math response: {response.content[:100]}")
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(60)
-    async def test_chat_conversation(self, config_path: str):
+    async def test_chat_conversation(self, tz_client):
         """Test a multi-turn conversation."""
-        from strawberry.llm.tensorzero_client import ChatMessage, TensorZeroClient
+        from strawberry.llm.tensorzero_client import ChatMessage
 
-        client = TensorZeroClient(config_path=config_path)
+        # First message
+        messages = [ChatMessage(role="user", content="My name is TestUser.")]
+        response1 = await tz_client.chat(messages)
+        if not response1.content:
+            pytest.skip(
+                "Live provider returned empty response (likely auth/config issue)"
+            )
 
-        try:
-            is_healthy = await client.health()
-            if not is_healthy:
-                pytest.skip("TensorZero gateway is not healthy")
+        # Second message - should remember context
+        messages.append(ChatMessage(role="assistant", content=response1.content))
+        messages.append(ChatMessage(role="user", content="What is my name?"))
 
-            # First message
-            messages = [ChatMessage(role="user", content="My name is TestUser.")]
-            response1 = await client.chat(messages)
-            if not response1.content:
-                pytest.skip(
-                    "Live provider returned empty response (likely auth/config issue)"
-                )
-
-            # Second message - should remember context
-            messages.append(ChatMessage(role="assistant", content=response1.content))
-            messages.append(ChatMessage(role="user", content="What is my name?"))
-
-            response2 = await client.chat(messages)
-            if not response2.content:
-                pytest.skip(
-                    "Live provider returned empty response (likely auth/config issue)"
-                )
-            if "TestUser" not in response2.content:
-                pytest.skip(
-                    "Provider did not preserve conversation memory across turns; skipping"
-                )
-
-            print("\n[Test] Conversation memory test passed")
-
-        finally:
-            await client.close()
+        response2 = await tz_client.chat(messages)
+        if not response2.content:
+            pytest.skip(
+                "Live provider returned empty response (likely auth/config issue)"
+            )
+        if "TestUser" not in response2.content:
+            pytest.skip(
+                "Provider did not preserve conversation memory across turns; skipping"
+            )
 
 
 class TestLiveHubChat:
