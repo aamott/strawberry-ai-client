@@ -7,7 +7,7 @@ from the shared settings package.
 For backward compatibility, the types are re-exported from this module.
 """
 
-from typing import List
+from typing import TYPE_CHECKING, Any, Dict, List
 
 # Import from shared settings package
 from strawberry.shared.settings import (
@@ -17,6 +17,13 @@ from strawberry.shared.settings import (
     get_field_by_key,
     group_fields,
 )
+from strawberry.skills.prompt import DEFAULT_SYSTEM_PROMPT_TEMPLATE
+
+if TYPE_CHECKING:
+    from strawberry.shared.settings import SettingsManager
+
+# Schema version — bump when schema changes require migration
+SCHEMA_VERSION = 2
 
 # Re-export for backward compatibility
 __all__ = [
@@ -24,8 +31,10 @@ __all__ = [
     "SettingField",
     "ActionResult",
     "SPOKE_CORE_SCHEMA",
+    "SCHEMA_VERSION",
     "get_field_by_key",
     "group_fields",
+    "register_spoke_core_schema",
 ]
 
 # Spoke Core settings schema
@@ -86,7 +95,40 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
             )
         },
     ),
+    # Hub connection timeout
+    SettingField(
+        key="hub.timeout_seconds",
+        label="Hub Timeout (seconds)",
+        type=FieldType.NUMBER,
+        default=30,
+        description="Timeout in seconds for Hub HTTP requests",
+        group="hub",
+        min_value=5,
+        max_value=300,
+        metadata={
+            "help_text": (
+                "How long to wait for Hub HTTP API responses.\n"
+                "Increase if on a slow network. Decrease for faster\n"
+                "failure detection."
+            )
+        },
+    ),
     # Offline LLM
+    SettingField(
+        key="local_llm.url",
+        label="Ollama URL",
+        type=FieldType.TEXT,
+        default="http://localhost:11434/v1",
+        description="URL for the local Ollama API",
+        group="offline",
+        metadata={
+            "help_text": (
+                "Base URL for the local Ollama instance.\n"
+                "Default is http://localhost:11434/v1.\n"
+                "Change if Ollama is running on a different host/port."
+            )
+        },
+    ),
     SettingField(
         key="local_llm.model",
         label="Offline Model",
@@ -113,6 +155,21 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
     ),
     # Skills
     SettingField(
+        key="skills.sandbox.enabled",
+        label="Enable Sandbox",
+        type=FieldType.CHECKBOX,
+        default=True,
+        description="Run LLM-generated code in a secure sandbox",
+        group="skills",
+        metadata={
+            "help_text": (
+                "When enabled, LLM-generated code runs in a restricted\n"
+                "sandbox (RestrictedPython). Disabling allows direct\n"
+                "Python execution — use with caution."
+            )
+        },
+    ),
+    SettingField(
         key="skills.allow_unsafe_exec",
         label="Allow Unsafe Skill Execution",
         type=FieldType.CHECKBOX,
@@ -125,71 +182,28 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
     SettingField(
         key="skills.path",
         label="Skills Directory",
-        type=FieldType.TEXT,
+        type=FieldType.DIRECTORY_PATH,
         default="skills",
         description="Path to directory containing user skills",
         group="skills",
-    ),
-    # Storage
-    SettingField(
-        key="storage.db_path",
-        label="Database Path",
-        type=FieldType.TEXT,
-        default="data/sessions.db",
-        description="Path to local session storage database",
-        group="storage",
-    ),
-    # TensorZero
-    SettingField(
-        key="tensorzero.enabled",
-        label="Enable TensorZero",
-        type=FieldType.CHECKBOX,
-        default=True,
-        description="Use TensorZero for LLM routing and fallback",
-        group="tensorzero",
     ),
     # LLM Settings
     SettingField(
         key="llm.system_prompt",
         label="System Prompt",
         type=FieldType.MULTILINE,
-        default="",
-        description="Custom system prompt template for the LLM",
+        default=DEFAULT_SYSTEM_PROMPT_TEMPLATE,
+        description="System prompt template for the LLM",
         group="llm",
         metadata={
             "help_text": (
-                "Override the default system prompt sent to the LLM.\n"
+                "The system prompt sent to the LLM in offline mode.\n"
                 "Use {skill_descriptions} as a placeholder for the\n"
                 "auto-generated list of loaded skills.\n\n"
-                "Leave empty to use the built-in default prompt."
+                "Reset to the built-in default by clearing this field."
             ),
             "rows": 12,
         },
-    ),
-    SettingField(
-        key="llm.temperature",
-        label="Temperature",
-        type=FieldType.NUMBER,
-        default=0.7,
-        description="LLM temperature (0.0-2.0, higher = more creative)",
-        group="llm",
-        metadata={
-            "help_text": (
-                "Controls randomness of the output.\n"
-                "0.0 = Deterministic, focused.\n"
-                "0.7 = Balanced.\n"
-                "1.0+ = Creative, unpredictable."
-            )
-        },
-    ),
-    # Conversation
-    SettingField(
-        key="conversation.max_history",
-        label="Max History",
-        type=FieldType.NUMBER,
-        default=20,
-        description="Maximum conversation messages to keep in memory",
-        group="conversation",
     ),
     # Testing
     SettingField(
@@ -208,34 +222,72 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
             )
         },
     ),
-    # UI Settings
-    SettingField(
-        key="ui.theme",
-        label="Theme",
-        type=FieldType.SELECT,
-        options=["dark", "light"],
-        default="dark",
-        description="Application color theme",
-        group="ui",
-    ),
-    SettingField(
-        key="ui.start_minimized",
-        label="Start Minimized",
-        type=FieldType.CHECKBOX,
-        default=False,
-        description="Start application minimized to system tray",
-        group="ui",
-    ),
-    SettingField(
-        key="ui.show_waveform",
-        label="Show Waveform",
-        type=FieldType.CHECKBOX,
-        default=True,
-        description="Display audio waveform during voice input",
-        group="ui",
-    ),
 ]
 
 
 # Alias for backward compatibility
 CORE_SETTINGS_SCHEMA = SPOKE_CORE_SCHEMA
+
+# Keys removed in v2 (dead settings that were never wired up)
+_V1_DEAD_KEYS = frozenset({
+    "tensorzero.enabled",
+    "storage.db_path",
+    "conversation.max_history",
+    "llm.temperature",
+    "ui.theme",
+    "ui.start_minimized",
+    "ui.show_waveform",
+})
+
+
+def _migrate_v1_to_v2(values: Dict[str, Any]) -> Dict[str, Any]:
+    """Migrate spoke_core settings from schema v1 to v2.
+
+    Changes:
+    - Replace empty llm.system_prompt with the default template.
+    - Remove dead keys that were never wired to code.
+    """
+    # Replace empty system prompt with the actual default
+    prompt = values.get("llm.system_prompt", "")
+    if not prompt or not prompt.strip():
+        values["llm.system_prompt"] = DEFAULT_SYSTEM_PROMPT_TEMPLATE
+
+    # Remove dead keys
+    for key in _V1_DEAD_KEYS:
+        values.pop(key, None)
+
+    return values
+
+
+def register_spoke_core_schema(settings: "SettingsManager") -> None:
+    """Register spoke_core namespace with migrations.
+
+    Call this instead of ``settings.register()`` directly so that
+    migrations are applied before the schema is registered.
+
+    Args:
+        settings: The SettingsManager instance.
+    """
+    if settings.is_registered("spoke_core"):
+        return
+
+    # Register migration before register() triggers it
+    settings.register_migration(
+        "spoke_core", from_version=1, to_version=2, migrator=_migrate_v1_to_v2
+    )
+    # Also handle fresh installs (version 0 → 2) by chaining through v1
+    settings.register_migration(
+        "spoke_core",
+        from_version=0,
+        to_version=1,
+        migrator=lambda v: v,  # no-op, fresh installs get defaults
+    )
+
+    settings.register(
+        namespace="spoke_core",
+        display_name="Spoke Core",
+        schema=SPOKE_CORE_SCHEMA,
+        order=10,
+        tab="General",
+        schema_version=SCHEMA_VERSION,
+    )

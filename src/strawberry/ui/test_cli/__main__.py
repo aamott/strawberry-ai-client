@@ -361,17 +361,10 @@ def _register_all_schemas(settings: "SettingsManager") -> None:
     Args:
         settings: The SettingsManager to register into.
     """
-    # 1. Register SpokeCore schema
-    from strawberry.spoke_core.settings_schema import SPOKE_CORE_SCHEMA
+    # 1. Register SpokeCore schema (with migrations)
+    from strawberry.spoke_core.settings_schema import register_spoke_core_schema
 
-    if not settings.is_registered("spoke_core"):
-        settings.register(
-            namespace="spoke_core",
-            display_name="Spoke Core",
-            schema=SPOKE_CORE_SCHEMA,
-            order=10,
-            tab="General",
-        )
+    register_spoke_core_schema(settings)
 
     # 2. Discover and register skill settings
     skills_path_str = settings.get("spoke_core", "skills.path", "skills")

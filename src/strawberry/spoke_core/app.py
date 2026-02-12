@@ -18,7 +18,7 @@ from .events import (
 )
 from .hub_connection_manager import HubConnectionManager
 from .session import ChatSession
-from .settings_schema import SPOKE_CORE_SCHEMA
+from .settings_schema import SPOKE_CORE_SCHEMA, register_spoke_core_schema
 from .skill_manager import SkillManager
 
 logger = logging.getLogger(__name__)
@@ -111,15 +111,8 @@ class SpokeCore:
         if not self._settings_manager:
             return
 
-        # Register namespace if not already registered
-        if not self._settings_manager.is_registered("spoke_core"):
-            self._settings_manager.register(
-                namespace="spoke_core",
-                display_name="Spoke Core",
-                schema=SPOKE_CORE_SCHEMA,
-                order=10,
-                tab="General",
-            )
+        # Register namespace (with migrations) if not already registered
+        register_spoke_core_schema(self._settings_manager)
 
         # Register options providers
         self._settings_manager.register_options_provider(
@@ -252,7 +245,7 @@ class SpokeCore:
             use_sandbox = self._get_setting("skills.sandbox.enabled", True)
             device_name = self._get_setting("device.name", "Strawberry Spoke")
             allow_unsafe = self._get_setting("skills.allow_unsafe_exec", False)
-            custom_prompt = self._get_setting("llm.system_prompt", "")
+            custom_prompt = self._get_setting("llm.system_prompt", None)
 
             self._skill_mgr = SkillManager(
                 skills_path=self._skills_path,
