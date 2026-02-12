@@ -362,6 +362,196 @@ class SettingsCLI:
             print(f"  No settings registered for '{namespace}'")
 
 
+def _coerce_field_value(field: SettingField, raw: str) -> Optional[Any]:
+    """Coerce a raw string input to the field's expected type.
+
+    Args:
+        field: The field definition.
+        raw: Raw string input from user.
+
+    Returns:
+        Coerced value, or None if conversion failed (error printed).
+    """
+    if field.type == FieldType.CHECKBOX:
+        return raw.lower() in ("true", "1", "yes", "on")
+    if field.type in (FieldType.NUMBER, FieldType.SLIDER):
+        try:
+            return float(raw) if "." in raw else int(raw)
+        except ValueError:
+            print(f"  Error: '{raw}' is not a valid number")
+            return None
+    return raw
+
+
+def _interactive_edit_field(
+    cli: SettingsCLI, namespace: str, field: SettingField,
+) -> None:
+    """Prompt user to edit a single field value.
+
+    Args:
+        cli: The SettingsCLI instance.
+        namespace: Settings namespace.
+        field: The field to edit.
+    """
+    current = cli.get_value(namespace, field.key)
+    display = format_field_value(field, current)
+    print(f"\n  {field.label} [{field.type.value}]")
+    if field.description:
+        print(f"  {field.description}")
+    print(f"  Current: {display}")
+
+    if field.type == FieldType.SELECT and field.options:
+        print(f"  Options: {', '.join(field.options)}")
+    elif field.type == FieldType.CHECKBOX:
+        print("  Enter: true/false")
+    elif field.type in (FieldType.LIST, FieldType.PROVIDER_SELECT):
+        cli.edit_list_field(namespace, field.key)
+        return
+
+    raw = input("  New value (enter to keep): ").strip()
+    if not raw:
+        return
+
+    value = _coerce_field_value(field, raw)
+    if value is None:
+        return
+
+    error = cli.set_value(namespace, field.key, value)
+    if error:
+        print(f"  Error: {error}")
+    else:
+        print(f"  Buffered: {field.label} → {value}")
+
+
+def _interactive_namespace(cli: SettingsCLI, namespace: str) -> None:
+    """Interactive editor for a single namespace.
+
+    Args:
+        cli: The SettingsCLI instance.
+        namespace: The namespace to edit.
+    """
+    section = cli.vm.get_section(namespace)
+    if not section:
+        print(f"Error: Namespace '{namespace}' not found")
+        return
+
+    while True:
+        # Show fields with numbered indices
+        print(f"\n═══ {section.display_name} ({namespace}) ═══")
+        fields_flat: List[SettingField] = []
+        for group_name, fields in section.groups.items():
+            print(f"\n── {group_name} ──")
+            for field in fields:
+                idx = len(fields_flat) + 1
+                value = section.values.get(field.key, field.default)
+                pending = cli.pending_changes.get(
+                    namespace, {},
+                ).get(field.key)
+                display = format_field_value(field, value)
+                marker = ""
+                if pending is not None:
+                    p_display = format_field_value(field, pending)
+                    marker = f" → {p_display} [pending]"
+                print(f"  {idx}. {field.label}: {display}{marker}")
+                fields_flat.append(field)
+
+        print("\nCommands: <N> edit field, (a)pply, (b)ack")
+        cmd = input("> ").strip().lower()
+
+        if cmd in ("b", "back", "q"):
+            break
+        elif cmd in ("a", "apply"):
+            cli.apply_changes()
+        elif cmd.isdigit():
+            idx = int(cmd) - 1
+            if 0 <= idx < len(fields_flat):
+                _interactive_edit_field(
+                    cli, namespace, fields_flat[idx],
+                )
+            else:
+                print("Invalid field number")
+        else:
+            print("Unknown command")
+
+
+def _print_namespace_list(cli: SettingsCLI) -> list:
+    """Print numbered namespace list grouped by tab.
+
+    Args:
+        cli: The SettingsCLI instance.
+
+    Returns:
+        Flat list of namespace section objects in display order.
+    """
+    sections = cli.vm.get_sections()
+    if not sections:
+        print("No registered settings namespaces")
+        return []
+
+    tabs: dict[str, list] = {}
+    for ns in sections:
+        tabs.setdefault(ns.tab, []).append(ns)
+
+    ns_list: list = []
+    for tab_name, tab_ns in sorted(tabs.items()):
+        print(f"── {tab_name} ──")
+        for ns in sorted(tab_ns, key=lambda x: x.order):
+            idx = len(ns_list) + 1
+            count = len(ns.schema)
+            print(f"  {idx}. {ns.display_name} ({count} fields)")
+            ns_list.append(ns)
+    return ns_list
+
+
+def _run_interactive(cli: SettingsCLI) -> int:
+    """Run an interactive settings browser/editor.
+
+    Lets the user browse tabs → namespaces → fields, edit values,
+    and apply changes, all from the terminal.
+
+    Args:
+        cli: The SettingsCLI instance.
+
+    Returns:
+        Exit code (0=success).
+    """
+    print("\n═══ Settings (interactive) ═══")
+    print("Commands: <N> open namespace, (a)pply, (q)uit\n")
+
+    while True:
+        ns_list = _print_namespace_list(cli)
+        if not ns_list:
+            return 0
+
+        pending = cli.get_pending_count()
+        if pending:
+            print(f"\n  [{pending} pending change(s)]")
+
+        cmd = input("\n> ").strip().lower()
+
+        if cmd in ("q", "quit", "exit"):
+            if cli.has_pending_changes():
+                confirm = input(
+                    "Discard pending changes? (y/n): ",
+                ).strip().lower()
+                if confirm != "y":
+                    continue
+            print("Goodbye!")
+            return 0
+        elif cmd in ("a", "apply"):
+            cli.apply_changes()
+        elif cmd.isdigit():
+            idx = int(cmd) - 1
+            if 0 <= idx < len(ns_list):
+                _interactive_namespace(cli, ns_list[idx].name)
+            else:
+                print("Invalid selection")
+        else:
+            print(
+                "Unknown command. Enter a number, (a)pply, or (q)uit.",
+            )
+
+
 def _cmd_set(cli: SettingsCLI, args: List[str]) -> int:
     """Handle the 'set' settings command."""
     if len(args) < 3:
@@ -413,8 +603,7 @@ def run_settings_command(
         cli.discard_changes()
         return 0
     if command == "interactive":
-        print("Interactive mode not yet implemented")
-        return 1
+        return _run_interactive(cli)
     if command == "set":
         return _cmd_set(cli, args)
 

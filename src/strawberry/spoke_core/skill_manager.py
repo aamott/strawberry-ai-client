@@ -47,6 +47,7 @@ class SkillManager:
         allow_unsafe_exec: bool,
         custom_system_prompt: Optional[str],
         emit: Callable[[CoreEvent], Any],
+        settings_manager: Optional[Any] = None,
     ) -> None:
         """Initialize the SkillManager.
 
@@ -57,6 +58,7 @@ class SkillManager:
             allow_unsafe_exec: Allow unsafe direct execution.
             custom_system_prompt: Optional override for the system prompt.
             emit: Async callback to emit CoreEvent instances.
+            settings_manager: Optional SettingsManager for skill settings.
         """
         from ..skills.service import SkillService
 
@@ -67,6 +69,7 @@ class SkillManager:
             device_name=device_name,
             allow_unsafe_exec=allow_unsafe_exec,
             custom_system_prompt=custom_system_prompt,
+            settings_manager=settings_manager,
         )
 
     @property

@@ -7,7 +7,10 @@ import sys
 import types
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from ..shared.settings import SettingField, SettingsManager
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,10 @@ class SkillInfo:
     methods: List[SkillMethod] = field(default_factory=list)
     module_path: Optional[Path] = None
     instance: Optional[Any] = None  # Instantiated skill object
+    # Settings schema discovered from the module's SETTINGS_SCHEMA attribute
+    settings_schema: Optional[List["SettingField"]] = None
+    # Repo directory name (e.g. "weather_skill") for namespace derivation
+    repo_name: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API."""
@@ -92,13 +99,20 @@ class SkillLoader:
     ```
     """
 
-    def __init__(self, skills_path: Path):
+    def __init__(
+        self,
+        skills_path: Path,
+        settings_manager: Optional["SettingsManager"] = None,
+    ):
         """Initialize skill loader.
 
         Args:
-            skills_path: Directory containing skill Python files
+            skills_path: Directory containing skill Python files.
+            settings_manager: Optional SettingsManager for skill settings
+                injection and schema registration.
         """
         self.skills_path = Path(skills_path)
+        self._settings_manager = settings_manager
         self._skills: Dict[str, SkillInfo] = {}
         self._instances: Dict[str, Any] = {}
         self._failures: List[SkillLoadFailure] = []
@@ -254,11 +268,19 @@ class SkillLoader:
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
 
+        # Detect SETTINGS_SCHEMA on the module
+        module_schema = getattr(module, "SETTINGS_SCHEMA", None)
+
         skills: List[SkillInfo] = []
         for name, obj in inspect.getmembers(module, inspect.isclass):
             if obj.__module__ == module_name and name.endswith("Skill"):
-                skill_info = self._extract_skill_info(name, obj, entrypoint)
+                skill_info = self._extract_skill_info(
+                    name, obj, entrypoint, repo_name=repo_name,
+                )
                 if skill_info.methods:
+                    # Attach module-level schema to first skill in the repo
+                    if module_schema and not skill_info.settings_schema:
+                        skill_info.settings_schema = module_schema
                     skills.append(skill_info)
         return skills
 
@@ -281,27 +303,43 @@ class SkillLoader:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
+        # Detect SETTINGS_SCHEMA on the module
+        module_schema = getattr(module, "SETTINGS_SCHEMA", None)
+        # Derive repo name from file stem (e.g. "weather_skill" from weather_skill.py)
+        derived_repo = file_path.stem
+
         # Find skill classes
         skills = []
         for name, obj in inspect.getmembers(module, inspect.isclass):
             # Only classes defined in this module and ending with 'Skill'
             if obj.__module__ == module_name and name.endswith("Skill"):
-                skill_info = self._extract_skill_info(name, obj, file_path)
+                skill_info = self._extract_skill_info(
+                    name, obj, file_path, repo_name=derived_repo,
+                )
                 if skill_info.methods:  # Only include if it has methods
+                    if module_schema and not skill_info.settings_schema:
+                        skill_info.settings_schema = module_schema
                     skills.append(skill_info)
 
         return skills
 
-    def _extract_skill_info(self, name: str, cls: type, file_path: Path) -> SkillInfo:
+    def _extract_skill_info(
+        self,
+        name: str,
+        cls: type,
+        file_path: Path,
+        repo_name: Optional[str] = None,
+    ) -> SkillInfo:
         """Extract information from a skill class.
 
         Args:
-            name: Class name
-            cls: Class object
-            file_path: Source file path
+            name: Class name.
+            cls: Class object.
+            file_path: Source file path.
+            repo_name: Repo directory name for settings namespace.
 
         Returns:
-            SkillInfo with methods
+            SkillInfo with methods.
         """
         methods = []
 
@@ -332,12 +370,11 @@ class SkillLoader:
                 )
             )
 
-        # Create instance of the skill class
-        try:
-            instance = cls()
-        except Exception as e:
-            logger.warning(f"Failed to instantiate {name}: {e}")
-            instance = None
+        # Create instance, injecting settings_manager if the constructor accepts it
+        instance = self._instantiate_skill(name, cls)
+
+        # Check for class-level SETTINGS_SCHEMA as well
+        class_schema = getattr(cls, "SETTINGS_SCHEMA", None)
 
         return SkillInfo(
             name=name,
@@ -345,7 +382,35 @@ class SkillLoader:
             methods=methods,
             module_path=file_path,
             instance=instance,
+            settings_schema=class_schema,
+            repo_name=repo_name,
         )
+
+    def _accepts_settings_manager(self, cls: type) -> bool:
+        """Check if a class __init__ accepts a settings_manager parameter."""
+        try:
+            sig = inspect.signature(cls.__init__)
+            return "settings_manager" in sig.parameters
+        except (ValueError, TypeError):
+            return False
+
+    def _instantiate_skill(self, name: str, cls: type) -> Optional[Any]:
+        """Create a skill instance, injecting settings_manager if accepted.
+
+        Args:
+            name: Skill class name (for logging).
+            cls: The skill class to instantiate.
+
+        Returns:
+            Skill instance or None on failure.
+        """
+        try:
+            if self._settings_manager and self._accepts_settings_manager(cls):
+                return cls(settings_manager=self._settings_manager)
+            return cls()
+        except Exception as e:
+            logger.warning(f"Failed to instantiate {name}: {e}")
+            return None
 
     def get_skill(self, name: str) -> Optional[SkillInfo]:
         """Get a loaded skill by name."""
@@ -359,7 +424,9 @@ class SkillLoader:
         if skill_name not in self._instances:
             skill = self._skills.get(skill_name)
             if skill:
-                self._instances[skill_name] = skill.class_obj()
+                self._instances[skill_name] = self._instantiate_skill(
+                    skill_name, skill.class_obj,
+                )
         return self._instances.get(skill_name)
 
     @property
@@ -370,6 +437,62 @@ class SkillLoader:
     def get_all_skills(self) -> List[SkillInfo]:
         """Get all loaded skills."""
         return list(self._skills.values())
+
+    def register_skill_settings(self) -> int:
+        """Register discovered SETTINGS_SCHEMA with the SettingsManager.
+
+        Iterates over loaded skills and registers any that have a
+        ``settings_schema``. The namespace is ``skills.<repo_name>``,
+        displayed on the "Skills" tab.
+
+        Returns:
+            Number of skill namespaces registered.
+        """
+        if not self._settings_manager:
+            return 0
+
+        registered = 0
+        # Track which repo_names we've already registered (one namespace per repo)
+        seen_repos: set[str] = set()
+
+        for skill in self._skills.values():
+            if not skill.settings_schema:
+                continue
+
+            repo = skill.repo_name or skill.name.lower()
+            if repo in seen_repos:
+                continue
+            seen_repos.add(repo)
+
+            namespace = f"skills.{repo}"
+            if self._settings_manager.is_registered(namespace):
+                logger.debug(
+                    "Skill namespace '%s' already registered, skipping",
+                    namespace,
+                )
+                continue
+
+            # Derive a human-friendly display name from the repo name
+            display_name = repo.replace("_", " ").replace("-", " ").title()
+            # Strip trailing " Skill" to avoid "Weather Skill Skill" in UI
+            if display_name.endswith(" Skill"):
+                display_name = display_name[: -len(" Skill")]
+
+            self._settings_manager.register(
+                namespace=namespace,
+                display_name=display_name,
+                schema=skill.settings_schema,
+                order=200,  # After core (10) and voice (20)
+                tab="Skills",
+            )
+            logger.info(
+                "Registered skill settings: %s (%d fields)",
+                namespace,
+                len(skill.settings_schema),
+            )
+            registered += 1
+
+        return registered
 
     def get_registration_data(self) -> List[Dict[str, Any]]:
         """Get data for registering all skills with Hub.

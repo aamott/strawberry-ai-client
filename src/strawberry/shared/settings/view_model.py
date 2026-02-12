@@ -24,6 +24,8 @@ class SettingsSection:
         groups: Dictionary mapping group names to lists of fields.
         values: Current values for all fields.
         order: Display order (lower = first).
+        tab: Tab grouping name (e.g. "General", "Skills").
+        schema: Flat list of all fields in this section.
     """
 
     namespace: str
@@ -31,6 +33,14 @@ class SettingsSection:
     groups: Dict[str, List[SettingField]]
     values: Dict[str, Any]
     order: int
+    tab: str = "General"
+    schema: List[SettingField] = None  # type: ignore[assignment]
+
+    # Alias for backward compatibility
+    @property
+    def name(self) -> str:
+        """Alias for namespace."""
+        return self.namespace
 
 
 @dataclass
@@ -143,6 +153,8 @@ class SettingsViewModel:
                 groups=self._group_fields(ns.schema),
                 values=self._settings.get_all(ns.name),
                 order=ns.order,
+                tab=ns.tab,
+                schema=ns.schema,
             )
             sections.append(section)
 
@@ -167,6 +179,8 @@ class SettingsViewModel:
             groups=self._group_fields(ns.schema),
             values=self._settings.get_all(ns.name),
             order=ns.order,
+            tab=ns.tab,
+            schema=ns.schema,
         )
 
     def _is_provider_namespace(self, namespace: str) -> bool:

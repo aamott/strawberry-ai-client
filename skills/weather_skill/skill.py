@@ -3,17 +3,55 @@
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import requests
 
+from strawberry.shared.settings.schema import FieldType, SettingField
+
 logger = logging.getLogger(__name__)
+
+# Settings schema registered automatically by SkillLoader.
+# Namespace will be "skills.weather_skill".
+SETTINGS_SCHEMA = [
+    SettingField(
+        key="api_key",
+        label="API Key",
+        type=FieldType.PASSWORD,
+        secret=True,
+        description="OpenWeatherMap API key (get one at openweathermap.org/api)",
+        env_key="WEATHER_API_KEY",
+        group="general",
+    ),
+    SettingField(
+        key="units",
+        label="Units",
+        type=FieldType.SELECT,
+        options=["metric", "imperial"],
+        default="metric",
+        description="Temperature units (metric=°C, imperial=°F)",
+        group="general",
+    ),
+    SettingField(
+        key="default_location",
+        label="Default Location",
+        type=FieldType.TEXT,
+        default="",
+        description="Default city for weather lookups (e.g. 'Seattle,WA')",
+        placeholder="Seattle,WA",
+        group="general",
+    ),
+]
 
 
 class WeatherSkill:
     """Provides weather data with explicit configuration requirements."""
 
-    def __init__(self):
+    # Namespace used by SettingsManager for this skill's settings
+    SETTINGS_NAMESPACE = "skills.weather_skill"
+
+    def __init__(self, settings_manager=None):
+        self._settings_manager = settings_manager
         self._base_url = "https://api.openweathermap.org/data/2.5"
         self._geo_url = "https://api.openweathermap.org/geo/1.0"
 
@@ -71,13 +109,31 @@ class WeatherSkill:
             "DC",
         }
 
+    def _get_setting(self, key: str, default: Any = None) -> Any:
+        """Read a setting from SettingsManager, falling back to default.
+
+        Args:
+            key: Setting key (e.g. "api_key", "units").
+            default: Fallback value.
+
+        Returns:
+            The setting value.
+        """
+        if self._settings_manager:
+            val = self._settings_manager.get(self.SETTINGS_NAMESPACE, key, default)
+            # Unwrap SecretValue if needed
+            if hasattr(val, "get_secret_value"):
+                return val.get_secret_value()
+            return val
+        return default
+
     def _health_check(self) -> Dict[str, Any]:
         """Check if the Weather skill is properly configured.
 
         Returns:
             Dict with 'healthy' bool and optional 'message' str.
         """
-        api_key = os.environ.get("WEATHER_API_KEY")
+        api_key = self._get_api_key()
         if not api_key:
             return {
                 "healthy": False,
@@ -108,10 +164,20 @@ class WeatherSkill:
         return {"healthy": True}
 
     def _get_api_key(self) -> str:
-        api_key = os.environ.get("WEATHER_API_KEY")
+        """Resolve the API key from settings or environment."""
+        # Try SettingsManager first, then fall back to env var
+        api_key = self._get_setting("api_key")
+        if not api_key:
+            api_key = os.environ.get("WEATHER_API_KEY")
         if not api_key:
             raise ValueError("Weather API not configured")
         return api_key
+
+    def _get_units(self, units: Optional[str] = None) -> str:
+        """Resolve units from argument, settings, or default."""
+        if units:
+            return units
+        return self._get_setting("units", "metric") or "metric"
 
     def _normalize_location(self, location: str) -> str:
         raw = (location or "").strip()
@@ -156,15 +222,40 @@ class WeatherSkill:
             raise ValueError(f"Location not found: {location}")
         return top
 
-    def get_current_weather(self, location: str, units: str = "metric") -> Dict[str, Any]:
-        """Get current weather with clear status."""
+    def get_current_weather(
+        self, location: str = "", units: str = "",
+    ) -> Dict[str, Any]:
+        """Get current weather with clear status.
+
+        Args:
+            location: City name (e.g. 'Seattle,WA'). Uses default if empty.
+            units: 'metric' or 'imperial'. Uses setting if empty.
+        """
+        # Resolve defaults from settings
+        if not location:
+            location = self._get_setting("default_location", "")
+        if not location:
+            return {
+                "success": False,
+                "error": "No location provided",
+                "message": (
+                    "Pass a location or set a default in"
+                    " Settings > Skills > Weather"
+                ),
+            }
+        units = self._get_units(units)
+
         try:
             api_key = self._get_api_key()
         except Exception:
             return {
                 "success": False,
                 "error": "Weather API not configured",
-                "message": "Please set WEATHER_API_KEY environment variable",
+                "message": (
+                    "Set your API key in Settings > Skills"
+                    " > Weather, or set WEATHER_API_KEY"
+                    " environment variable"
+                ),
                 "documentation": "https://openweathermap.org/api",
             }
 
@@ -210,16 +301,39 @@ class WeatherSkill:
         }
 
     def get_forecast(
-        self, location: str, days: int = 5, units: str = "metric"
+        self, location: str = "", days: int = 5, units: str = "",
     ) -> Dict[str, Any]:
-        """Get weather forecast with clear status."""
+        """Get weather forecast with clear status.
+
+        Args:
+            location: City name (e.g. 'Seattle,WA'). Uses default if empty.
+            days: Number of forecast days (1-16).
+            units: 'metric' or 'imperial'. Uses setting if empty.
+        """
+        if not location:
+            location = self._get_setting("default_location", "")
+        if not location:
+            return {
+                "success": False,
+                "error": "No location provided",
+                "message": (
+                    "Pass a location or set a default in"
+                    " Settings > Skills > Weather"
+                ),
+            }
+        units = self._get_units(units)
+
         try:
             api_key = self._get_api_key()
         except Exception:
             return {
                 "success": False,
                 "error": "Weather API not configured",
-                "message": "Please set WEATHER_API_KEY environment variable",
+                "message": (
+                    "Set your API key in Settings > Skills"
+                    " > Weather, or set WEATHER_API_KEY"
+                    " environment variable"
+                ),
                 "documentation": "https://openweathermap.org/api",
             }
 

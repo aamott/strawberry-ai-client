@@ -1,8 +1,26 @@
 """Media playback control skills."""
 
-from strawberry.config import get_settings
+import logging
+
+from strawberry.shared.settings.schema import FieldType, SettingField
 
 from .media_dispatch import get_system_volume, send_media_command
+
+logger = logging.getLogger(__name__)
+
+# Settings schema registered automatically by SkillLoader.
+# Namespace will be "skills.media_control_skill".
+SETTINGS_SCHEMA = [
+    SettingField(
+        key="macos_player",
+        label="macOS Player",
+        type=FieldType.SELECT,
+        options=["spotify", "music"],
+        default="spotify",
+        description="Media player app for macOS AppleScript commands",
+        group="general",
+    ),
+]
 
 
 class MediaControlSkill:
@@ -11,19 +29,40 @@ class MediaControlSkill:
     Delegates all platform-specific logic to ``media_dispatch``.
     """
 
+    # Namespace used by SettingsManager for this skill's settings
+    SETTINGS_NAMESPACE = "skills.media_control_skill"
+
+    def __init__(self, settings_manager=None):
+        self._settings_manager = settings_manager
+
     def _get_macos_player_app(self) -> str:
         """Resolve the configured macOS media player application name.
 
         Returns:
             The macOS application name used in AppleScript commands.
         """
-        settings = get_settings()
-        player = settings.media.macos_player.lower()
+        player = "spotify"  # default
+        if self._settings_manager:
+            player = (
+                self._settings_manager.get(
+                    self.SETTINGS_NAMESPACE, "macos_player", "spotify",
+                )
+                or "spotify"
+            )
+        else:
+            # Backward compat: fall back to deprecated config
+            try:
+                from strawberry.config import get_settings
+                settings = get_settings()
+                player = settings.media.macos_player.lower()
+            except Exception:
+                pass
+
         app_map = {
             "spotify": "Spotify",
             "music": "Music",
         }
-        return app_map.get(player, "Spotify")
+        return app_map.get(player.lower(), "Spotify")
 
     def play(self) -> str:
         """Resume media playback."""

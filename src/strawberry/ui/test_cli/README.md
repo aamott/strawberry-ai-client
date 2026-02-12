@@ -35,10 +35,55 @@ python -m strawberry.ui.test_cli "2+2?" --offline
 | `--offline` | Skip hub, force local mode |
 | `--show-logs` | Display debug logs |
 | `--timeout N` | Set timeout (default: 120s) |
+| `--settings ...` | Run settings subcommands (see below) |
+| `--config PATH` | Override config directory (defaults to repo `config/`) |
 
 ## Interactive Commands
 
 - `/quit`, `/q`, `/exit` — Exit the CLI
+
+## Settings CLI
+
+The test CLI includes a lightweight settings browser/editor that registers the core schema and auto-discovers skill `SETTINGS_SCHEMA` without booting the full SpokeCore.
+
+### Listing namespaces
+
+```bash
+# Show all namespaces grouped by tab (General, Skills, etc.)
+python -m strawberry.ui.test_cli --settings list
+```
+
+### Viewing a namespace
+
+```bash
+# Pretty-print all fields with current values and descriptions
+python -m strawberry.ui.test_cli --settings show skills.weather_skill
+```
+
+### Getting/setting values
+
+```bash
+# Read a single key
+python -m strawberry.ui.test_cli --settings get skills.weather_skill units
+
+# Buffer an update (applied on --settings apply)
+python -m strawberry.ui.test_cli --settings set skills.weather_skill units imperial
+
+# Apply buffered changes
+python -m strawberry.ui.test_cli --settings apply
+```
+
+### Interactive TUI
+
+```bash
+# Browse tabs → namespaces → fields, edit values, apply
+python -m strawberry.ui.test_cli --settings interactive
+```
+
+Notes:
+
+- The settings loader resolves the skills directory from `spoke_core.skills.path` (default `skills/`).
+- Config directory defaults to `config/` at repo root; override with `--config /path/to/config`.
 
 ## Exit Codes
 

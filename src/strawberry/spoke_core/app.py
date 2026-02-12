@@ -261,6 +261,7 @@ class SpokeCore:
                 allow_unsafe_exec=allow_unsafe,
                 custom_system_prompt=custom_prompt or None,
                 emit=self._emit,
+                settings_manager=self._settings_manager,
             )
             await self._skill_mgr.load_and_emit()
 

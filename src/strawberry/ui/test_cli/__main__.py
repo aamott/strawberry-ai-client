@@ -6,6 +6,8 @@ Usage:
     python -m strawberry.ui.test_cli --interactive
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import atexit
@@ -13,6 +15,10 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from strawberry.shared.settings import SettingsManager
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -345,6 +351,48 @@ async def run_interactive(
         await runner.stop()
 
 
+def _register_all_schemas(settings: "SettingsManager") -> None:
+    """Register SpokeCore and skill settings schemas.
+
+    This is a lightweight alternative to booting full SpokeCore — it
+    registers the core schema and discovers skill SETTINGS_SCHEMA from
+    the skills directory so ``--settings list`` shows everything.
+
+    Args:
+        settings: The SettingsManager to register into.
+    """
+    # 1. Register SpokeCore schema
+    from strawberry.spoke_core.settings_schema import SPOKE_CORE_SCHEMA
+
+    if not settings.is_registered("spoke_core"):
+        settings.register(
+            namespace="spoke_core",
+            display_name="Spoke Core",
+            schema=SPOKE_CORE_SCHEMA,
+            order=10,
+            tab="General",
+        )
+
+    # 2. Discover and register skill settings
+    skills_path_str = settings.get("spoke_core", "skills.path", "skills")
+    skills_path = Path(skills_path_str)
+    if not skills_path.is_absolute():
+        # Resolve relative to project root
+        project_root = Path(__file__).parent.parent.parent.parent.parent
+        skills_path = project_root / skills_path
+
+    if skills_path.is_dir():
+        from strawberry.skills.loader import SkillLoader
+
+        loader = SkillLoader(skills_path, settings_manager=settings)
+        loader.load_all()
+        registered = loader.register_skill_settings()
+        if registered:
+            print(
+                f"[info] Discovered settings for {registered} skill(s)",
+            )
+
+
 def run_settings_mode(args: argparse.Namespace) -> int:
     """Run settings CLI mode.
 
@@ -373,6 +421,9 @@ def run_settings_mode(args: argparse.Namespace) -> int:
 
     # Initialize settings manager
     settings = SettingsManager(config_dir, auto_save=False)
+
+    # Register core + skill schemas so they appear in listings
+    _register_all_schemas(settings)
 
     # Parse command and args
     settings_args = args.settings or []

@@ -52,6 +52,7 @@ class SkillService:
         device_name: Optional[str] = None,
         allow_unsafe_exec: Optional[bool] = None,
         custom_system_prompt: Optional[str] = None,
+        settings_manager: Optional[Any] = None,
     ):
         """Initialize skill service.
 
@@ -66,6 +67,7 @@ class SkillService:
             custom_system_prompt: Custom system prompt template. Must
                 contain ``{skill_descriptions}`` placeholder. If None
                 or empty, DEFAULT_SYSTEM_PROMPT_TEMPLATE is used.
+            settings_manager: Optional SettingsManager for skill settings.
         """
         self.skills_path = Path(skills_path)
         self.hub_client = hub_client
@@ -77,7 +79,7 @@ class SkillService:
         self.allow_unsafe_exec = allow_unsafe_exec
         self._custom_system_prompt = custom_system_prompt
 
-        self._loader = SkillLoader(skills_path)
+        self._loader = SkillLoader(skills_path, settings_manager=settings_manager)
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._registered = False
         self._skills_loaded = False
@@ -101,6 +103,11 @@ class SkillService:
         skills = self._loader.load_all()
         self._skills_loaded = True
         logger.info(f"Loaded {len(skills)} skills from {self.skills_path}")
+
+        # Register skill settings schemas with SettingsManager
+        registered = self._loader.register_skill_settings()
+        if registered:
+            logger.info("Registered settings for %d skill(s)", registered)
 
         # Initialize sandbox components
         if self.use_sandbox:
