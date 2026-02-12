@@ -366,7 +366,12 @@ def _register_all_schemas(settings: "SettingsManager") -> None:
 
     register_spoke_core_schema(settings)
 
-    # 2. Discover and register skill settings
+    # 2. Register TensorZero provider settings
+    from strawberry.llm.tensorzero_settings import register_tensorzero_schema
+
+    register_tensorzero_schema(settings)
+
+    # 3. Discover and register skill settings
     skills_path_str = settings.get("spoke_core", "skills.path", "skills")
     skills_path = Path(skills_path_str)
     if not skills_path.is_absolute():

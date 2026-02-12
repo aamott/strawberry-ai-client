@@ -314,24 +314,13 @@ class LocalAgentRunner(AgentRunner):
         return final_content
 
     def _select_function_name(self) -> str:
-        """Select TensorZero function based on available providers."""
-        import os
+        """Select TensorZero function for local/offline mode.
 
-        import httpx
-
-        try:
-            ollama_ok = False
-            try:
-                resp = httpx.get("http://localhost:11434/api/tags", timeout=0.5)
-                ollama_ok = resp.status_code == 200
-            except Exception:
-                ollama_ok = False
-
-            if not ollama_ok and os.environ.get("GOOGLE_AI_STUDIO_API_KEY"):
-                return "chat_local_gemini"
-        except Exception:
-            pass
-
+        The generated TOML always defines ``chat_local`` with the correct
+        fallback chain (cloud providers + Ollama, no Hub). TensorZero
+        handles provider failures and fallback internally, so we no
+        longer need to probe Ollama or check for API keys here.
+        """
         return "chat_local"
 
     async def _handle_tool_calls(

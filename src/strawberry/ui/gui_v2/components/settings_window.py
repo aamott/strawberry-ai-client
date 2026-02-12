@@ -396,18 +396,32 @@ class SettingsWindow(QDialog):
             # Handle PROVIDER_SELECT: populate available providers
             from ....shared.settings.schema import FieldType
 
-            if field.type == FieldType.PROVIDER_SELECT and field.provider_type:
-                providers = self._get_available_providers(
-                    field.provider_type, field.options_provider
-                )
-                if hasattr(widget, "set_available_providers"):
+            if field.type == FieldType.PROVIDER_SELECT:
+                if field.provider_type:
+                    providers = self._get_available_providers(
+                        field.provider_type, field.options_provider
+                    )
+                elif field.options:
+                    # Static options list (e.g. LLM fallback order)
+                    providers = list(field.options)
+                else:
+                    providers = []
+
+                if providers and hasattr(widget, "set_available_providers"):
                     widget.set_available_providers(providers)
 
                 # Set health status if available
-                health_provider = f"{field.provider_type}_backend_health"
-                health_status = self._settings.get_options(health_provider)
-                if health_status and hasattr(widget, "set_provider_health"):
-                    widget.set_provider_health(health_status)
+                if field.provider_type:
+                    health_provider = (
+                        f"{field.provider_type}_backend_health"
+                    )
+                    health_status = self._settings.get_options(
+                        health_provider,
+                    )
+                    if health_status and hasattr(
+                        widget, "set_provider_health",
+                    ):
+                        widget.set_provider_health(health_status)
 
             # Handle DYNAMIC_SELECT: populate options from provider
             if field.type == FieldType.DYNAMIC_SELECT and field.options_provider:

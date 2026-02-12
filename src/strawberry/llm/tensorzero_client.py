@@ -51,6 +51,11 @@ class TensorZeroError(Exception):
 def get_config_path() -> str:
     """Get the path to tensorzero.toml config file.
 
+    Priority:
+    1. ``TENSORZERO_CONFIG_PATH`` env var (explicit override).
+    2. ``config/tensorzero.generated.toml`` (auto-generated from settings).
+    3. ``config/tensorzero.toml`` (static fallback).
+
     Returns:
         Absolute path to the config file.
     """
@@ -59,10 +64,16 @@ def get_config_path() -> str:
     if config_path:
         return config_path
 
-    # Default: config/tensorzero.toml relative to project root
     # Project root is 4 levels up from this file (src/strawberry/llm/)
     llm_dir = Path(__file__).parent
     project_root = llm_dir.parent.parent.parent
+
+    # Prefer generated config if it exists
+    generated = project_root / "config" / "tensorzero.generated.toml"
+    if generated.exists():
+        return str(generated)
+
+    # Fall back to static config
     return str(project_root / "config" / "tensorzero.toml")
 
 
@@ -265,6 +276,24 @@ class TensorZeroClient:
                 pass
             self._gateway = None
             self._initialized = False
+
+    async def restart(self, config_path: Optional[str] = None) -> None:
+        """Restart the gateway, optionally with a new config.
+
+        Args:
+            config_path: New config path. If None, re-reads via
+                ``get_config_path()`` (picks up generated TOML).
+        """
+        logger.info("Restarting TensorZero gateway...")
+        await self.close()
+        if config_path:
+            self.config_path = config_path
+        else:
+            self.config_path = get_config_path()
+        await self.start()
+        logger.info(
+            "TensorZero gateway restarted with %s", self.config_path
+        )
 
     async def __aenter__(self) -> "TensorZeroClient":
         await self._get_gateway()

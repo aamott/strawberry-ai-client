@@ -114,6 +114,11 @@ class SpokeCore:
         # Register namespace (with migrations) if not already registered
         register_spoke_core_schema(self._settings_manager)
 
+        # Register TensorZero provider settings
+        from ..llm.tensorzero_settings import register_tensorzero_schema
+
+        register_tensorzero_schema(self._settings_manager)
+
         # Register options providers
         self._settings_manager.register_options_provider(
             "get_available_models",
@@ -130,12 +135,19 @@ class SpokeCore:
         # Listen for settings changes
         self._settings_manager.on_change(self._on_settings_changed)
 
-    def _on_settings_changed(self, namespace: str, key: str, value: Any) -> None:
+    def _on_settings_changed(
+        self, namespace: str, key: str, value: Any,
+    ) -> None:
         """Handle settings changes from the SettingsManager."""
-        if namespace != "spoke_core":
+        logger.debug("Setting changed: %s.%s", namespace, key)
+
+        # TensorZero provider settings changed → regenerate TOML + restart
+        if namespace == "tensorzero":
+            self._schedule_tensorzero_restart()
             return
 
-        logger.debug(f"Setting changed: {key} = {value}")
+        if namespace != "spoke_core":
+            return
 
         # Special handling for hub token - set legacy env vars
         # The hub client reads from HUB_DEVICE_TOKEN/HUB_TOKEN
@@ -153,7 +165,9 @@ class SpokeCore:
 
                 # Also persist to .env file with legacy names
                 try:
-                    self._settings_manager.set_env("HUB_DEVICE_TOKEN", str_value)
+                    self._settings_manager.set_env(
+                        "HUB_DEVICE_TOKEN", str_value,
+                    )
                     self._settings_manager.set_env("HUB_TOKEN", str_value)
                     logger.debug("Persisted HUB_DEVICE_TOKEN to .env")
                 except Exception as e:
@@ -161,8 +175,17 @@ class SpokeCore:
 
             # Trigger hub reconnection when hub settings change
             if section == "hub" and field in ("url", "token"):
-                logger.info(f"Hub setting changed ({field}), triggering reconnection")
+                logger.info(
+                    "Hub setting changed (%s), triggering reconnection",
+                    field,
+                )
                 self._schedule_hub_reconnection()
+                # Hub URL/token also affect TensorZero config
+                self._schedule_tensorzero_restart()
+
+            # Ollama settings also affect TensorZero config
+            if section == "local_llm" and field in ("url", "model"):
+                self._schedule_tensorzero_restart()
 
             # Update system prompt at runtime when setting changes
             if section == "llm" and field == "system_prompt" and self._skill_mgr:
@@ -172,6 +195,36 @@ class SpokeCore:
     def _schedule_hub_reconnection(self) -> None:
         """Schedule hub reconnection after settings change."""
         self._hub_manager.schedule_reconnection()
+
+    def _schedule_tensorzero_restart(self) -> None:
+        """Regenerate TensorZero TOML and restart the gateway."""
+        if not self._llm or not self._settings_manager:
+            return
+
+        try:
+            from ..llm.tensorzero_config import write_generated_config
+
+            config_path = write_generated_config(self._settings_manager)
+            logger.info("Regenerated TensorZero config: %s", config_path)
+
+            # Schedule async restart on the event loop
+            loop = self._event_bus._loop
+            if loop and loop.is_running():
+                loop.create_task(self._restart_tensorzero(config_path))
+        except Exception as e:
+            logger.error("Failed to regenerate TensorZero config: %s", e)
+
+    async def _restart_tensorzero(self, config_path: str) -> None:
+        """Restart the TensorZero gateway with a new config.
+
+        Args:
+            config_path: Path to the new TOML config file.
+        """
+        try:
+            await self._llm.restart(config_path)
+            logger.info("TensorZero gateway restarted successfully")
+        except Exception as e:
+            logger.error("TensorZero gateway restart failed: %s", e)
 
     def _get_available_models(self) -> List[str]:
         """Get available Ollama models for dynamic options.
@@ -237,7 +290,25 @@ class SpokeCore:
 
         try:
             self._event_bus.set_loop(asyncio.get_running_loop())
-            # Initialize LLM client
+
+            # Generate TensorZero config from settings before starting
+            if self._settings_manager:
+                try:
+                    from ..llm.tensorzero_config import write_generated_config
+
+                    config_path = write_generated_config(
+                        self._settings_manager,
+                    )
+                    logger.info(
+                        "Generated TensorZero config: %s", config_path,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Could not generate TensorZero config, "
+                        "using static fallback: %s", e,
+                    )
+
+            # Initialize LLM client (picks up generated TOML if available)
             self._llm = TensorZeroClient()
             await self._llm.start()
 

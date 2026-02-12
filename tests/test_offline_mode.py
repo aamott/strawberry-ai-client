@@ -465,8 +465,10 @@ class TestTensorZeroClient:
     def test_default_config_path(self):
         """Test default config path resolution."""
         client = TensorZeroClient()
-        # Should resolve to config/tensorzero.toml relative to project root
-        assert "tensorzero.toml" in client.config_path
+        # Should resolve to config/tensorzero[.generated].toml
+        assert client.config_path.endswith(
+            ("tensorzero.toml", "tensorzero.generated.toml")
+        )
 
     @pytest.mark.asyncio
     async def test_health_check_without_valid_config(self):

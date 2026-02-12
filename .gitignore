@@ -15,6 +15,7 @@ data/
 settings.json
 */settings.yaml
 config/settings.yaml
+config/tensorzero.generated.toml
 
 
 

@@ -222,11 +222,15 @@ class SettingsDialog(QDialog):
         """
         # Get available providers for PROVIDER_SELECT
         kwargs = {}
-        if field.type == FieldType.PROVIDER_SELECT and field.provider_type:
-            providers = self._get_available_providers(
-                field.provider_type, field.options_provider
-            )
-            kwargs["available_providers"] = providers
+        if field.type == FieldType.PROVIDER_SELECT:
+            if field.provider_type:
+                providers = self._get_available_providers(
+                    field.provider_type, field.options_provider
+                )
+                kwargs["available_providers"] = providers
+            elif field.options:
+                # Static options list (e.g. LLM fallback order)
+                kwargs["available_providers"] = list(field.options)
 
         widget = create_field_widget(field, current_value, self)
 
