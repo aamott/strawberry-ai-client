@@ -106,7 +106,7 @@ def register_gui_schema(settings_manager: "SettingsManager") -> None:
         namespace="gui",
         schema=get_gui_schema(),
         display_name="Appearance",
-        tab="General",
+        tab="Appearance",
         order=50,
     )
 
