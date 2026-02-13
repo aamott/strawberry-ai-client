@@ -5,51 +5,24 @@ Covers: TEXT, PASSWORD, NUMBER, CHECKBOX, SELECT, DYNAMIC_SELECT
 
 from typing import Any, List, Optional
 
-from PySide6.QtCore import QEvent, Qt, QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QDoubleSpinBox,
     QLineEdit,
     QPushButton,
-    QSpinBox,
     QWidget,
 )
 
 from strawberry.shared.settings import SettingField
+from strawberry.ui.common.widgets import (
+    NoScrollComboBox,
+    NoScrollDoubleSpinBox,
+    NoScrollSpinBox,
+)
 
 from .base import BaseFieldWidget
-
-
-class _NoScrollComboBox(QComboBox):
-    """QComboBox that ignores wheel events unless explicitly focused."""
-
-    def wheelEvent(self, event: QEvent) -> None:  # noqa: N802
-        if self.hasFocus():
-            super().wheelEvent(event)
-        else:
-            event.ignore()
-
-
-class _NoScrollSpinBox(QSpinBox):
-    """QSpinBox that ignores wheel events unless explicitly focused."""
-
-    def wheelEvent(self, event: QEvent) -> None:  # noqa: N802
-        if self.hasFocus():
-            super().wheelEvent(event)
-        else:
-            event.ignore()
-
-
-class _NoScrollDoubleSpinBox(QDoubleSpinBox):
-    """QDoubleSpinBox that ignores wheel events unless explicitly focused."""
-
-    def wheelEvent(self, event: QEvent) -> None:  # noqa: N802
-        if self.hasFocus():
-            super().wheelEvent(event)
-        else:
-            event.ignore()
 
 
 class TextFieldWidget(BaseFieldWidget):
@@ -136,10 +109,10 @@ class NumberFieldWidget(BaseFieldWidget):
         )
 
         if is_float:
-            self._spin = _NoScrollDoubleSpinBox()
+            self._spin = NoScrollDoubleSpinBox()
             self._spin.setDecimals(2)
         else:
-            self._spin = _NoScrollSpinBox()
+            self._spin = NoScrollSpinBox()
 
         self._spin.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
@@ -206,7 +179,7 @@ class SelectFieldWidget(BaseFieldWidget):
         super().__init__(field, current_value, parent)
 
     def _build_input(self) -> None:
-        self._combo = _NoScrollComboBox()
+        self._combo = NoScrollComboBox()
         self._combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         # Populate options
