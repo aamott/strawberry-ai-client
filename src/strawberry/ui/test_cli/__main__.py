@@ -278,6 +278,9 @@ async def run_interactive(
 ) -> int:
     """Run interactive REPL mode.
 
+    Delegates to InteractiveCLI for a full-featured REPL with
+    slash commands, voice support, and event notifications.
+
     Args:
         offline: If True, skip hub connection.
         timeout: Timeout in seconds.
@@ -286,69 +289,14 @@ async def run_interactive(
     Returns:
         Exit code.
     """
-    from .output import PlainFormatter
-    from .runner import TestRunner
+    from .interactive import InteractiveCLI
 
-    formatter = PlainFormatter()
-
-    # Create streaming handler for interactive mode
-    stream_handler = create_stream_handler(formatter, quiet=False)
-
-    runner = TestRunner(
-        config_dir=config_dir,
+    cli = InteractiveCLI(
         offline=offline,
-        filter_logs=True,
-        on_event=stream_handler,
+        timeout=timeout,
+        config_dir=config_dir,
     )
-
-    try:
-        await runner.start()
-
-        mode = "local" if offline else ("online" if runner._core.is_online() else "local")
-        print(f"[system] Test CLI ready (mode={mode})")
-        print("[system] Type /quit to exit\n")
-
-        while True:
-            try:
-                # Use aioconsole if available for non-blocking input
-                try:
-                    from aioconsole import ainput
-
-                    user_input = await ainput("test> ")
-                except ImportError:
-                    user_input = await asyncio.to_thread(input, "test> ")
-
-                user_input = user_input.strip()
-                if not user_input:
-                    continue
-
-                if user_input.lower() in ("/quit", "/q", "/exit"):
-                    print("[system] Goodbye!")
-                    break
-
-                result = await runner.send(user_input, timeout=float(timeout))
-
-                # Just print summary (streaming already handled tool calls)
-                status = "success" if result.success else "failed"
-                print(
-                    f"\n[{status}] mode={result.mode} duration={result.duration_ms}ms\n",
-                    flush=True,
-                )
-
-            except EOFError:
-                break
-            except KeyboardInterrupt:
-                print("\n[system] Interrupted")
-                break
-
-        return EXIT_SUCCESS
-
-    except Exception as e:
-        print(f"[error] {e}", file=sys.stderr)
-        return EXIT_ERROR
-
-    finally:
-        await runner.stop()
+    return await cli.run()
 
 
 def _register_all_schemas(settings: "SettingsManager") -> None:
