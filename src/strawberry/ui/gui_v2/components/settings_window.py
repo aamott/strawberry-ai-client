@@ -432,7 +432,7 @@ class SettingsWindow(QDialog):
             return widget
 
         except Exception:
-            logger.exception(f"Failed to create widget for {namespace}.{field.key}")
+            logger.exception("Failed to create widget for %s.%s", namespace, field.key)
             return None
 
     def _get_available_providers(
