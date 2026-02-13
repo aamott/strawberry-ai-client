@@ -7,7 +7,7 @@ import asyncio
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..hub import HubClient
 from .loader import SkillInfo, SkillLoader
@@ -94,13 +94,20 @@ class SkillService:
         self._sandbox: Optional[SandboxExecutor] = None
         self._sandbox_config = sandbox_config or SandboxConfig(enabled=use_sandbox)
 
-    def load_skills(self) -> List[SkillInfo]:
+    def load_skills(
+        self,
+        on_skill_loaded: Optional[Callable] = None,
+    ) -> List[SkillInfo]:
         """Load all skills from the skills directory.
+
+        Args:
+            on_skill_loaded: Optional callback per skill.
+                Signature: (skill_name, source, elapsed_ms).
 
         Returns:
             List of loaded skills
         """
-        skills = self._loader.load_all()
+        skills = self._loader.load_all(on_skill_loaded=on_skill_loaded)
         self._skills_loaded = True
         logger.info(f"Loaded {len(skills)} skills from {self.skills_path}")
 

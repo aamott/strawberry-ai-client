@@ -16,6 +16,7 @@ import atexit
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -160,6 +161,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help=(
+            "Verbose output: full tool calls/results, system prompt at startup, "
+            "per-skill load details."
+        ),
+    )
+
+    parser.add_argument(
         "--settings",
         nargs="*",
         metavar="CMD",
@@ -210,6 +221,39 @@ def create_stream_handler(formatter, quiet: bool):
     return handler
 
 
+def _print_result(result, json_output, quiet, json_formatter) -> int:
+    """Print a single message result and return its exit code.
+
+    Args:
+        result: TestResult from the runner.
+        json_output: Use JSON formatter.
+        quiet: Suppress tool calls, show only final response.
+        json_formatter: JSONFormatter instance.
+
+    Returns:
+        EXIT_SUCCESS, EXIT_ERROR, or EXIT_TIMEOUT.
+    """
+    if json_output:
+        print(json_formatter.format_result(result))
+    elif quiet:
+        if result.response:
+            print(result.response)
+        elif result.error:
+            print(f"[error] {result.error}", file=sys.stderr)
+    else:
+        status = "success" if result.success else "failed"
+        print(
+            f"\n[{status}] mode={result.mode} duration={result.duration_ms}ms",
+            flush=True,
+        )
+
+    if not result.success:
+        if "Timeout" in (result.error or ""):
+            return EXIT_TIMEOUT
+        return EXIT_ERROR
+    return EXIT_SUCCESS
+
+
 async def run_one_shot(
     messages: list[str],
     json_output: bool,
@@ -218,6 +262,7 @@ async def run_one_shot(
     offline: bool,
     timeout: int,
     config_dir: Path | None,
+    verbose: bool = False,
 ) -> int:
     """Run one-shot mode with provided messages.
 
@@ -229,6 +274,7 @@ async def run_one_shot(
         offline: If True, skip hub connection.
         timeout: Timeout in seconds.
         config_dir: Config directory path.
+        verbose: If True, show full tool calls and system prompt.
 
     Returns:
         Exit code.
@@ -246,15 +292,40 @@ async def run_one_shot(
     # Create streaming handler (only for non-JSON mode)
     stream_handler = None if json_output else create_stream_handler(formatter, quiet)
 
+    # Per-skill load callback (verbose only)
+    skill_cb = None
+    if verbose and not quiet and not json_output:
+        def _on_skill(name: str, source: str, ms: float) -> None:
+            t = f"{ms:.0f}ms" if ms < 1000 else f"{ms / 1000:.1f}s"
+            print(f"  {name} ({source}, {t})", flush=True)
+        skill_cb = _on_skill
+
     runner = TestRunner(
         config_dir=config_dir,
         offline=offline,
         filter_logs=True,
         on_event=stream_handler,
+        on_skill_loaded=skill_cb,
     )
 
     try:
+        t0 = time.monotonic()
         await runner.start()
+        startup_s = time.monotonic() - t0
+
+        # Startup messages (suppressed in quiet/JSON modes)
+        if not quiet and not json_output:
+            skill_count = runner.get_skill_count()
+            print(
+                f"[ready] Core loaded ({startup_s:.1f}s), "
+                f"{skill_count} skill(s)",
+                flush=True,
+            )
+
+        # Verbose: dump system prompt before first message
+        if verbose and not quiet and not json_output:
+            prompt = runner.get_system_prompt()
+            print(f"\n[system prompt]\n{prompt}\n", flush=True)
 
         exit_code = EXIT_SUCCESS
 
@@ -263,29 +334,9 @@ async def run_one_shot(
                 print(f"[user] {message}", flush=True)
 
             result = await runner.send(message, timeout=float(timeout))
-
-            # For JSON mode, print complete result at end
-            if json_output:
-                print(json_formatter.format_result(result))
-            elif quiet:
-                # Quiet mode: only final response (not streamed above)
-                if result.response:
-                    print(result.response)
-                elif result.error:
-                    print(f"[error] {result.error}", file=sys.stderr)
-            else:
-                # Streaming mode: just print summary footer
-                status = "success" if result.success else "failed"
-                print(
-                    f"\n[{status}] mode={result.mode} duration={result.duration_ms}ms",
-                    flush=True,
-                )
-
-            if not result.success:
-                if "Timeout" in (result.error or ""):
-                    exit_code = EXIT_TIMEOUT
-                else:
-                    exit_code = EXIT_ERROR
+            msg_exit = _print_result(result, json_output, quiet, json_formatter)
+            if msg_exit != EXIT_SUCCESS:
+                exit_code = msg_exit
 
         return exit_code
 
@@ -301,6 +352,7 @@ async def run_interactive(
     offline: bool,
     timeout: int,
     config_dir: Path | None,
+    verbose: bool = False,
 ) -> int:
     """Run interactive REPL mode.
 
@@ -311,6 +363,7 @@ async def run_interactive(
         offline: If True, skip hub connection.
         timeout: Timeout in seconds.
         config_dir: Config directory path.
+        verbose: If True, show full tool calls and system prompt.
 
     Returns:
         Exit code.
@@ -321,6 +374,7 @@ async def run_interactive(
         offline=offline,
         timeout=timeout,
         config_dir=config_dir,
+        verbose=verbose,
     )
     return await cli.run()
 
@@ -475,6 +529,16 @@ def main() -> None:
 
     configure_logging(show_logs=args.show_logs, log_file=log_file)
 
+    # Validate flag conflicts
+    if args.verbose and args.quiet:
+        print("Error: --verbose and --quiet are mutually exclusive.",
+              file=sys.stderr)
+        sys.exit(EXIT_ERROR)
+    if args.verbose and args.compact:
+        print("Error: --verbose and --compact are mutually exclusive.",
+              file=sys.stderr)
+        sys.exit(EXIT_ERROR)
+
     # Determine mode
     if args.interactive:
         exit_code = asyncio.run(
@@ -482,6 +546,7 @@ def main() -> None:
                 offline=args.offline,
                 timeout=args.timeout,
                 config_dir=args.config,
+                verbose=args.verbose,
             )
         )
     else:
@@ -494,6 +559,7 @@ def main() -> None:
                 offline=args.offline,
                 timeout=args.timeout,
                 config_dir=args.config,
+                verbose=args.verbose,
             )
         )
 

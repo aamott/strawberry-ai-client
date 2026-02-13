@@ -46,6 +46,7 @@ class TestRunner:
         offline: bool = False,
         filter_logs: bool = True,
         on_event: Optional[Callable[[str, Any], None]] = None,
+        on_skill_loaded: Optional[Callable] = None,
     ) -> None:
         """Initialize TestRunner.
 
@@ -56,11 +57,14 @@ class TestRunner:
             on_event: Optional callback for streaming events.
                 Called with (event_type, data) for real-time output.
                 event_type: 'tool_start', 'tool_result', 'assistant', 'error'
+            on_skill_loaded: Optional callback per skill during loading.
+                Signature: (skill_name, source, elapsed_ms).
         """
         self._config_dir = config_dir
         self._offline = offline
         self._filter_logs = filter_logs
         self._on_event = on_event
+        self._on_skill_loaded = on_skill_loaded
 
         self._core = None
         self._session_id: Optional[str] = None
@@ -89,7 +93,7 @@ class TestRunner:
         )
 
         self._core = SpokeCore(settings_manager=settings_manager)
-        await self._core.start()
+        await self._core.start(on_skill_loaded=self._on_skill_loaded)
 
         # Create session
         session = self._core.new_session()
@@ -104,6 +108,18 @@ class TestRunner:
                 await self._core.connect_hub()
             except Exception as e:
                 logger.warning(f"Hub connection failed: {e}")
+
+    def get_skill_count(self) -> int:
+        """Return the number of loaded skills."""
+        if self._core:
+            return len(self._core.get_skill_summaries())
+        return 0
+
+    def get_system_prompt(self) -> str:
+        """Return the current system prompt."""
+        if self._core:
+            return self._core.get_system_prompt()
+        return ""
 
     async def stop(self) -> None:
         """Cleanup resources."""

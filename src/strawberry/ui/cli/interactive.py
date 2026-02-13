@@ -59,10 +59,12 @@ class InteractiveCLI:
         offline: bool = False,
         timeout: int = 120,
         config_dir: Optional[Path] = None,
+        verbose: bool = False,
     ) -> None:
         self._offline = offline
         self._timeout = float(timeout)
         self._config_dir = config_dir
+        self._verbose = verbose
 
         # Populated in run()
         self._core: Any = None
@@ -119,6 +121,15 @@ class InteractiveCLI:
             sys.stdout.write(f"\r{header}\n")
             for line in code.splitlines():
                 sys.stdout.write(f"  {_styled(line, DIM)}\n")
+        elif self._verbose:
+            # Verbose: show all args, no truncation
+            import json as _json
+
+            args_str = _json.dumps(args, indent=2, default=str)
+            header = _styled(f"  * {name}", CYAN)
+            sys.stdout.write(f"\r{header}\n")
+            for line in args_str.splitlines():
+                sys.stdout.write(f"  {_styled(line, DIM)}\n")
         else:
             preview = ", ".join(
                 f"{k}={v!r}" for k, v in list(args.items())[:3]
@@ -134,9 +145,14 @@ class InteractiveCLI:
     ) -> None:
         """Print a tool call result."""
         output = result if success else error
-        preview = (output or "")[:80]
-        if output and len(output) > 80:
-            preview += "..."
+
+        if self._verbose:
+            # Verbose: show full output, no truncation
+            preview = output or ""
+        else:
+            preview = (output or "")[:80]
+            if output and len(output) > 80:
+                preview += "..."
 
         if success:
             status = _styled("OK", GREEN)
@@ -177,7 +193,23 @@ class InteractiveCLI:
         self._core = SpokeCore(settings_manager=self._settings_manager)
 
         try:
-            await self._core.start()
+            import time as _time
+
+            # Per-skill load callback (verbose only)
+            skill_cb = None
+            if self._verbose:
+                def _on_skill(name: str, source: str, ms: float) -> None:
+                    t = f"{ms:.0f}ms" if ms < 1000 else f"{ms / 1000:.1f}s"
+                    sys.stdout.write(
+                        f"  {_styled(name, CYAN)}"
+                        f" {_styled(f'({source}, {t})', DIM)}\n"
+                    )
+                    sys.stdout.flush()
+                skill_cb = _on_skill
+
+            t0 = _time.monotonic()
+            await self._core.start(on_skill_loaded=skill_cb)
+            startup_s = _time.monotonic() - t0
 
             # Create session
             session = self._core.new_session()
@@ -194,7 +226,7 @@ class InteractiveCLI:
                     logger.warning("Hub connection failed: %s", e)
 
             self._running = True
-            self._print_welcome()
+            self._print_welcome(startup_s=startup_s)
 
             # Run input loop
             return await self._input_loop()
@@ -209,16 +241,37 @@ class InteractiveCLI:
         finally:
             await self._shutdown()
 
-    def _print_welcome(self) -> None:
-        """Print the welcome banner."""
+    def _print_welcome(self, startup_s: float = 0.0) -> None:
+        """Print the welcome banner.
+
+        Args:
+            startup_s: Core startup duration in seconds.
+        """
         online = self._core.is_online()
         mode = _styled("Online", GREEN) if online else _styled("Local", YELLOW)
         model = self._core.get_model_info()
+        skill_count = len(self._core.get_skill_summaries())
 
         sys.stdout.write(f"\n{_styled('Strawberry CLI', CYAN, BOLD)}\n")
-        sys.stdout.write(f"  Mode:  {mode}\n")
-        sys.stdout.write(f"  Model: {_styled(model, DIM)}\n")
+        sys.stdout.write(f"  Mode:   {mode}\n")
+        sys.stdout.write(f"  Model:  {_styled(model, DIM)}\n")
+        sys.stdout.write(
+            f"  Skills: {_styled(str(skill_count), CYAN)}"
+            f" {_styled(f'({startup_s:.1f}s)', DIM)}\n"
+        )
+        if self._verbose:
+            sys.stdout.write(
+                f"  {_styled('[verbose mode]', YELLOW)}\n"
+            )
         sys.stdout.write(f"  {_styled('Type /help for commands', DIM)}\n\n")
+
+        # Verbose: dump full system prompt
+        if self._verbose:
+            prompt = self._core.get_system_prompt()
+            sys.stdout.write(
+                f"{_styled('[system prompt]', CYAN)}\n{prompt}\n\n"
+            )
+
         sys.stdout.flush()
         self._show_prompt()
 

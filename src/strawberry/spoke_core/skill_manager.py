@@ -79,9 +79,17 @@ class SkillManager:
 
     # -- lifecycle ------------------------------------------------------------
 
-    async def load_and_emit(self) -> None:
-        """Load skills and emit a SkillsLoaded event."""
-        self._service.load_skills()
+    async def load_and_emit(
+        self,
+        on_skill_loaded: Optional[Callable] = None,
+    ) -> None:
+        """Load skills and emit a SkillsLoaded event.
+
+        Args:
+            on_skill_loaded: Optional callback per skill.
+                Signature: (skill_name, source, elapsed_ms).
+        """
+        self._service.load_skills(on_skill_loaded=on_skill_loaded)
         await self._emit(
             SkillsLoaded(
                 skills=self._service.get_skill_summaries(),

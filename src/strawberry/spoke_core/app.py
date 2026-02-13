@@ -291,8 +291,18 @@ class SpokeCore:
         """Get the SkillService if core has been started."""
         return self._skill_mgr.service if self._skill_mgr else None
 
-    async def start(self) -> None:
-        """Initialize core services."""
+    async def start(
+        self,
+        on_skill_loaded: Optional[Callable] = None,
+    ) -> None:
+        """Initialize core services.
+
+        Args:
+            on_skill_loaded: Optional callback invoked per skill during
+                loading.  Signature: ``(name, source, elapsed_ms)``.
+                Useful for verbose CLI output without coupling SpokeCore
+                to any particular UI.
+        """
         if self._started:
             return
 
@@ -335,7 +345,9 @@ class SpokeCore:
                 emit=self._emit,
                 settings_manager=self._settings_manager,
             )
-            await self._skill_mgr.load_and_emit()
+            await self._skill_mgr.load_and_emit(
+                on_skill_loaded=on_skill_loaded,
+            )
 
             # Initialize agent runners
             self._hub_runner = HubAgentRunner(

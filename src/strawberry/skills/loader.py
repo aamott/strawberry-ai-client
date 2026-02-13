@@ -147,8 +147,15 @@ class SkillLoader:
                 len(skill.methods),
             )
 
-    def load_all(self) -> List[SkillInfo]:
+    def load_all(
+        self,
+        on_skill_loaded: Optional[Callable[[str, str, float], None]] = None,
+    ) -> List[SkillInfo]:
         """Load all skills from the skills directory.
+
+        Args:
+            on_skill_loaded: Optional callback called after each skill loads.
+                Signature: (skill_name, source, elapsed_ms).
 
         Returns:
             List of loaded SkillInfo objects
@@ -184,13 +191,13 @@ class SkillLoader:
             self._import_repo_module(repo_dir, entrypoint)
 
         # Phase 2: Load regular repos while deferred discovery runs.
-        self._load_repo_batch(regular)
+        self._load_repo_batch(regular, on_skill_loaded)
 
         # Phase 3: Collect deferred repos (wait_for_discovery called inside).
-        self._load_repo_batch(deferred)
+        self._load_repo_batch(deferred, on_skill_loaded)
 
         # Phase 4: Load top-level Python files.
-        self._load_top_level_files()
+        self._load_top_level_files(on_skill_loaded)
 
         return list(self._skills.values())
 
@@ -214,12 +221,25 @@ class SkillLoader:
                 regular.append((repo_dir, entrypoint))
         return deferred, regular
 
-    def _load_repo_batch(self, entries: list[tuple]) -> None:
+    def _load_repo_batch(
+        self,
+        entries: list[tuple],
+        on_skill_loaded: Optional[Callable] = None,
+    ) -> None:
         """Load a batch of repo-style skills, recording failures."""
+        import time as _time
+
         for repo_dir, entrypoint in entries:
+            t0 = _time.monotonic()
             try:
                 skills = self._load_repo_entrypoint(repo_dir, entrypoint)
                 self._register_loaded_skills(skills, str(entrypoint))
+                elapsed_ms = (_time.monotonic() - t0) * 1000
+                if on_skill_loaded:
+                    for s in skills:
+                        on_skill_loaded(
+                            s.name, repo_dir.name, elapsed_ms,
+                        )
             except Exception as e:
                 logger.error(f"Failed to load repo skill from {entrypoint}: {e}")
                 self._failures.append(
@@ -229,14 +249,26 @@ class SkillLoader:
                     )
                 )
 
-    def _load_top_level_files(self) -> None:
+    def _load_top_level_files(
+        self,
+        on_skill_loaded: Optional[Callable] = None,
+    ) -> None:
         """Load skills from top-level *.py files in the skills directory."""
+        import time as _time
+
         for py_file in self.skills_path.glob("*.py"):
             if py_file.name.startswith("_"):
                 continue
+            t0 = _time.monotonic()
             try:
                 skills = self._load_file(py_file)
                 self._register_loaded_skills(skills, str(py_file))
+                elapsed_ms = (_time.monotonic() - t0) * 1000
+                if on_skill_loaded:
+                    for s in skills:
+                        on_skill_loaded(
+                            s.name, py_file.stem, elapsed_ms,
+                        )
             except Exception as e:
                 logger.error(f"Failed to load {py_file}: {e}")
                 self._failures.append(
