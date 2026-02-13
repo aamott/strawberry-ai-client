@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
 from ..hub import HubClient, HubConfig, HubError
@@ -12,6 +14,40 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# File where we persist the Hub-assigned device ID between runs.
+_DEVICE_ID_FILENAME = ".device_id"
+
+
+def _config_dir() -> Path:
+    """Resolve the Spoke config directory.
+
+    Checks STRAWBERRY_CONFIG_DIR env var then falls back to
+    ``ai-pc-spoke/config`` relative to the repo root.
+    """
+    env = os.environ.get("STRAWBERRY_CONFIG_DIR")
+    if env:
+        return Path(env)
+    # Fall back: assume repo-root/ai-pc-spoke/config
+    return Path(__file__).resolve().parents[3] / "config"
+
+
+def read_persisted_device_id() -> Optional[str]:
+    """Read the persisted device ID from disk, if any."""
+    path = _config_dir() / _DEVICE_ID_FILENAME
+    if path.exists():
+        device_id = path.read_text().strip()
+        if device_id:
+            return device_id
+    return None
+
+
+def write_persisted_device_id(device_id: str) -> None:
+    """Write the Hub-assigned device ID to disk."""
+    path = _config_dir() / _DEVICE_ID_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(device_id)
+    logger.info("Persisted device_id to %s", path)
+
 
 class HubConnectionManager:
     """Manages Hub connection lifecycle.
@@ -19,6 +55,7 @@ class HubConnectionManager:
     Responsibilities:
     - Connect/disconnect from Hub
     - Health checks and authentication
+    - Device registration (Hub-assigned device ID)
     - WebSocket task management
     - Skill registration with Hub
     - Reconnection scheduling
@@ -124,6 +161,30 @@ class HubConnectionManager:
                     )
                 )
                 return False
+
+            # --- Device registration ---
+            device_name = self._get_setting("device.name", "Strawberry Spoke")
+            persisted_id = read_persisted_device_id()
+
+            try:
+                reg_result = await asyncio.wait_for(
+                    self._hub_client.register_device(
+                        device_name=device_name,
+                        device_id=persisted_id,
+                    ),
+                    timeout=hub_timeout,
+                )
+                assigned_id = reg_result["device_id"]
+                display_name = reg_result["display_name"]
+                write_persisted_device_id(assigned_id)
+                logger.info(
+                    "Device registered: id=%s display_name=%s",
+                    assigned_id,
+                    display_name,
+                )
+            except Exception as e:
+                logger.warning("Device registration failed: %s (continuing)", e)
+                # Non-fatal: the hub still accepted our auth.
 
             self._hub_connected = True
             await self._emit(

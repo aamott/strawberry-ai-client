@@ -136,13 +136,6 @@ class HubClient:
         self.config = config
         self._client: Optional[httpx.AsyncClient] = None
         # Synchronous fallback client.
-        #
-        # Why this exists:
-        # - Some parts of the system execute LLM-generated code in a *sync* context
-        #   (direct exec fallback when the Deno sandbox is unavailable).
-        # - Using the async httpx client from that sync context can crash with
-        #   cross-event-loop errors (async objects bound to a different loop).
-        # - A dedicated sync httpx client avoids event loop coupling entirely.
         self._sync_client: Optional[httpx.Client] = None
         self._websocket: Optional[ClientConnection] = None
         self._ws_task: Optional[asyncio.Task] = None
@@ -152,16 +145,48 @@ class HubClient:
         self._connection_callback: Optional[Callable[[bool], Awaitable[None]]] = None
         self._reconnect_delay = 1.0  # Start with 1 second
 
+        # Hub-assigned device identity (populated by register_device).
+        self._device_id: Optional[str] = None
+        self._display_name: Optional[str] = None
+
+    @property
+    def device_id(self) -> Optional[str]:
+        """Hub-assigned device ID (set after register_device)."""
+        return self._device_id
+
+    @device_id.setter
+    def device_id(self, value: Optional[str]) -> None:
+        """Set device_id and invalidate cached HTTP clients."""
+        self._device_id = value
+        # Force client recreation so the new header is included.
+        if self._client and not self._client.is_closed:
+            # Close asynchronously would be ideal but we're in a
+            # property setter — mark as None so it's recreated.
+            self._client = None
+        self._sync_client = None
+
+    @property
+    def display_name(self) -> Optional[str]:
+        """Hub-resolved display name (set after register_device)."""
+        return self._display_name
+
+    def _base_headers(self) -> Dict[str, str]:
+        """Build the base headers for HTTP requests."""
+        headers = {
+            "Authorization": f"Bearer {self.config.token}",
+            PROTOCOL_VERSION_HEADER: PROTOCOL_VERSION,
+        }
+        if self._device_id:
+            headers["X-Device-Id"] = self._device_id
+        return headers
+
     @property
     def client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self.config.url,
-                headers={
-                    "Authorization": f"Bearer {self.config.token}",
-                    PROTOCOL_VERSION_HEADER: PROTOCOL_VERSION,
-                },
+                headers=self._base_headers(),
                 timeout=self.config.timeout,
             )
         return self._client
@@ -172,10 +197,7 @@ class HubClient:
         if self._sync_client is None:
             self._sync_client = httpx.Client(
                 base_url=self.config.url,
-                headers={
-                    "Authorization": f"Bearer {self.config.token}",
-                    PROTOCOL_VERSION_HEADER: PROTOCOL_VERSION,
-                },
+                headers=self._base_headers(),
                 timeout=self.config.timeout,
             )
         return self._sync_client
@@ -225,6 +247,47 @@ class HubClient:
         response = await self.client.get("/auth/me")
         self._check_response(response)
         return response.json()
+
+    async def register_device(
+        self,
+        device_name: str,
+        device_id: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """Register (or reconnect) this Spoke with the Hub.
+
+        Calls POST /api/devices/register. On success, stores the
+        Hub-assigned ``device_id`` and ``display_name`` locally and
+        injects an ``X-Device-Id`` header into all subsequent requests.
+
+        Args:
+            device_name: Display name for this device.
+            device_id: Previously assigned device ID (for reconnect).
+
+        Returns:
+            Dict with ``device_id`` and ``display_name``.
+        """
+        payload: Dict[str, Any] = {"device_name": device_name}
+        if device_id:
+            payload["device_id"] = device_id
+
+        response = await self.client.post("/api/devices/register", json=payload)
+        self._check_response(response)
+
+        data = response.json()
+        self._device_id = data["device_id"]
+        self._display_name = data["display_name"]
+
+        # Invalidate cached clients so the X-Device-Id header is included.
+        if self._client and not self._client.is_closed:
+            self._client = None
+        self._sync_client = None
+
+        logger.info(
+            "Registered device: id=%s name=%s",
+            self._device_id,
+            self._display_name,
+        )
+        return data
 
     # =========================================================================
     # Chat / LLM
@@ -754,6 +817,9 @@ class HubClient:
                     "https://", "wss://"
                 )
                 ws_url = f"{ws_url}/ws/device?token={self.config.token}"
+                # Include device_id if set (multi-device-per-token).
+                if self._device_id:
+                    ws_url += f"&device_id={self._device_id}"
 
                 logger.info("Connecting to WebSocket: %s", ws_url)
 
