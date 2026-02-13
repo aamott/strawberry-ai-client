@@ -165,17 +165,58 @@ class SkillLoader:
             logger.warning(f"Skills path is not a directory: {self.skills_path}")
             return []
 
-        # Find all repo-style skills: skills/<repo_name>/<entrypoint>.py
-        for repo_dir in self.skills_path.iterdir():
+        # Collect repo dirs and their entrypoints.
+        repo_entries: list[tuple] = []
+        for repo_dir in sorted(self.skills_path.iterdir()):
             if not repo_dir.is_dir():
                 continue
             if repo_dir.name.startswith(".") or repo_dir.name == "__pycache__":
                 continue
-
             entrypoint = self._find_repo_entrypoint(repo_dir)
-            if entrypoint is None:
-                continue
+            if entrypoint is not None:
+                repo_entries.append((repo_dir, entrypoint))
 
+        # Split repos into deferred (async discovery) vs regular.
+        deferred, regular = self._partition_repos(repo_entries)
+
+        # Phase 1: Import deferred repos (triggers background discovery).
+        for repo_dir, entrypoint in deferred:
+            self._import_repo_module(repo_dir, entrypoint)
+
+        # Phase 2: Load regular repos while deferred discovery runs.
+        self._load_repo_batch(regular)
+
+        # Phase 3: Collect deferred repos (wait_for_discovery called inside).
+        self._load_repo_batch(deferred)
+
+        # Phase 4: Load top-level Python files.
+        self._load_top_level_files()
+
+        return list(self._skills.values())
+
+    def _partition_repos(
+        self, repo_entries: list[tuple],
+    ) -> tuple[list[tuple], list[tuple]]:
+        """Split repos into deferred (async discovery) and regular groups.
+
+        Repos with async discovery (e.g. mcp_skill) are imported first so
+        their background connections overlap with loading regular repos.
+
+        Returns:
+            (deferred, regular) tuple of repo entry lists.
+        """
+        deferred: list[tuple] = []
+        regular: list[tuple] = []
+        for repo_dir, entrypoint in repo_entries:
+            if self._has_async_discovery(entrypoint):
+                deferred.append((repo_dir, entrypoint))
+            else:
+                regular.append((repo_dir, entrypoint))
+        return deferred, regular
+
+    def _load_repo_batch(self, entries: list[tuple]) -> None:
+        """Load a batch of repo-style skills, recording failures."""
+        for repo_dir, entrypoint in entries:
             try:
                 skills = self._load_repo_entrypoint(repo_dir, entrypoint)
                 self._register_loaded_skills(skills, str(entrypoint))
@@ -188,11 +229,11 @@ class SkillLoader:
                     )
                 )
 
-        # Find all top-level Python files
+    def _load_top_level_files(self) -> None:
+        """Load skills from top-level *.py files in the skills directory."""
         for py_file in self.skills_path.glob("*.py"):
             if py_file.name.startswith("_"):
                 continue
-
             try:
                 skills = self._load_file(py_file)
                 self._register_loaded_skills(skills, str(py_file))
@@ -204,8 +245,6 @@ class SkillLoader:
                         error=str(e),
                     )
                 )
-
-        return list(self._skills.values())
 
     def _find_repo_entrypoint(self, repo_dir: Path) -> Optional[Path]:
         """Find the entrypoint Python file for a repo-style skill.
@@ -238,6 +277,40 @@ class SkillLoader:
         root = types.ModuleType(self._repo_namespace_root)
         root.__path__ = []  # type: ignore[attr-defined]
         sys.modules[self._repo_namespace_root] = root
+
+    @staticmethod
+    def _has_async_discovery(entrypoint: Path) -> bool:
+        """Check if a repo entrypoint uses async discovery.
+
+        A quick text scan for ``_start_discovery`` avoids importing the
+        module just to inspect it.
+        """
+        try:
+            text = entrypoint.read_text(encoding="utf-8", errors="ignore")
+            return "_start_discovery" in text
+        except OSError:
+            return False
+
+    def _import_repo_module(self, repo_dir: Path, entrypoint: Path) -> None:
+        """Import a repo module without scanning for skill classes.
+
+        Triggers module-level code (e.g. ``_start_discovery()``) so that
+        background work can overlap with loading other repos.
+        """
+        self._ensure_repo_namespace_root()
+        module_name = f"{self._repo_namespace_root}.{repo_dir.name}"
+        if module_name in sys.modules:
+            return
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            entrypoint,
+            submodule_search_locations=[str(repo_dir)],
+        )
+        if spec is None or spec.loader is None:
+            return
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
 
     def _load_repo_entrypoint(self, repo_dir: Path, entrypoint: Path) -> List[SkillInfo]:
         """Load skills from a repo entrypoint.
@@ -272,6 +345,14 @@ class SkillLoader:
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
             spec.loader.exec_module(module)
+
+        # If the module exposes a wait_for_discovery() hook (e.g. MCP skill),
+        # call it so that dynamically generated classes are available before
+        # we scan with inspect.getmembers().  Discovery was started in the
+        # background at module import time, so this just waits for it to finish.
+        waiter = getattr(module, "wait_for_discovery", None)
+        if callable(waiter):
+            waiter()
 
         # Detect SETTINGS_SCHEMA on the module
         module_schema = getattr(module, "SETTINGS_SCHEMA", None)

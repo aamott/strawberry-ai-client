@@ -10,7 +10,7 @@ import logging
 import os
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 from mcp import ClientSession
@@ -219,19 +219,30 @@ async def discover_all_servers(
         Servers that fail to connect are logged and skipped.
     """
     servers_config = mcp_config.get("mcpServers", {})
-    results: List[MCPServerInfo] = []
 
+    # Build list of (name, config) for enabled servers.
+    enabled: List[tuple] = []
     for name, config in servers_config.items():
         if config.get("disabled", False):
             logger.info("Skipping disabled MCP server: %s", name)
             continue
+        enabled.append((name, config))
 
+    if not enabled:
+        return []
+
+    # Connect to all servers in parallel for faster startup.
+    async def _safe_discover(
+        name: str, cfg: Dict[str, Any],
+    ) -> Optional[MCPServerInfo]:
+        """Discover a single server, returning None on failure."""
         try:
-            info = await discover_server_tools(name, config, exit_stack)
+            info = await discover_server_tools(name, cfg, exit_stack)
             if info.tools:
-                results.append(info)
-            else:
-                logger.warning("MCP server '%s' has no enabled tools, skipping.", name)
+                return info
+            logger.warning(
+                "MCP server '%s' has no enabled tools, skipping.", name,
+            )
         except asyncio.TimeoutError:
             logger.error(
                 "Timed out connecting to MCP server '%s' after %ds",
@@ -240,5 +251,9 @@ async def discover_all_servers(
             )
         except Exception as e:
             logger.error("Failed to connect to MCP server '%s': %s", name, e)
+        return None
 
-    return results
+    infos = await asyncio.gather(
+        *(_safe_discover(n, c) for n, c in enabled),
+    )
+    return [info for info in infos if info is not None]

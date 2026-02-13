@@ -79,6 +79,7 @@ def shutdown_mcp() -> None:
     daemon threads from blocking pytest exit.
     """
     global _bg_loop, _exit_stack, _sessions, _bg_thread
+    global _discovery_done, _discovery_future, _generated_classes
 
     if _bg_loop is None:
         return
@@ -106,6 +107,9 @@ def shutdown_mcp() -> None:
         _bg_thread.join(timeout=3)
     _bg_loop = None
     _bg_thread = None
+    _discovery_done = False
+    _discovery_future = None
+    _generated_classes = []
 
 
 def _start_background_loop() -> asyncio.AbstractEventLoop:
@@ -249,39 +253,72 @@ async def _discover_and_build() -> list:
 
 
 _discovery_done = False
-
-
-def _run_discovery() -> list:
-    """Run async discovery on the persistent background loop.
-
-    The background loop stays alive so MCP sessions are not torn down.
-    This function is idempotent — repeated calls return immediately
-    with an empty list once discovery has already been attempted.
-
-    Returns:
-        List of skill class types, or empty list on failure.
-    """
-    global _bg_loop, _discovery_done
-
-    if _discovery_done:
-        return []
-    _discovery_done = True
-
-    _bg_loop = _start_background_loop()
-    future = asyncio.run_coroutine_threadsafe(_discover_and_build(), _bg_loop)
-    return future.result(timeout=60)
-
-
-# ── Module-level discovery (runs when SkillLoader imports this file) ────────
-
+_discovery_future: Any = None  # concurrent.futures.Future set by _start_discovery()
 _generated_classes: list = []
 
-try:
-    _generated_classes = _run_discovery()
-except Exception as e:
-    logger.error("MCP skill discovery failed: %s: %s", type(e).__name__, e)
 
-# Assign each generated class to module scope so SkillLoader picks them up
-# via inspect.getmembers(module, inspect.isclass).
-for _cls in _generated_classes:
-    globals()[_cls.__name__] = _cls
+def _start_discovery() -> None:
+    """Kick off MCP discovery on the background loop (non-blocking).
+
+    Safe to call multiple times — only the first call starts discovery.
+    The result can be collected later via ``wait_for_discovery()``.
+    """
+    global _bg_loop, _discovery_done, _discovery_future
+
+    if _discovery_done:
+        return
+    _discovery_done = True
+
+    config = _load_mcp_config()
+    if not config or not config.get("mcpServers"):
+        logger.info("No MCP servers configured — skipping discovery.")
+        return
+
+    _bg_loop = _start_background_loop()
+    _discovery_future = asyncio.run_coroutine_threadsafe(
+        _discover_and_build(), _bg_loop,
+    )
+
+
+def wait_for_discovery(timeout: float = 60.0) -> list:
+    """Block until MCP discovery finishes (or times out) and return classes.
+
+    Assigns generated classes to module globals so ``inspect.getmembers``
+    picks them up. Safe to call multiple times — subsequent calls are no-ops
+    that return the cached list.
+
+    Args:
+        timeout: Max seconds to wait for discovery to complete.
+
+    Returns:
+        List of dynamically created skill class types.
+    """
+    global _generated_classes
+
+    if _generated_classes:
+        return _generated_classes
+
+    if _discovery_future is None:
+        return []
+
+    try:
+        classes = _discovery_future.result(timeout=timeout)
+    except Exception as e:
+        logger.error("MCP skill discovery failed: %s: %s", type(e).__name__, e)
+        return []
+
+    _generated_classes = classes
+
+    # Assign to module scope so SkillLoader/inspect.getmembers finds them.
+    for cls in classes:
+        globals()[cls.__name__] = cls
+
+    return classes
+
+
+# ── Module-level: start discovery immediately but don't block ──────────────
+# The SkillLoader will call wait_for_discovery() when it's ready to collect
+# the results. This lets imports return instantly while MCP connections
+# proceed in the background.
+
+_start_discovery()
