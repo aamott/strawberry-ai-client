@@ -215,8 +215,6 @@ class LocalAgentRunner(AgentRunner):
         llm: "TensorZeroClient",
         skills: "SkillService",
         emit: Callable[[CoreEvent], Any],
-        get_mode_notice: Callable[[], Optional[str]],
-        clear_mode_notice: Callable[[], None],
     ) -> None:
         """Initialize LocalAgentRunner.
 
@@ -224,14 +222,10 @@ class LocalAgentRunner(AgentRunner):
             llm: TensorZero client for LLM calls.
             skills: SkillService for tool execution.
             emit: Async callback to emit CoreEvent instances.
-            get_mode_notice: Callback to get pending mode notice (or None).
-            clear_mode_notice: Callback to clear pending mode notice.
         """
         self._llm = llm
         self._skills = skills
         self._emit = emit
-        self._get_mode_notice = get_mode_notice
-        self._clear_mode_notice = clear_mode_notice
 
     async def _emit_assistant_message(
         self,
@@ -256,10 +250,9 @@ class LocalAgentRunner(AgentRunner):
         """Run agent loop locally (for offline mode)."""
         function_name = self._select_function_name()
 
-        # Build system prompt with mode notice
-        mode_notice = self._get_mode_notice()
-        system_prompt = self._skills.get_system_prompt(mode_notice=mode_notice)
-        self._clear_mode_notice()
+        # Build system prompt (mode switching is handled at the session
+        # level in SpokeCore._agent_loop via conversation messages).
+        system_prompt = self._skills.get_system_prompt()
 
         seen_tool_calls: set[str] = set()
 

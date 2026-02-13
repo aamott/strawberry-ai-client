@@ -18,40 +18,52 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Default system prompt template
+# Composable system prompt parts
 # ---------------------------------------------------------------------------
 
-DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
-    "You are Strawberry, a helpful AI assistant"
-    " with access to skills on this device.\n"
-    "\n"
+# Part 1: Core identity + tool list (shared by all modes)
+BASE_ROLE_PROMPT = (
+    "You are Strawberry, a helpful AI assistant."
+)
+
+# The 3 tools are the same in both modes; only the execution target differs.
+TOOL_LIST = (
     "## Available Tools\n"
     "\n"
     "You have exactly 3 tools:\n"
     "1. search_skills(query) - Find skills by keyword "
     "(searches method names and descriptions)\n"
     "2. describe_function(path) - Get full signature for a skill method\n"
-    "3. python_exec(code) - Execute Python code that calls skills\n"
+    "3. python_exec(code) - Execute Python code that calls skills"
+)
+
+# Part 2: Mode-specific tool instructions
+OFFLINE_TOOL_INSTRUCTIONS = (
+    "## How to Call Skills (OFFLINE / LOCAL mode)\n"
     "\n"
-    "## How to Call Skills\n"
-    "\n"
-    "To execute a local skill, use python_exec with code that calls\n"
+    "You only have access to skills on this local device.\n"
+    "Execute skills via python_exec with code that calls\n"
     "device.<SkillName>.<method>().\n"
-    "When connected to the Hub, remote skills are available via "
-    "devices.<Device>.<SkillName>.<method>().\n"
+    "\n"
+    "- Do NOT use devices.* or device_manager.* (they are unavailable).\n"
     "\n"
     "Examples:\n"
     '- Time: python_exec({{"code": "print(device.TimeSkill.get_current_time())"}})\n'
     '- Weather: python_exec({{"code": "print('
     "  device.WeatherSkill"
-    ".get_current_weather('Seattle'))\"}})\n"
+    ".get_current_weather('Seattle'))\"}})"
+    "\n"
     '- Calculate: python_exec({{"code": "print('
     '  device.CalculatorSkill.add(a=5, b=3))"}})\n'
     '- Smart home: python_exec({{"code": "print(device.HomeAssistantSkill.'
-    "HassTurnOn(name='short lamp'))\"}})\n"
-    '- Remote: python_exec({{"code": "print(devices.living_room_pc.'
-    'MediaControlSkill.set_volume(level=20))"}})\n'
-    "\n"
+    "HassTurnOn(name='short lamp'))\"}})"
+)
+
+# Note: Online tool instructions live in the Hub's skill_service.py
+# (DEFAULT_ONLINE_MODE_PROMPT). The Hub owns the online system prompt.
+
+# Part 3: Search tips (shared)
+COMMON_SEARCH_TIPS = (
     "## Searching Tips\n"
     "\n"
     "search_skills matches against method names and descriptions.\n"
@@ -62,12 +74,11 @@ DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
     "\n"
     "If you already see the right skill in Available"
     " Skills below, skip search_skills\n"
-    "and call describe_function or python_exec directly.\n"
-    "\n"
-    "## Available Skills\n"
-    "\n"
-    "{skill_descriptions}\n"
-    "\n"
+    "and call describe_function or python_exec directly."
+)
+
+# Part 4: Rules (shared)
+COMMON_RULES = (
     "## Rules\n"
     "\n"
     "1. Use python_exec to call skills - do NOT call"
@@ -87,6 +98,100 @@ DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
     "HomeAssistantSkill. Pass the device/entity name as the 'name' kwarg."
 )
 
+# ---------------------------------------------------------------------------
+# Composed default template (offline mode — used by the Spoke's local runner)
+# ---------------------------------------------------------------------------
+
+DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
+    f"{BASE_ROLE_PROMPT}\n"
+    " You have access to skills on this device.\n"
+    "\n"
+    f"{TOOL_LIST}\n"
+    "\n"
+    f"{OFFLINE_TOOL_INSTRUCTIONS}\n"
+    "\n"
+    f"{COMMON_SEARCH_TIPS}\n"
+    "\n"
+    "## Available Skills\n"
+    "\n"
+    "{skill_descriptions}\n"
+    "\n"
+    f"{COMMON_RULES}"
+)
+
+
+# ---------------------------------------------------------------------------
+# Mode switch messages (injected into conversation on mode change)
+# ---------------------------------------------------------------------------
+
+
+def build_mode_switch_message(to_mode: str) -> str:
+    """Build a conversation-level message explaining a mode switch.
+
+    This message is injected into the session as a user-role context message
+    so the LLM sees it regardless of which runner (Hub or local) processes
+    the next turn.
+
+    Args:
+        to_mode: Target mode — ``"online"`` or ``"offline"``.
+
+    Returns:
+        Formatted mode switch notice string.
+    """
+    if to_mode == "online":
+        return (
+            "[System Notice: Switched to ONLINE mode]\n"
+            "Connected to the Hub. Skills from all connected devices "
+            "are now available.\n"
+            "\n"
+            "SYNTAX CHANGE — use "
+            "`devices.<Device>.<SkillName>.<method>(...)` "
+            "(not `device.*`).\n"
+            "\n"
+            "Your 3 tools still work:\n"
+            "- search_skills(query) — find skills across all devices\n"
+            "- describe_function(path) — get full signature\n"
+            "- python_exec(code) — execute skill calls\n"
+            "\n"
+            "IMPORTANT: The available skills may differ from before. "
+            "Use search_skills to find the correct skill path and "
+            "device name before calling anything.\n"
+            "\n"
+            "Example:\n"
+            '  python_exec({"code": "print(devices.my_device.WeatherSkill'
+            ".get_current_weather(location='Seattle'))\"})\n"
+            "\n"
+            "Do NOT use `device.*` syntax (local-only). "
+            "Do NOT call skill methods directly as tool calls — "
+            "always use python_exec."
+        )
+    # offline
+    return (
+        "[System Notice: Switched to LOCAL mode]\n"
+        "You are now running locally. All local skills on this device "
+        "are fully available and working.\n"
+        "\n"
+        "SYNTAX CHANGE — use `device.<SkillName>.<method>(...)` "
+        "(not `devices.*`).\n"
+        "\n"
+        "Your 3 tools still work:\n"
+        "- search_skills(query) — find available local skills\n"
+        "- describe_function(path) — get full signature\n"
+        "- python_exec(code) — execute skill calls\n"
+        "\n"
+        "IMPORTANT: The available skills may differ from before. "
+        "Use search_skills to find the correct skill path before "
+        "calling anything.\n"
+        "\n"
+        "Example:\n"
+        '  python_exec({"code": "print(device.WeatherSkill'
+        ".get_current_weather(location='Seattle'))\"})\n"
+        "\n"
+        "Do NOT use `devices.*` syntax (Hub is disconnected). "
+        "Do NOT call skill methods directly as tool calls — "
+        "always use python_exec."
+    )
+
 
 # ---------------------------------------------------------------------------
 # System prompt builder
@@ -102,6 +207,10 @@ def build_system_prompt(
 ) -> str:
     """Generate the system prompt with skill descriptions.
 
+    The prompt is composed from :data:`BASE_ROLE_PROMPT`,
+    mode-specific tool instructions, skill descriptions,
+    and :data:`COMMON_RULES`.
+
     Args:
         skills: List of loaded SkillInfo objects.
         mode: Current skill runtime mode (LOCAL or REMOTE).
@@ -110,6 +219,8 @@ def build_system_prompt(
             ``{skill_descriptions}``). Falls back to
             ``DEFAULT_SYSTEM_PROMPT_TEMPLATE``.
         mode_notice: Optional extra notice prepended to the prompt.
+            **Deprecated** — prefer injecting a mode-switch message
+            into the conversation via :func:`build_mode_switch_message`.
 
     Returns:
         Complete system prompt string for the LLM.
@@ -118,7 +229,7 @@ def build_system_prompt(
     from .sandbox.proxy_gen import SkillMode
 
     if not skills:
-        return "You are Strawberry, a helpful AI assistant."
+        return BASE_ROLE_PROMPT
 
     mode_lines: list[str] = []
     if mode_notice:

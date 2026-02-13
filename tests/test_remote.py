@@ -243,21 +243,21 @@ class TestModePrompts:
     """Tests for mode switching prompts."""
 
     def test_remote_mode_prompt_exists(self):
-        """Should have remote mode prompt."""
-        assert "device_manager" in REMOTE_MODE_PROMPT
+        """Should have remote mode prompt with devices.* syntax."""
+        assert "devices." in REMOTE_MODE_PROMPT
         assert "search_skills" in REMOTE_MODE_PROMPT
 
     def test_local_mode_prompt_exists(self):
-        """Should have local mode prompt."""
-        assert "device" in LOCAL_MODE_PROMPT
+        """Should have local mode prompt with device.* syntax."""
+        assert "device." in LOCAL_MODE_PROMPT
         assert "search_skills" in LOCAL_MODE_PROMPT
 
     def test_switched_to_remote_prompt(self):
-        """Should have switch-to-remote prompt."""
-        assert "online mode" in SWITCHED_TO_REMOTE_PROMPT
-        assert "device_manager" in SWITCHED_TO_REMOTE_PROMPT
+        """Should have switch-to-online prompt with devices.* syntax."""
+        assert "ONLINE" in SWITCHED_TO_REMOTE_PROMPT
+        assert "devices." in SWITCHED_TO_REMOTE_PROMPT
 
     def test_switched_to_local_prompt(self):
-        """Should have switch-to-local prompt."""
-        assert "offline mode" in SWITCHED_TO_LOCAL_PROMPT
-        assert "device.search_skills" in SWITCHED_TO_LOCAL_PROMPT
+        """Should have switch-to-local prompt with device.* syntax."""
+        assert "LOCAL" in SWITCHED_TO_LOCAL_PROMPT
+        assert "device." in SWITCHED_TO_LOCAL_PROMPT

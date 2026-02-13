@@ -72,10 +72,6 @@ class SpokeCore:
             get_loop=lambda: self._event_bus.loop,
         )
 
-        # Track mode state for mode notices (like QT UI)
-        self._last_online_state: Optional[bool] = None
-        self._pending_mode_notice: Optional[str] = None
-
         # Agent runners (initialized in start())
         self._hub_runner: Optional[HubAgentRunner] = None
         self._local_runner: Optional[LocalAgentRunner] = None
@@ -350,8 +346,6 @@ class SpokeCore:
                 llm=self._llm,
                 skills=self._skill_mgr.service,
                 emit=self._emit,
-                get_mode_notice=lambda: self._pending_mode_notice,
-                clear_mode_notice=lambda: setattr(self, "_pending_mode_notice", None),
             )
 
             self._started = True
@@ -410,6 +404,26 @@ class SpokeCore:
 
         result_content: Optional[str] = None
         try:
+            # Check for mode switch BEFORE adding the user message so
+            # the LLM sees the context change first, then the question.
+            current_online = self.is_online()
+            current_mode = "online" if current_online else "offline"
+            if (
+                session.last_mode is not None
+                and current_mode != session.last_mode
+            ):
+                from ..skills.prompt import build_mode_switch_message
+
+                notice = build_mode_switch_message(current_mode)
+                session.add_message("user", notice)
+                logger.info(
+                    "Injected mode-switch message (%s -> %s) into session %s",
+                    session.last_mode,
+                    current_mode,
+                    session.id,
+                )
+            session.last_mode = current_mode
+
             # Add user message
             session.add_message("user", text)
             await self._emit(
@@ -444,41 +458,23 @@ class SpokeCore:
     ) -> Optional[str]:
         """Run the agent loop with tool execution.
 
-        When online (connected to Hub), routes chat through Hub with enable_tools=True
-        so the Hub runs the agent loop and executes skills on registered devices.
+        When online (connected to Hub), routes chat through Hub with
+        enable_tools=True so the Hub runs the agent loop and executes
+        skills on registered devices.
 
         When offline, runs the agent loop locally using TensorZeroClient.
 
-        Delegates to HubAgentRunner or LocalAgentRunner based on connection state.
+        Delegates to HubAgentRunner or LocalAgentRunner based on
+        connection state.  Mode-switch messages are injected earlier
+        in :meth:`send_message` so the LLM sees the context change
+        before the user's question.
         """
         if not self._skill_mgr:
             await self._emit(CoreError(error="Core not started"))
             return None
 
-        # Check if online state changed and update mode notice
-        current_online = self.is_online()
-        if (
-            self._last_online_state is not None
-            and current_online != self._last_online_state
-        ):
-            if current_online:
-                self._pending_mode_notice = (
-                    "Runtime mode switched to ONLINE (Hub). "
-                    "Remote devices API is available. "
-                    "Use devices.<Device>.<SkillName>.<method>(...)."
-                )
-            else:
-                self._pending_mode_notice = (
-                    "Runtime mode switched to OFFLINE/LOCAL. "
-                    "The Hub/remote devices API is unavailable. "
-                    "Use only device.<SkillName>.<method>(...)."
-                )
-        self._last_online_state = current_online
-
         # Route based on online/offline mode (delegate to agent runners)
-        if current_online and self._hub_runner:
-            # Clear mode notice for hub mode (Hub owns system prompt)
-            self._pending_mode_notice = None
+        if self.is_online() and self._hub_runner:
             return await self._hub_runner.run(session, max_iterations)
 
         if self._local_runner:

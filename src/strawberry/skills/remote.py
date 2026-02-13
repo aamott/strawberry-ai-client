@@ -9,6 +9,12 @@ from typing import Any, Dict, List, Optional
 
 from ..hub import HubClient
 from ..utils.async_bridge import run_sync
+from .prompt import (
+    BASE_ROLE_PROMPT,
+    OFFLINE_TOOL_INSTRUCTIONS,
+    TOOL_LIST,
+    build_mode_switch_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -387,91 +393,46 @@ class DeviceManager:
         self._cache_timestamp = 0
 
 
+# ---------------------------------------------------------------------------
 # Mode switching prompts
+# ---------------------------------------------------------------------------
+# The canonical mode-switch messages now live in prompt.py. These constants
+# are kept for backward compatibility and re-exported from the new builder.
+
 REMOTE_MODE_PROMPT = (
-    "You are Strawberry, a helpful AI assistant with access to skills across all "
+    f"{BASE_ROLE_PROMPT} You have access to skills across all "
     "connected devices.\n"
     "\n"
-    "## How Remote Skills Work\n"
+    f"{TOOL_LIST}\n"
     "\n"
-    "When you write a ```python code block, I will execute it and show you the output. "
-    "Then you continue your response.\n"
+    "## How to Call Skills (ONLINE mode)\n"
     "\n"
-    "## Available Functions\n"
-    "\n"
-    "```python\n"
-    "device_manager: DeviceManager  # Manages all connected devices\n"
-    "\n"
-    'device_manager.search_skills(query: str = "") -> List[dict]\n'
-    "# Search for skills across all devices\n"
-    '# Returns: [{"path": "Skill.method", "signature": "...", '
-    '"summary": "...", "devices": ["device1", ...], "device_count": N}]\n'
-    "\n"
-    "device_manager.describe_function(path: str) -> str\n"
-    "# Get full function signature with docstring\n"
-    '# Path format: "SkillClass.method_name"\n'
-    "\n"
-    "device_manager.DeviceName.SkillClass.method(...)\n"
-    "# Call a skill on a specific device\n"
-    "```\n"
+    "Execute skills via python_exec with code that calls\n"
+    "devices.<Device>.<SkillName>.<method>(...).\n"
     "\n"
     "## Rules\n"
     "\n"
-    "1. Always wrap code in ```python fences\n"
-    "2. Always use print() to see output\n"
-    "3. After I show you the output, respond naturally to the user\n"
-    "4. Search for skills first if you're not sure what's available"
+    "1. Use python_exec to call skills.\n"
+    "2. Always use print() to see output.\n"
+    "3. After tool calls, respond naturally to the user.\n"
+    "4. Search for skills first if you're not sure what's available."
 )
 
 LOCAL_MODE_PROMPT = (
-    "You are Strawberry, a helpful AI assistant with access to skills on this device.\n"
+    f"{BASE_ROLE_PROMPT} You have access to skills on this device.\n"
     "\n"
-    "## How Skills Work\n"
+    f"{TOOL_LIST}\n"
     "\n"
-    "When you write a ```python code block, I will execute it and show you the output. "
-    "Then you continue your response.\n"
-    "\n"
-    "## Available Functions\n"
-    "\n"
-    "```python\n"
-    "device: Device  # Container for local skills\n"
-    "\n"
-    'device.search_skills(query: str = "") -> List[dict]\n'
-    "# Search for skills by keyword\n"
-    '# Returns: [{"path": "Skill.method", "signature": "...", "summary": "..."}]\n'
-    "\n"
-    "device.describe_function(path: str) -> str\n"
-    "# Get full function signature with docstring\n"
-    '# Path format: "SkillClass.method_name"\n'
-    "\n"
-    "device.SkillClass.method(...)\n"
-    "# Call a skill directly\n"
-    "```\n"
+    f"{OFFLINE_TOOL_INSTRUCTIONS}\n"
     "\n"
     "## Rules\n"
     "\n"
-    "1. Always wrap code in ```python fences\n"
-    "2. Always use print() to see output\n"
-    "3. After I show you the output, respond naturally to the user\n"
-    "4. Search for skills first if you're not sure what's available"
+    "1. Use python_exec to call skills.\n"
+    "2. Always use print() to see output.\n"
+    "3. After tool calls, respond naturally to the user.\n"
+    "4. Search for skills first if you're not sure what's available."
 )
 
-SWITCHED_TO_REMOTE_PROMPT = """<system>
-Automated Message: The device switched to online mode
-and now has access to skills on other devices.
-
-The available tools have changed:
-- device_manager.search_skills(query) - Search skills across all devices
-- device_manager.describe_function(path) - Get function
-  details (path: DeviceName.SkillClass.method)
-- device_manager.DeviceName.SkillClass.method() - Call remote skill
-</system>"""
-
-SWITCHED_TO_LOCAL_PROMPT = """<system>
-Automated Message: The device switched to offline mode. Only local skills are available.
-
-The available tools have changed:
-- device.search_skills(query) - Search local skills
-- device.describe_function(path) - Get function details (path: SkillClass.method)
-- device.SkillClass.method() - Call local skill
-</system>"""
+# Backward-compatible constants — now generated from prompt.py
+SWITCHED_TO_REMOTE_PROMPT = build_mode_switch_message("online")
+SWITCHED_TO_LOCAL_PROMPT = build_mode_switch_message("offline")
