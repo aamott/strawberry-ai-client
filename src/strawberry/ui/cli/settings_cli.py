@@ -1,7 +1,7 @@
 """CLI settings editor for testing and scripting.
 
 This module provides a command-line interface for viewing and editing settings,
-designed to work alongside test_cli for rapid iteration before Qt UI implementation.
+designed to work alongside the CLI for rapid iteration before Qt UI implementation.
 """
 
 from typing import Any, Dict, List, Optional

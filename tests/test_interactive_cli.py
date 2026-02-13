@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from strawberry.ui.test_cli.interactive import (
+from strawberry.ui.cli.interactive import (
     BLUE,
     GRAY,
     GREEN,
@@ -37,7 +37,7 @@ class TestStyled:
         assert "hello" in result
 
     def test_multiple_styles(self):
-        from strawberry.ui.test_cli.interactive import BOLD
+        from strawberry.ui.cli.interactive import BOLD
 
         result = _styled("hello", RED, BOLD)
         assert result.startswith(RED + BOLD)

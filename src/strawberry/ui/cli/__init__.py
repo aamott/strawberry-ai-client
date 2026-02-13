@@ -1,5 +1,12 @@
-"""CLI UI for the Spoke."""
+"""Strawberry CLI - unified command-line interface for chat, settings, and tools."""
 
-from .main import main
+from .output import JSONFormatter, PlainFormatter
+from .runner import TestResult, TestRunner, ToolCallRecord
 
-__all__ = ["main"]
+__all__ = [
+    "TestRunner",
+    "TestResult",
+    "ToolCallRecord",
+    "PlainFormatter",
+    "JSONFormatter",
+]

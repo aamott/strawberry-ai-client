@@ -252,52 +252,6 @@ class TestSpokeCoreToolExecution:
             subscription.cancel()
 
 
-class TestCLIRendering:
-    """Test CLI renderer functions (no LLM needed)."""
-
-    def test_status_bar_rendering(self):
-        """Test status bar renders correctly for different states."""
-        from strawberry.ui.cli import renderer as r
-
-        # Test OFF state
-        bar = r.status_bar("OFF", 80)
-        assert "Off" in bar
-        assert "/voice" in bar
-        assert "/help" in bar
-
-        # Test LISTENING state
-        bar = r.status_bar("LISTENING", 80)
-        assert "Listening" in bar
-
-        # Test IDLE state
-        bar = r.status_bar("IDLE", 80)
-        assert "Waiting" in bar
-
-    def test_message_rendering(self):
-        """Test message rendering functions."""
-        from strawberry.ui.cli import renderer as r
-
-        # User message
-        user_msg = r.user_message("Hello")
-        assert "Hello" in user_msg
-
-        # Assistant message
-        asst_msg = r.assistant_message("Hi there")
-        assert "Hi there" in asst_msg
-
-        # Tool call
-        tool_msg = r.tool_call_started("search_skills", "weather")
-        assert "search_skills" in tool_msg
-        assert "weather" in tool_msg
-
-        # Tool result
-        result = r.tool_call_result(True, "Found 3 skills")
-        assert "Found 3 skills" in result
-
-        error = r.tool_call_result(False, "Not found")
-        assert "Error" in error
-
-
 if __name__ == "__main__":
     # Allow running directly for quick testing
 

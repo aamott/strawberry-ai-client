@@ -28,14 +28,14 @@ pip install -e "ai-pc-spoke[all]"       # Everything
 
 ## Running
 
-### CLI UI
-The SpokeCore-based CLI supports text chat and voice commands.
+### CLI
+The unified CLI supports interactive chat, one-shot messages, settings, and developer tools.
 
 ```bash
-# Run CLI
-strawberry-cli
-# Or via python
-python -m strawberry.ui.cli.main
+strawberry-cli                          # Interactive chat (default)
+strawberry-cli "What time is it?"       # One-shot message
+strawberry-cli --settings               # Settings menu
+strawberry-cli skill-tester             # Skill interaction tester
 ```
 **Voice in CLI:** Type `/voice` to toggle voice mode.
 
@@ -54,24 +54,13 @@ python -m strawberry.ui.gui_v2
 Manage settings from the command line without launching a full UI.
 
 ```bash
-# List all namespaces
-python -m strawberry.ui.test_cli --settings list
-
-# Show a namespace with all fields
-python -m strawberry.ui.test_cli --settings show voice_core
-
-# Get/set individual values
-python -m strawberry.ui.test_cli --settings get voice_core stt.backend
-python -m strawberry.ui.test_cli --settings set voice_core stt.backend whisper
-
-# Apply pending changes (required after set)
-python -m strawberry.ui.test_cli --settings apply
-
-# Interactive list editor for backends
-python -m strawberry.ui.test_cli --settings edit voice_core stt.order
-
-# Reset a field to default
-python -m strawberry.ui.test_cli --settings reset voice_core stt.backend
+strawberry-cli --settings list
+strawberry-cli --settings show voice_core
+strawberry-cli --settings get voice_core stt.backend
+strawberry-cli --settings set voice_core stt.backend whisper
+strawberry-cli --settings apply
+strawberry-cli --settings edit voice_core stt.order
+strawberry-cli --settings reset voice_core stt.backend
 ```
 
 
@@ -96,7 +85,7 @@ ai-pc-spoke/
 │   ├── spoke_core/          # SpokeCore - LLM, chat, and skill services
 │   ├── ui/                 # User interfaces
 │   │   ├── qt/             # Qt-based GUI
-│   │   ├── cli/            # CLI-based UI
+│   │   ├── cli/            # Unified CLI (chat, settings, tools)
 │   │   └── voice_interface/  # Voice-only interface (example)
 │   ├── voice/              # Voice processing
 │   │   ├── stt/            # Speech-to-text (Leopard, etc.)

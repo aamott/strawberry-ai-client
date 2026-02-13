@@ -63,7 +63,7 @@ all = [
 
 [project.scripts]
 strawberry = "strawberry.main:main"
-strawberry-cli = "strawberry.ui.cli.main:main"
+strawberry-cli = "strawberry.ui.cli.__main__:main"
 strawberry-gui = "strawberry.ui.gui_v2:main"
 strawberry-voice = "strawberry.ui.voice_interface:main"
 strawberry-test = "strawberry.testing.runner:main"
@@ -84,7 +84,7 @@ select = ["E", "F", "I", "W"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests", "src/strawberry/ui/cli/tests"]
+testpaths = ["tests"]
 markers = [
     "timeout: marks tests with a timeout (deferred to pytest-timeout if installed)",
     "slow: marks slow tests that run real TTS models (skipped by default)",

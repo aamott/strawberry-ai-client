@@ -1,9 +1,11 @@
-"""Test CLI entry point.
+"""Strawberry CLI entry point.
 
 Usage:
-    python -m strawberry.ui.test_cli "What time is it?"
-    python -m strawberry.ui.test_cli "message" --json --offline
-    python -m strawberry.ui.test_cli --interactive
+    strawberry-cli                              # Interactive mode
+    strawberry-cli "What time is it?"            # One-shot message
+    strawberry-cli "message" --json --offline    # JSON output, offline
+    strawberry-cli --settings                    # Settings menu
+    strawberry-cli skill-tester                  # Skill interaction tester
 """
 
 from __future__ import annotations
@@ -75,8 +77,8 @@ def configure_logging(show_logs: bool, log_file: Path | None = None) -> None:
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        prog="test_cli",
-        description="Simplified CLI for automated testing of Strawberry Spoke.",
+        prog="strawberry-cli",
+        description="Strawberry AI Spoke CLI — chat, settings, and developer tools.",
     )
 
     parser.add_argument(
@@ -401,8 +403,22 @@ def run_settings_mode(args: argparse.Namespace) -> int:
     return run_settings_command(settings, command, cmd_args)
 
 
+def _run_skill_tester() -> None:
+    """Delegate to the skill interaction tester, forwarding remaining args."""
+    from strawberry.testing.skill_tester import main as tester_main
+
+    # Remove 'skill-tester' from argv so the tester's own argparse works
+    sys.argv = [sys.argv[0]] + sys.argv[2:]
+    tester_main()
+
+
 def main() -> None:
     """Main entry point."""
+    # Intercept 'skill-tester' subcommand before argparse
+    if len(sys.argv) > 1 and sys.argv[1] == "skill-tester":
+        _run_skill_tester()
+        return
+
     args = parse_args()
 
     # Handle settings mode first (doesn't need full SpokeCore)
@@ -411,8 +427,8 @@ def main() -> None:
         sys.exit(exit_code)
 
     # Determine log file location
-    log_dir = Path(__file__).parent.parent.parent.parent.parent / ".test-cli-logs"
-    log_file = log_dir / "test_cli.log" if not args.show_logs else None
+    log_dir = Path(__file__).parent.parent.parent.parent.parent / ".cli-logs"
+    log_file = log_dir / "cli.log" if not args.show_logs else None
 
     configure_logging(show_logs=args.show_logs, log_file=log_file)
 

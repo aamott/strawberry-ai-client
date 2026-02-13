@@ -1,9 +1,10 @@
 ---
-description: How to use the test CLI (a live chat interface for testing and debugging).
+description: How to use the Strawberry CLI (chat, settings, and developer tools).
 ---
-# Test CLI
+# Strawberry CLI
 
-A simplified CLI for automated testing and debugging of Strawberry Spoke.
+Unified command-line interface for Strawberry Spoke — interactive chat, one-shot
+messages, settings management, and developer tools.
 
 ## Quick Start
 
@@ -11,17 +12,20 @@ A simplified CLI for automated testing and debugging of Strawberry Spoke.
 cd ai-pc-spoke
 source .venv/bin/activate
 
-# Interactive mode
-python -m strawberry.ui.test_cli
+# Interactive mode (default)
+strawberry-cli
 
 # One-shot message
-python -m strawberry.ui.test_cli "What time is it?"
+strawberry-cli "What time is it?"
 
-# JSON output (for testing)
-python -m strawberry.ui.test_cli "What time is it?" --json
+# JSON output (for testing/scripting)
+strawberry-cli "What time is it?" --json
 
 # Force offline mode
-python -m strawberry.ui.test_cli "2+2?" --offline
+strawberry-cli "2+2?" --offline
+
+# Skill interaction tester
+strawberry-cli skill-tester
 ```
 
 ## Key Flags
@@ -40,37 +44,39 @@ python -m strawberry.ui.test_cli "2+2?" --offline
 
 ## Interactive Commands
 
-- `/quit`, `/q`, `/exit` — Exit the CLI
+| Command | Description |
+|---------|-------------|
+| `/help`, `/h` | Show available commands |
+| `/quit`, `/q` | Quit |
+| `/voice` | Toggle voice mode |
+| `/settings` | Open settings menu |
+| `/status` | Show mode, model, voice status |
+| `/connect` | Reconnect to Hub |
+| `/clear` | Clear conversation |
+| `/last` | Show last tool output |
 
 ## Settings CLI
 
-The test CLI includes a lightweight settings browser/editor that registers the core schema and auto-discovers skill `SETTINGS_SCHEMA` without booting the full SpokeCore.
+Includes a lightweight settings browser/editor that registers the core schema and auto-discovers skill `SETTINGS_SCHEMA` without booting the full SpokeCore.
 
 ### Listing namespaces
 
 ```bash
-# Show all namespaces grouped by tab (General, Skills, etc.)
-python -m strawberry.ui.test_cli --settings list
+strawberry-cli --settings list
 ```
 
 ### Viewing a namespace
 
 ```bash
-# Pretty-print all fields with current values and descriptions
-python -m strawberry.ui.test_cli --settings show skills.weather_skill
+strawberry-cli --settings show skills.weather_skill
 ```
 
 ### Getting/setting values
 
 ```bash
-# Read a single key
-python -m strawberry.ui.test_cli --settings get skills.weather_skill units
-
-# Buffer an update (applied on --settings apply)
-python -m strawberry.ui.test_cli --settings set skills.weather_skill units imperial
-
-# Apply buffered changes
-python -m strawberry.ui.test_cli --settings apply
+strawberry-cli --settings get skills.weather_skill units
+strawberry-cli --settings set skills.weather_skill units imperial
+strawberry-cli --settings apply
 ```
 
 ### Interactive Settings Menu
@@ -79,9 +85,8 @@ Launch the full interactive TUI with ANSI colors, breadcrumb navigation,
 type-specific field editors, search, and a pending-changes diff view:
 
 ```bash
-# Either of these launches the interactive menu:
-python -m strawberry.ui.test_cli --settings
-python -m strawberry.ui.test_cli --settings interactive
+strawberry-cli --settings
+strawberry-cli --settings interactive
 ```
 
 **Navigation:**
@@ -129,4 +134,15 @@ Each of the 17 field types has a dedicated editor:
 | 2 | Timeout |
 | 3 | Config error |
 
-See [TEST_CLI_DESIGN.md](./TEST_CLI_DESIGN.md) for full documentation.
+## Skill Interaction Tester
+
+Launch the developer tool that lets you "be" the LLM:
+
+```bash
+strawberry-cli skill-tester
+strawberry-cli skill-tester --skills-dir /path/to/skills
+```
+
+See the [Skill Interaction Tester guide](../../../../docs/Skill_Interaction_Tester.md) for details.
+
+See [TEST_CLI_DESIGN.md](./TEST_CLI_DESIGN.md) for the original design spec.

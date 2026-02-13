@@ -1,16 +1,17 @@
 """Entry point for Strawberry AI Spoke.
 
-Delegates to the CLI UI main function.
+Delegates to the CLI main function.
 """
 
 import sys
 
-from .ui.cli import main as cli_main
+from .ui.cli.__main__ import main as cli_main
 
 
 def main() -> int:
     """Main entry point - runs CLI interface."""
-    return cli_main()
+    cli_main()
+    return 0
 
 
 if __name__ == "__main__":
