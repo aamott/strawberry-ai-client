@@ -1,0 +1,41 @@
+# Solarized Dark theme — Ethan Schoonover's iconic palette
+name: solarized_dark
+
+# Background colors
+bg_primary: "#002b36"
+bg_secondary: "#073642"
+bg_tertiary: "#073642"
+bg_input: "#002b36"
+bg_hover: "#073642"
+bg_selected: "#094959"
+
+# Text colors
+text_primary: "#fdf6e3"
+text_secondary: "#93a1a1"
+text_muted: "#586e75"
+text_link: "#268bd2"
+
+# Accent colors
+accent_primary: "#cb4b16"
+accent_secondary: "#6c71c4"
+
+# Status colors
+success: "#859900"
+warning: "#b58900"
+error: "#dc322f"
+info: "#268bd2"
+
+# Border colors
+border: "#073642"
+border_light: "#094959"
+
+# Component-specific
+message_user_bg: "#073642"
+message_assistant_bg: "#002b36"
+tool_call_bg: "#073642"
+sidebar_bg: "#002b36"
+titlebar_bg: "#002b36"
+statusbar_bg: "#002b36"
+
+# Shadows
+shadow_color: "rgba(0, 0, 0, 0.5)"

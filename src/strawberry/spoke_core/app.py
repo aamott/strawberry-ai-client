@@ -128,6 +128,11 @@ class SpokeCore:
         # Register skills config on Skills tab
         register_skills_config_schema(self._settings_manager)
 
+        # Register GUI appearance settings (themes, font size, etc.)
+        from ..ui.gui_v2.settings_schema import register_gui_schema
+
+        register_gui_schema(self._settings_manager)
+
         # Register options providers
         self._settings_manager.register_options_provider(
             "get_available_models",

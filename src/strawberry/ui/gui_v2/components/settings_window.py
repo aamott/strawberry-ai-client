@@ -356,7 +356,7 @@ class SettingsWindow(QDialog):
 
         return section
 
-    def _create_field_widget(
+    def _create_field_widget(  # noqa: C901
         self,
         namespace: str,
         field: "SettingField",
@@ -428,6 +428,13 @@ class SettingsWindow(QDialog):
                 options = self._settings.get_options(field.options_provider)
                 if options and hasattr(widget, "set_options"):
                     widget.set_options(options)
+
+            # Handle ACTION: connect registered action handler
+            if field.type == FieldType.ACTION and field.action:
+                action_key = f"{namespace}:{field.action}"
+                handler = self._settings._action_handlers.get(action_key)
+                if handler and hasattr(widget, "set_action_handler"):
+                    widget.set_action_handler(handler)
 
             return widget
 

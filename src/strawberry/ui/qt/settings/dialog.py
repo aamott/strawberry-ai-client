@@ -244,6 +244,19 @@ class SettingsDialog(QDialog):
             if health_status and hasattr(widget, "set_provider_health"):
                 widget.set_provider_health(health_status)
 
+        # Handle DYNAMIC_SELECT: populate options from provider
+        if field.type == FieldType.DYNAMIC_SELECT and field.options_provider:
+            options = self._settings.get_options(field.options_provider)
+            if options and hasattr(widget, "set_options"):
+                widget.set_options(options)
+
+        # Handle ACTION: connect registered action handler
+        if field.type == FieldType.ACTION and field.action:
+            action_key = f"{namespace}:{field.action}"
+            handler = self._settings._action_handlers.get(action_key)
+            if handler and hasattr(widget, "set_action_handler"):
+                widget.set_action_handler(handler)
+
         # Connect value change
         widget.value_changed.connect(
             lambda v, ns=namespace, k=field.key: self._on_field_changed(ns, k, v)

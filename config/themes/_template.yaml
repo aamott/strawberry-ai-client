@@ -1,0 +1,80 @@
+# ============================================================================
+# Strawberry AI — Custom Theme Template
+# ============================================================================
+#
+# To create a custom theme:
+#   1. Copy this file to the same folder (config/themes/)
+#   2. Rename it (e.g. my_theme.yaml)
+#   3. Edit the colors below — all values are CSS hex colors ("#rrggbb")
+#      or rgba strings for shadows ("rgba(r, g, b, a)")
+#   4. Go to Settings > General > Theme and select your new theme
+#
+# The "name" field is used in the theme dropdown. It must be unique.
+# If omitted, the filename (without .yaml) is used as the name.
+#
+# Files starting with _ (like this template) are ignored by the loader.
+# ============================================================================
+
+# Display name shown in the settings dropdown
+name: my_custom_theme
+
+# ── Background colors ───────────────────────────────────────────────────────
+# bg_primary:   Main window background
+# bg_secondary: Sidebar, title bar, status bar panels
+# bg_tertiary:  Deeper accent panels
+# bg_input:     Text input fields, combo boxes
+# bg_hover:     Widget hover state
+# bg_selected:  Widget selected/active state
+bg_primary: "#1a1a2e"
+bg_secondary: "#16213e"
+bg_tertiary: "#0f3460"
+bg_input: "#1e1e3f"
+bg_hover: "#2a2a4a"
+bg_selected: "#3a3a5a"
+
+# ── Text colors ─────────────────────────────────────────────────────────────
+# text_primary:   Main body text
+# text_secondary: Labels, role headers
+# text_muted:     Timestamps, disabled text, placeholders
+# text_link:      Hyperlinks
+text_primary: "#ffffff"
+text_secondary: "#a0a0a0"
+text_muted: "#666666"
+text_link: "#6ea8fe"
+
+# ── Accent colors ───────────────────────────────────────────────────────────
+# accent_primary:   Buttons, focus rings, active indicators
+# accent_secondary: Secondary highlights
+accent_primary: "#e94560"
+accent_secondary: "#533483"
+
+# ── Status colors ───────────────────────────────────────────────────────────
+# Used for toasts, health indicators, validation borders
+success: "#4ade80"
+warning: "#fbbf24"
+error: "#ef4444"
+info: "#3b82f6"
+
+# ── Border colors ───────────────────────────────────────────────────────────
+# border:       Default border (panels, cards, inputs)
+# border_light: Lighter border (hover states, subtle separators)
+border: "#2a2a4a"
+border_light: "#3a3a5a"
+
+# ── Component-specific ──────────────────────────────────────────────────────
+# message_user_bg:      User chat bubble background
+# message_assistant_bg: Assistant chat bubble background
+# tool_call_bg:         Tool call result card background
+# sidebar_bg:           Sidebar panel background
+# titlebar_bg:          Title bar background
+# statusbar_bg:         Status bar background
+message_user_bg: "#2a2a4a"
+message_assistant_bg: "#1e1e3f"
+tool_call_bg: "#252545"
+sidebar_bg: "#16213e"
+titlebar_bg: "#16213e"
+statusbar_bg: "#16213e"
+
+# ── Shadows ─────────────────────────────────────────────────────────────────
+# shadow_color: Drop shadow for elevated elements (rgba format)
+shadow_color: "rgba(0, 0, 0, 0.4)"

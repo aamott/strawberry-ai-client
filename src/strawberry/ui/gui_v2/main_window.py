@@ -29,6 +29,7 @@ from .models.message import Message, MessageRole, TextSegment
 from .models.state import ConnectionStatus, MessageSource, UIState, VoiceStatus
 from .services.voice_service import VoiceService
 from .themes import DARK_THEME, LIGHT_THEME
+from .themes.loader import discover_themes, ensure_builtin_themes
 
 if TYPE_CHECKING:
     from ...shared.settings import SettingsManager
@@ -73,6 +74,7 @@ class MainWindow(QMainWindow):
         self._voice_core = voice_core
         self._state = UIState()
         self._theme = DARK_THEME
+        self._themes_cache: dict = {}  # name -> Theme
 
         # Voice service bridges VoiceCore ↔ Qt signals
         self._voice_service = VoiceService(voice_core=voice_core, parent=self)
@@ -81,6 +83,7 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._connect_signals()
         self._connect_voice_signals()
+        self._load_gui_settings()
         self._apply_theme()
         self._init_voice_state()
 
@@ -170,6 +173,92 @@ class MainWindow(QMainWindow):
         self._chat_view.chat_area.read_aloud_requested.connect(
             self._on_read_aloud_requested
         )
+
+    def _load_gui_settings(self) -> None:
+        """Load GUI settings from SettingsManager (theme, font_size, start_maximized)."""
+        sm = self._settings_manager
+        if not sm or not sm.is_registered("gui"):
+            return
+
+        # Load and cache available themes from disk
+        self._refresh_themes_cache()
+
+        # Apply theme setting
+        theme_name = sm.get("gui", "theme", "dark")
+        self._set_theme_by_name(theme_name)
+
+        # Apply font size
+        font_size = sm.get("gui", "font_size", 14)
+        self._apply_font_size(font_size)
+
+        # Start maximized
+        if sm.get("gui", "start_maximized", False):
+            self.showMaximized()
+            self._title_bar.set_maximized(True)
+
+        # Listen for runtime setting changes
+        sm.on_change(self._on_gui_setting_changed)
+
+    def _refresh_themes_cache(self) -> None:
+        """Reload available themes from the themes directory."""
+        from .settings_schema import _get_themes_dir
+
+        sm = self._settings_manager
+        if not sm:
+            return
+
+        themes_dir = _get_themes_dir(sm)
+        ensure_builtin_themes(themes_dir)
+        self._themes_cache = discover_themes(themes_dir)
+
+        # Always include hardcoded fallbacks
+        if "dark" not in self._themes_cache:
+            self._themes_cache["dark"] = DARK_THEME
+        if "light" not in self._themes_cache:
+            self._themes_cache["light"] = LIGHT_THEME
+
+    def _set_theme_by_name(self, name: str) -> None:
+        """Set the active theme by name from the cache.
+
+        Args:
+            name: Theme name (must be in _themes_cache).
+        """
+        theme = self._themes_cache.get(name)
+        if theme:
+            self._theme = theme
+        else:
+            logger.warning("Theme '%s' not found, falling back to dark", name)
+            self._theme = self._themes_cache.get("dark", DARK_THEME)
+
+    def _apply_font_size(self, size: int) -> None:
+        """Apply a base font size to the application.
+
+        Args:
+            size: Font size in pixels.
+        """
+        font = self.font()
+        font.setPixelSize(size)
+        self.setFont(font)
+
+    def _on_gui_setting_changed(
+        self, namespace: str, key: str, value: object
+    ) -> None:
+        """React to runtime GUI setting changes.
+
+        Args:
+            namespace: Setting namespace.
+            key: Setting key.
+            value: New value.
+        """
+        if namespace != "gui":
+            return
+
+        if key == "theme":
+            self._refresh_themes_cache()
+            self._set_theme_by_name(str(value))
+            self._apply_theme()
+        elif key == "font_size":
+            self._apply_font_size(int(value))
 
     def _apply_theme(self) -> None:
         """Apply the current theme stylesheet."""

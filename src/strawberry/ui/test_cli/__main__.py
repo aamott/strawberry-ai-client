@@ -376,7 +376,12 @@ def _register_all_schemas(settings: "SettingsManager") -> None:
 
     register_skills_config_schema(settings)
 
-    # 4. Discover and register skill settings
+    # 4. Register GUI appearance settings (themes, font size, etc.)
+    from strawberry.ui.gui_v2.settings_schema import register_gui_schema
+
+    register_gui_schema(settings)
+
+    # 5. Discover and register skill settings
     skills_path_str = settings.get("skills_config", "path", "skills")
     skills_path = Path(skills_path_str)
     if not skills_path.is_absolute():
