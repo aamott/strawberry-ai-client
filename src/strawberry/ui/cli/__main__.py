@@ -74,8 +74,8 @@ def configure_logging(show_logs: bool, log_file: Path | None = None) -> None:
         logging.getLogger(name).setLevel(logging.WARNING)
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         prog="strawberry-cli",
         description="Strawberry AI Spoke CLI — chat, settings, and developer tools.",
@@ -84,7 +84,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "messages",
         nargs="*",
-        help="Messages to send (one-shot mode). If empty, runs interactive mode.",
+        help="Messages to send (one-shot mode). Use --interactive for the REPL.",
     )
 
     parser.add_argument(
@@ -148,7 +148,13 @@ def parse_args() -> argparse.Namespace:
         help="Settings CLI: list, show, get, set, apply, discard, edit, reset",
     )
 
-    return parser.parse_args()
+    return parser
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = _build_parser()
+    return parser.parse_args(argv)
 
 
 def create_stream_handler(formatter, quiet: bool):
@@ -419,6 +425,11 @@ def main() -> None:
         _run_skill_tester()
         return
 
+    # No arguments → show help instead of launching interactive mode
+    if len(sys.argv) == 1:
+        _build_parser().print_help()
+        sys.exit(EXIT_SUCCESS)
+
     args = parse_args()
 
     # Handle settings mode first (doesn't need full SpokeCore)
@@ -433,7 +444,7 @@ def main() -> None:
     configure_logging(show_logs=args.show_logs, log_file=log_file)
 
     # Determine mode
-    if args.interactive or not args.messages:
+    if args.interactive:
         exit_code = asyncio.run(
             run_interactive(
                 offline=args.offline,
