@@ -5,7 +5,7 @@ Covers: TEXT, PASSWORD, NUMBER, CHECKBOX, SELECT, DYNAMIC_SELECT
 
 from typing import Any, List, Optional
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QEvent, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -20,6 +20,36 @@ from PySide6.QtWidgets import (
 from strawberry.shared.settings import SettingField
 
 from .base import BaseFieldWidget
+
+
+class _NoScrollComboBox(QComboBox):
+    """QComboBox that ignores wheel events unless explicitly focused."""
+
+    def wheelEvent(self, event: QEvent) -> None:  # noqa: N802
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
+class _NoScrollSpinBox(QSpinBox):
+    """QSpinBox that ignores wheel events unless explicitly focused."""
+
+    def wheelEvent(self, event: QEvent) -> None:  # noqa: N802
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
+class _NoScrollDoubleSpinBox(QDoubleSpinBox):
+    """QDoubleSpinBox that ignores wheel events unless explicitly focused."""
+
+    def wheelEvent(self, event: QEvent) -> None:  # noqa: N802
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
 
 
 class TextFieldWidget(BaseFieldWidget):
@@ -48,6 +78,15 @@ class PasswordFieldWidget(BaseFieldWidget):
         self._line_edit.textChanged.connect(self._on_value_changed)
         self._input_layout.addWidget(self._line_edit)
 
+        # Show/hide eye toggle
+        self._visible = False
+        self._eye_btn = QPushButton("\U0001F576")
+        self._eye_btn.setFlat(True)
+        self._eye_btn.setToolTip("Show value")
+        self._eye_btn.setFixedWidth(24)
+        self._eye_btn.clicked.connect(self._toggle_visibility)
+        self._input_layout.addWidget(self._eye_btn)
+
         # Add "Get API Key" link if URL is provided in metadata
         api_key_url = (self.field.metadata or {}).get("api_key_url")
         if api_key_url:
@@ -63,6 +102,18 @@ class PasswordFieldWidget(BaseFieldWidget):
                 lambda: QDesktopServices.openUrl(QUrl(api_key_url))
             )
             self._input_layout.addWidget(link_btn)
+
+    def _toggle_visibility(self) -> None:
+        """Toggle between masked and plain-text echo mode."""
+        self._visible = not self._visible
+        if self._visible:
+            self._line_edit.setEchoMode(QLineEdit.EchoMode.Normal)
+            self._eye_btn.setText("\U0001F441")
+            self._eye_btn.setToolTip("Hide value")
+        else:
+            self._line_edit.setEchoMode(QLineEdit.EchoMode.Password)
+            self._eye_btn.setText("\U0001F576")
+            self._eye_btn.setToolTip("Show value")
 
     def get_value(self) -> str:
         return self._line_edit.text()
@@ -85,10 +136,12 @@ class NumberFieldWidget(BaseFieldWidget):
         )
 
         if is_float:
-            self._spin = QDoubleSpinBox()
+            self._spin = _NoScrollDoubleSpinBox()
             self._spin.setDecimals(2)
         else:
-            self._spin = QSpinBox()
+            self._spin = _NoScrollSpinBox()
+
+        self._spin.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         # Set range
         min_val = self.field.min_value if self.field.min_value is not None else -999999
@@ -153,7 +206,8 @@ class SelectFieldWidget(BaseFieldWidget):
         super().__init__(field, current_value, parent)
 
     def _build_input(self) -> None:
-        self._combo = QComboBox()
+        self._combo = _NoScrollComboBox()
+        self._combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         # Populate options
         options = self._dynamic_options or self.field.options or []

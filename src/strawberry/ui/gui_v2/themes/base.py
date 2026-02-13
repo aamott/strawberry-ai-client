@@ -77,6 +77,16 @@ QWidget {{
     font-size: 14px;
 }}
 
+/* Tooltips */
+QToolTip {{
+    background-color: {self.bg_secondary};
+    color: {fg};
+    border: 1px solid {bdr};
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+}}
+
 /* Buttons */
 QPushButton, QToolButton {{
     border: none; border-radius: 6px;
