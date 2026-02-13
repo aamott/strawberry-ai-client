@@ -164,14 +164,14 @@ class TestProviderResolution:
         resolved = _resolve_providers(settings, ["hub"])
         assert resolved[0].api_base == "http://myhost:9000/api/v1"
 
-    def test_ollama_reads_settings_from_spoke_core(
+    def test_ollama_reads_settings_from_tensorzero(
         self, settings: SettingsManager,
     ):
-        """Ollama should use local_llm.url and local_llm.model."""
+        """Ollama should use ollama.url and ollama.model from tensorzero."""
         settings.set(
-            "spoke_core", "local_llm.url", "http://gpu-box:11434/v1",
+            "tensorzero", "ollama.url", "http://gpu-box:11434/v1",
         )
-        settings.set("spoke_core", "local_llm.model", "mistral:7b")
+        settings.set("tensorzero", "ollama.model", "mistral:7b")
         resolved = _resolve_providers(settings, ["ollama"])
         assert resolved[0].api_base == "http://gpu-box:11434/v1"
         assert resolved[0].model_name == "mistral:7b"
@@ -307,10 +307,10 @@ class TestSchemaRegistration:
     """Tests for tensorzero schema registration."""
 
     def test_schema_has_expected_groups(self):
-        """Schema should have fallback, google, openai, anthropic, custom."""
+        """Schema should have fallback, ollama, google, openai, anthropic, custom."""
         groups = {f.group for f in TENSORZERO_SCHEMA}
         assert groups == {
-            "fallback", "google", "openai", "anthropic", "custom",
+            "fallback", "ollama", "google", "openai", "anthropic", "custom",
         }
 
     def test_api_keys_are_secrets(self):

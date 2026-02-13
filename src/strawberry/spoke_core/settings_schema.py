@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from strawberry.shared.settings import SettingsManager
 
 # Schema version — bump when schema changes require migration
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Re-export for backward compatibility
 __all__ = [
@@ -35,7 +35,22 @@ __all__ = [
     "get_field_by_key",
     "group_fields",
     "register_spoke_core_schema",
+    "SKILLS_CONFIG_SCHEMA",
+    "register_skills_config_schema",
 ]
+
+# Skills configuration (registered on the Skills tab)
+SKILLS_CONFIG_SCHEMA: List[SettingField] = [
+    SettingField(
+        key="path",
+        label="Skills Directory",
+        type=FieldType.DIRECTORY_PATH,
+        default="skills",
+        description="Path to directory containing user skills",
+        group="general",
+    ),
+]
+
 
 # Spoke Core settings schema
 SPOKE_CORE_SCHEMA: List[SettingField] = [
@@ -113,46 +128,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
             )
         },
     ),
-    # Offline LLM
-    SettingField(
-        key="local_llm.url",
-        label="Ollama URL",
-        type=FieldType.TEXT,
-        default="http://localhost:11434/v1",
-        description="URL for the local Ollama API",
-        group="offline",
-        metadata={
-            "help_text": (
-                "Base URL for the local Ollama instance.\n"
-                "Default is http://localhost:11434/v1.\n"
-                "Change if Ollama is running on a different host/port."
-            )
-        },
-    ),
-    SettingField(
-        key="local_llm.model",
-        label="Offline Model",
-        type=FieldType.DYNAMIC_SELECT,
-        options_provider="get_available_models",
-        default="llama3.2:3b",
-        description="Model to use when offline",
-        group="offline",
-        metadata={
-            "help_text": (
-                "The Ollama model to use when the Hub is unreachable.\n"
-                "Ensure this model is pulled in Ollama:\n"
-                "ollama pull llama3.2:3b"
-            )
-        },
-    ),
-    SettingField(
-        key="local_llm.enabled",
-        label="Enable Offline Mode",
-        type=FieldType.CHECKBOX,
-        default=True,
-        description="Allow running without Hub connection",
-        group="offline",
-    ),
     # Skills
     SettingField(
         key="skills.sandbox.enabled",
@@ -177,14 +152,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         description=(
             "Allow skills to run code directly outside the sandbox (security risk)"
         ),
-        group="skills",
-    ),
-    SettingField(
-        key="skills.path",
-        label="Skills Directory",
-        type=FieldType.DIRECTORY_PATH,
-        default="skills",
-        description="Path to directory containing user skills",
         group="skills",
     ),
     # LLM Settings
@@ -239,6 +206,14 @@ _V1_DEAD_KEYS = frozenset({
     "ui.show_waveform",
 })
 
+# Keys removed in v3 (moved to tensorzero namespace / removed)
+_V2_DEAD_KEYS = frozenset({
+    "local_llm.url",
+    "local_llm.model",
+    "local_llm.enabled",
+    "skills.path",  # Moved to skills_config namespace
+})
+
 
 def _migrate_v1_to_v2(values: Dict[str, Any]) -> Dict[str, Any]:
     """Migrate spoke_core settings from schema v1 to v2.
@@ -259,6 +234,18 @@ def _migrate_v1_to_v2(values: Dict[str, Any]) -> Dict[str, Any]:
     return values
 
 
+def _migrate_v2_to_v3(values: Dict[str, Any]) -> Dict[str, Any]:
+    """Migrate spoke_core settings from schema v2 to v3.
+
+    Changes:
+    - Remove local_llm.* keys (moved to tensorzero namespace).
+    - Remove skills.path (moved to skills_config namespace).
+    """
+    for key in _V2_DEAD_KEYS:
+        values.pop(key, None)
+    return values
+
+
 def register_spoke_core_schema(settings: "SettingsManager") -> None:
     """Register spoke_core namespace with migrations.
 
@@ -271,11 +258,14 @@ def register_spoke_core_schema(settings: "SettingsManager") -> None:
     if settings.is_registered("spoke_core"):
         return
 
-    # Register migration before register() triggers it
+    # Register migrations before register() triggers them
     settings.register_migration(
         "spoke_core", from_version=1, to_version=2, migrator=_migrate_v1_to_v2
     )
-    # Also handle fresh installs (version 0 → 2) by chaining through v1
+    settings.register_migration(
+        "spoke_core", from_version=2, to_version=3, migrator=_migrate_v2_to_v3
+    )
+    # Also handle fresh installs (version 0 → 1) by chaining through v1
     settings.register_migration(
         "spoke_core",
         from_version=0,
@@ -290,4 +280,22 @@ def register_spoke_core_schema(settings: "SettingsManager") -> None:
         order=10,
         tab="General",
         schema_version=SCHEMA_VERSION,
+    )
+
+
+def register_skills_config_schema(settings: "SettingsManager") -> None:
+    """Register skills_config namespace on the Skills tab.
+
+    Args:
+        settings: The SettingsManager instance.
+    """
+    if settings.is_registered("skills_config"):
+        return
+
+    settings.register(
+        namespace="skills_config",
+        display_name="Skills Configuration",
+        schema=SKILLS_CONFIG_SCHEMA,
+        order=5,  # Before per-skill settings (50+)
+        tab="Skills",
     )

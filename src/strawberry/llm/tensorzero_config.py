@@ -175,12 +175,12 @@ def _resolve_providers(
             prov.enabled = True
 
         elif pid == "ollama":
-            # Ollama config comes from spoke_core namespace
+            # Ollama config comes from tensorzero namespace
             prov.api_base = settings.get(
-                "spoke_core", "local_llm.url", "http://localhost:11434/v1"
+                "tensorzero", "ollama.url", "http://localhost:11434/v1"
             )
             prov.model_name = settings.get(
-                "spoke_core", "local_llm.model", desc.default_model
+                "tensorzero", "ollama.model", desc.default_model
             )
             prov.enabled = True  # Always available as local safety net
 

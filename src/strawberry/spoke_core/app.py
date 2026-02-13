@@ -18,7 +18,11 @@ from .events import (
 )
 from .hub_connection_manager import HubConnectionManager
 from .session import ChatSession
-from .settings_schema import SPOKE_CORE_SCHEMA, register_spoke_core_schema
+from .settings_schema import (
+    SPOKE_CORE_SCHEMA,
+    register_skills_config_schema,
+    register_spoke_core_schema,
+)
 from .skill_manager import SkillManager
 
 logger = logging.getLogger(__name__)
@@ -84,8 +88,10 @@ class SpokeCore:
         # Register with SettingsManager
         self._register_with_settings_manager()
 
-        # Get skills path from settings
-        skills_path_str = self._get_setting("skills.path", "skills")
+        # Get skills path from settings (lives in skills_config namespace)
+        skills_path_str = self._settings_manager.get(
+            "skills_config", "path", "skills",
+        )
         skills_path = Path(skills_path_str)
         if not skills_path.is_absolute():
             from ..utils.paths import get_project_root
@@ -118,6 +124,9 @@ class SpokeCore:
         from ..llm.tensorzero_settings import register_tensorzero_schema
 
         register_tensorzero_schema(self._settings_manager)
+
+        # Register skills config on Skills tab
+        register_skills_config_schema(self._settings_manager)
 
         # Register options providers
         self._settings_manager.register_options_provider(
@@ -183,10 +192,6 @@ class SpokeCore:
                 # Hub URL/token also affect TensorZero config
                 self._schedule_tensorzero_restart()
 
-            # Ollama settings also affect TensorZero config
-            if section == "local_llm" and field in ("url", "model"):
-                self._schedule_tensorzero_restart()
-
             # Update system prompt at runtime when setting changes
             if section == "llm" and field == "system_prompt" and self._skill_mgr:
                 self._skill_mgr.set_custom_system_prompt(value or None)
@@ -245,8 +250,10 @@ class SpokeCore:
         try:
             import httpx
 
-            # Default local LLM URL
-            url = self._get_setting("local_llm.url", "http://localhost:11434/v1")
+            # Read Ollama URL from tensorzero namespace
+            url = self._settings_manager.get(
+                "tensorzero", "ollama.url", "http://localhost:11434/v1",
+            )
             url = url.replace("/v1", "")
             response = httpx.get(f"{url}/api/tags", timeout=5.0)
             if response.status_code == 200:
@@ -536,9 +543,9 @@ class SpokeCore:
 
     def get_model_info(self) -> str:
         """Get current model name."""
-        if self._get_setting("local_llm.enabled", True):
-            return self._get_setting("local_llm.model", "llama3.2:3b")
-        return "hub"
+        return self._settings_manager.get(
+            "tensorzero", "ollama.model", "llama3.2:3b",
+        )
 
     # Event system (delegates to EventBus)
     async def _emit(self, event: CoreEvent) -> None:

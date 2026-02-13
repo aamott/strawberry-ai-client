@@ -34,7 +34,7 @@ class TestSpokeCoreSettingsApi:
         # Check expected keys exist
         assert "device.name" in settings
         assert "hub.url" in settings
-        assert "local_llm.enabled" in settings
+        assert "skills.sandbox.enabled" in settings
 
     def test_get_settings_has_correct_types(self, core):
         """get_settings values should have correct types."""
@@ -42,7 +42,7 @@ class TestSpokeCoreSettingsApi:
 
         assert isinstance(settings["device.name"], str)
         assert isinstance(settings["hub.url"], str)
-        assert isinstance(settings["local_llm.enabled"], bool)
+        assert isinstance(settings["skills.sandbox.enabled"], bool)
 
     def test_get_settings_options_models(self, core):
         """get_settings_options should return fallback models."""

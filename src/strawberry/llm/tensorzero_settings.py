@@ -1,10 +1,10 @@
 """TensorZero provider settings schema.
 
 Defines the ``tensorzero`` namespace for SettingsManager, covering
-cloud LLM provider configuration and fallback ordering.
+LLM provider configuration and fallback ordering.
 
-Hub and Ollama settings live in the ``spoke_core`` namespace (hub.url,
-hub.token, local_llm.url, local_llm.model) — they are NOT duplicated here.
+Hub connection settings (hub.url, hub.token) remain in ``spoke_core``.
+Ollama and cloud provider settings live here.
 """
 
 from typing import TYPE_CHECKING, List
@@ -38,6 +38,38 @@ TENSORZERO_SCHEMA: List[SettingField] = [
                 "automatically.\n\n"
                 "Available: hub, google, openai, anthropic,\n"
                 "ollama, custom"
+            )
+        },
+    ),
+    # ── Ollama (local) ─────────────────────────────────────────────
+    SettingField(
+        key="ollama.url",
+        label="Ollama URL",
+        type=FieldType.TEXT,
+        default="http://localhost:11434/v1",
+        description="URL for the local Ollama API",
+        group="ollama",
+        metadata={
+            "help_text": (
+                "Base URL for the local Ollama instance.\n"
+                "Default is http://localhost:11434/v1.\n"
+                "Change if Ollama is running on a different host/port."
+            )
+        },
+    ),
+    SettingField(
+        key="ollama.model",
+        label="Ollama Model",
+        type=FieldType.DYNAMIC_SELECT,
+        options_provider="get_available_models",
+        default="llama3.2:3b",
+        description="Model to use for local Ollama inference",
+        group="ollama",
+        metadata={
+            "help_text": (
+                "The Ollama model used for local inference.\n"
+                "Ensure this model is pulled in Ollama:\n"
+                "ollama pull llama3.2:3b"
             )
         },
     ),
@@ -195,6 +227,6 @@ def register_tensorzero_schema(settings: "SettingsManager") -> None:
         display_name="LLM Providers",
         schema=TENSORZERO_SCHEMA,
         order=15,  # Between Spoke Core (10) and Skills (50+)
-        tab="General",
+        tab="LLM",
         schema_version=SCHEMA_VERSION,
     )
