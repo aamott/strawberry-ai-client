@@ -22,10 +22,19 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, Dict
 
-from mcp import ClientSession, types
+try:
+    from mcp import types
 
-from .class_builder import build_all_skill_classes
-from .mcp_client import discover_all_servers
+    from .class_builder import build_all_skill_classes
+    from .mcp_client import discover_all_servers
+
+    _MCP_AVAILABLE = True
+except ModuleNotFoundError as exc:
+    types = None
+    build_all_skill_classes = None
+    discover_all_servers = None
+    _MCP_AVAILABLE = False
+    _MCP_IMPORT_ERROR = exc
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +143,7 @@ def _start_background_loop() -> asyncio.AbstractEventLoop:
 
 # Module-level singletons initialised once during discovery.
 _exit_stack: AsyncExitStack | None = None
-_sessions: Dict[str, ClientSession] = {}
+_sessions: Dict[str, Any] = {}
 
 
 async def _call_tool(server_name: str, tool_name: str, arguments: Dict[str, Any]) -> Any:
@@ -163,7 +172,7 @@ async def _call_tool(server_name: str, tool_name: str, arguments: Dict[str, Any]
     # Extract text content from the result
     texts = []
     for content in result.content:
-        if isinstance(content, types.TextContent):
+        if types is not None and isinstance(content, types.TextContent):
             texts.append(content.text)
         else:
             texts.append(str(content))
@@ -207,6 +216,13 @@ async def _discover_and_build() -> list:
         List of dynamically created skill class types.
     """
     global _exit_stack, _sessions
+
+    if not _MCP_AVAILABLE:
+        logger.warning(
+            "MCP dependency unavailable, skipping MCP skill loading: %s",
+            _MCP_IMPORT_ERROR,
+        )
+        return []
 
     config = _load_mcp_config()
     if not config:
@@ -264,6 +280,14 @@ def _start_discovery() -> None:
     The result can be collected later via ``wait_for_discovery()``.
     """
     global _bg_loop, _discovery_done, _discovery_future
+
+    if not _MCP_AVAILABLE:
+        logger.warning(
+            "MCP dependency unavailable, skipping MCP discovery: %s",
+            _MCP_IMPORT_ERROR,
+        )
+        _discovery_done = True
+        return
 
     if _discovery_done:
         return

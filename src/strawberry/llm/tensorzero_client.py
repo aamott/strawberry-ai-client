@@ -25,7 +25,7 @@ load_dotenv(_project_root / ".env")
 # Set dummy HUB_DEVICE_TOKEN if not configured so validation passes.
 # The Hub will return 401, triggering fallback to Gemini/Ollama.
 if not os.environ.get("HUB_DEVICE_TOKEN"):
-    os.environ["HUB_DEVICE_TOKEN"] = os.environ.get("HUB_TOKEN", "not-configured")
+    os.environ["HUB_DEVICE_TOKEN"] = os.environ.get("HUB_TOKEN") or "not-configured"
 
 logger = logging.getLogger(__name__)
 

@@ -171,8 +171,15 @@ def _resolve_providers(
             hub_url = settings.get("spoke_core", "hub.url", "http://localhost:8000")
             prov.api_base = f"{hub_url}/api/v1"
             prov.model_name = desc.default_model
-            # Hub is enabled if token exists (even dummy is fine — TZ handles 401)
-            prov.enabled = True
+            # Enable Hub only when an auth token is configured.
+            # This avoids TensorZero startup validation failures on machines
+            # running fully offline without a Hub token.
+            hub_token = settings.get("spoke_core", "hub.token", "")
+            if not hub_token:
+                # Legacy compatibility for older setups still using HUB_TOKEN.
+                hub_token = os.environ.get("HUB_TOKEN", "")
+            token_value = str(hub_token).strip()
+            prov.enabled = bool(token_value and token_value != "not-configured")
 
         elif pid == "ollama":
             # Ollama config comes from tensorzero namespace

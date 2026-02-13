@@ -165,21 +165,17 @@ class SpokeCore:
         if len(parts) == 2:
             section, field = parts
 
-            if section == "hub" and field == "token" and value:
-                import os
-
-                str_value = str(value)
-                os.environ["HUB_DEVICE_TOKEN"] = str_value
-                os.environ["HUB_TOKEN"] = str_value
-                logger.debug("Updated HUB_DEVICE_TOKEN and HUB_TOKEN env vars")
+            if section == "hub" and field == "token":
+                self._sync_hub_token_env(value)
 
                 # Also persist to .env file with legacy names
                 try:
+                    str_value = "" if value is None else str(value)
                     self._settings_manager.set_env(
                         "HUB_DEVICE_TOKEN", str_value,
                     )
                     self._settings_manager.set_env("HUB_TOKEN", str_value)
-                    logger.debug("Persisted HUB_DEVICE_TOKEN to .env")
+                    logger.debug("Persisted HUB_DEVICE_TOKEN and HUB_TOKEN to .env")
                 except Exception as e:
                     logger.warning(f"Failed to persist hub token: {e}")
 
@@ -198,9 +194,37 @@ class SpokeCore:
                 self._skill_mgr.set_custom_system_prompt(value or None)
                 logger.info("Updated custom system prompt from settings")
 
+            # Update unsafe execution fallback behavior at runtime
+            if section == "skills" and field == "allow_unsafe_exec" and self._skill_mgr:
+                self._skill_mgr.set_allow_unsafe_exec(bool(value))
+                logger.info("Updated skills.allow_unsafe_exec from settings")
+
     def _schedule_hub_reconnection(self) -> None:
         """Schedule hub reconnection after settings change."""
         self._hub_manager.schedule_reconnection()
+
+    def _sync_hub_token_env(self, token_value: Any = None) -> None:
+        """Sync hub token settings into process environment.
+
+        Args:
+            token_value: Optional explicit token value. If None, reads from
+                settings (``spoke_core.hub.token``).
+        """
+        import os
+
+        if token_value is None:
+            token_value = self._get_setting("hub.token", "")
+
+        token = str(token_value or "").strip()
+        if token:
+            os.environ["HUB_DEVICE_TOKEN"] = token
+            os.environ["HUB_TOKEN"] = token
+            logger.debug("Updated HUB_DEVICE_TOKEN and HUB_TOKEN env vars")
+            return
+
+        os.environ.pop("HUB_DEVICE_TOKEN", None)
+        os.environ.pop("HUB_TOKEN", None)
+        logger.debug("Cleared HUB_DEVICE_TOKEN and HUB_TOKEN env vars")
 
     def _schedule_tensorzero_restart(self) -> None:
         """Regenerate TensorZero TOML and restart the gateway."""
@@ -311,6 +335,10 @@ class SpokeCore:
 
         try:
             self._event_bus.set_loop(asyncio.get_running_loop())
+
+            # Ensure TensorZero-required token env vars match current settings
+            # before generating config and initializing the gateway.
+            self._sync_hub_token_env()
 
             # Generate TensorZero config from settings before starting
             if self._settings_manager:

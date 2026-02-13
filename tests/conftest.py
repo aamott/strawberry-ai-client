@@ -51,7 +51,10 @@ def pytest_sessionfinish(session, exitstatus):
         os._exit(exitstatus if isinstance(exitstatus, int) else 0)
 
     try:
-        signal.signal(signal.SIGALRM, _alarm_handler)
+        sigalrm = getattr(signal, "SIGALRM", None)
+        if sigalrm is None:
+            return
+        signal.signal(sigalrm, _alarm_handler)
         signal.alarm(_PYTEST_EXIT_TIMEOUT)
     except (OSError, ValueError):
         # signal.alarm not available on all platforms (e.g. Windows)

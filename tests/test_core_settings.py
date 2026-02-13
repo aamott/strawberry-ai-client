@@ -13,6 +13,16 @@ from strawberry.spoke_core import (
 class TestSpokeCoreSettingsApi:
     """Tests for SpokeCore settings methods."""
 
+    class _DummySkillManager:
+        """Test double for SkillManager runtime setting propagation."""
+
+        def __init__(self) -> None:
+            self.allow_unsafe_values: list[bool] = []
+
+        def set_allow_unsafe_exec(self, enabled: bool) -> None:
+            """Capture runtime unsafe-exec updates from SpokeCore."""
+            self.allow_unsafe_values.append(enabled)
+
     @pytest.fixture
     def core(self):
         """Create a SpokeCore instance for testing."""
@@ -56,6 +66,16 @@ class TestSpokeCoreSettingsApi:
         """get_settings_options should raise ValueError for unknown provider."""
         with pytest.raises(ValueError, match="Unknown options provider"):
             core.get_settings_options("unknown_provider")
+
+    def test_allow_unsafe_exec_updates_skill_manager_at_runtime(self, core):
+        """skills.allow_unsafe_exec should update SkillManager without restart."""
+        dummy_skill_mgr = self._DummySkillManager()
+        core._skill_mgr = dummy_skill_mgr
+
+        core._on_settings_changed("spoke_core", "skills.allow_unsafe_exec", True)
+        core._on_settings_changed("spoke_core", "skills.allow_unsafe_exec", False)
+
+        assert dummy_skill_mgr.allow_unsafe_values == [True, False]
 
 
 class TestSettingsChangedEvent:

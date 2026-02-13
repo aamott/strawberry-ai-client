@@ -84,8 +84,21 @@ class TestProviderRegistry:
 class TestProviderResolution:
     """Tests for resolving settings into provider configs."""
 
-    def test_hub_always_enabled(self, settings: SettingsManager):
-        """Hub should always be resolved as enabled."""
+    def test_hub_disabled_without_token(
+        self,
+        settings: SettingsManager,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Hub should be skipped when no token is configured."""
+        monkeypatch.delenv("HUB_TOKEN", raising=False)
+        monkeypatch.delenv("HUB_DEVICE_TOKEN", raising=False)
+        settings.set("spoke_core", "hub.token", "")
+        resolved = _resolve_providers(settings, ["hub"])
+        assert len(resolved) == 0
+
+    def test_hub_enabled_with_token(self, settings: SettingsManager):
+        """Hub should be included when a token is configured."""
+        settings.set("spoke_core", "hub.token", "test-token")
         resolved = _resolve_providers(settings, ["hub"])
         assert len(resolved) == 1
         assert resolved[0].descriptor.id == "hub"
@@ -196,18 +209,23 @@ class TestTomlGeneration:
         assert "[tools.python_exec]" in toml
 
     def test_default_has_hub_and_ollama(
-        self, settings: SettingsManager,
+        self,
+        settings: SettingsManager,
+        monkeypatch: pytest.MonkeyPatch,
     ):
-        """With default settings (no API keys), hub + ollama are present."""
+        """With default settings (no API keys), only ollama is present."""
         # Clear any env keys that might be set
         for key in [
             "GOOGLE_AI_STUDIO_API_KEY", "OPENAI_API_KEY",
             "ANTHROPIC_API_KEY",
         ]:
             os.environ.pop(key, None)
+        monkeypatch.delenv("HUB_TOKEN", raising=False)
+        monkeypatch.delenv("HUB_DEVICE_TOKEN", raising=False)
+        settings.set("spoke_core", "hub.token", "")
 
         toml = generate_toml(settings)
-        assert "[models.hub_gateway]" in toml
+        assert "[models.hub_gateway]" not in toml
         assert "[models.ollama_local]" in toml
         assert "[functions.chat]" in toml
         assert "[functions.chat_local]" in toml
@@ -230,6 +248,7 @@ class TestTomlGeneration:
         self, settings: SettingsManager,
     ):
         """In the 'chat' function, hub should be the candidate variant."""
+        settings.set("spoke_core", "hub.token", "test-token")
         toml = generate_toml(settings)
         # Hub should be the candidate (first tried)
         assert 'candidate_variants = ["hub"]' in toml

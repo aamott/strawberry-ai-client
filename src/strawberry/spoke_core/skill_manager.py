@@ -133,6 +133,15 @@ class SkillManager:
         """Update the custom system prompt at runtime."""
         self._service.set_custom_system_prompt(prompt)
 
+    def set_allow_unsafe_exec(self, enabled: bool) -> None:
+        """Update unsafe execution fallback behavior at runtime.
+
+        Args:
+            enabled: True to allow direct execution fallback when sandbox
+                execution is unavailable; False to keep fallback disabled.
+        """
+        self._service.allow_unsafe_exec = enabled
+
     # -- enable / disable -----------------------------------------------------
 
     async def set_enabled(self, name: str, enabled: bool) -> bool:
