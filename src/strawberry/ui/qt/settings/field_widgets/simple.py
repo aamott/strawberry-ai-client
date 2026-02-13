@@ -5,11 +5,14 @@ Covers: TEXT, PASSWORD, NUMBER, CHECKBOX, SELECT, DYNAMIC_SELECT
 
 from typing import Any, List, Optional
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QLineEdit,
+    QPushButton,
     QSpinBox,
     QWidget,
 )
@@ -44,6 +47,22 @@ class PasswordFieldWidget(BaseFieldWidget):
         self._line_edit.setPlaceholderText(self.field.placeholder or "Enter secret...")
         self._line_edit.textChanged.connect(self._on_value_changed)
         self._input_layout.addWidget(self._line_edit)
+
+        # Add "Get API Key" link if URL is provided in metadata
+        api_key_url = (self.field.metadata or {}).get("api_key_url")
+        if api_key_url:
+            link_btn = QPushButton("Get API Key \u2197")
+            link_btn.setFlat(True)
+            link_btn.setToolTip(api_key_url)
+            link_btn.setStyleSheet(
+                "QPushButton { color: palette(link); text-decoration: underline; "
+                "font-size: 11px; padding: 0 4px; }"
+                "QPushButton:hover { color: palette(highlight); }"
+            )
+            link_btn.clicked.connect(
+                lambda: QDesktopServices.openUrl(QUrl(api_key_url))
+            )
+            self._input_layout.addWidget(link_btn)
 
     def get_value(self) -> str:
         return self._line_edit.text()

@@ -75,6 +75,9 @@ class OrcaTTS(TTSEngine):
                 secret=True,
                 env_key="PICOVOICE_API_KEY",
                 description="API key from Picovoice Console",
+                metadata={
+                    "api_key_url": "https://console.picovoice.ai/",
+                },
             ),
             SettingField(
                 key="model_path",

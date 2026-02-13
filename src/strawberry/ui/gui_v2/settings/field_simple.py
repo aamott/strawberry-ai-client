@@ -5,11 +5,14 @@ Covers: TEXT, PASSWORD, NUMBER, CHECKBOX, SELECT, DYNAMIC_SELECT
 
 from typing import Any, List, Optional
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QLineEdit,
+    QPushButton,
     QSpinBox,
     QWidget,
 )
@@ -88,6 +91,22 @@ class TextFieldWidget(BaseFieldWidget):
         self._line_edit.setText(str(value) if value is not None else "")
 
 
+# Style for the "Get API Key" link button
+_LINK_BTN_STYLE = """
+    QPushButton {
+        color: #60a5fa;
+        background: transparent;
+        border: none;
+        font-size: 11px;
+        text-decoration: underline;
+        padding: 0 4px;
+    }
+    QPushButton:hover {
+        color: #93c5fd;
+    }
+"""
+
+
 class PasswordFieldWidget(BaseFieldWidget):
     """Password input field (masked QLineEdit)."""
 
@@ -98,6 +117,18 @@ class PasswordFieldWidget(BaseFieldWidget):
         self._line_edit.setStyleSheet(_INPUT_STYLE)
         self._line_edit.textChanged.connect(self._on_value_changed)
         self._input_layout.addWidget(self._line_edit)
+
+        # Add "Get API Key" link if URL is provided in metadata
+        api_key_url = (self.field.metadata or {}).get("api_key_url")
+        if api_key_url:
+            link_btn = QPushButton("Get API Key ↗")
+            link_btn.setStyleSheet(_LINK_BTN_STYLE)
+            link_btn.setToolTip(api_key_url)
+            link_btn.setCursor(QLineEdit().cursor())  # pointer cursor
+            link_btn.clicked.connect(
+                lambda: QDesktopServices.openUrl(QUrl(api_key_url))
+            )
+            self._input_layout.addWidget(link_btn)
 
     def get_value(self) -> str:
         return self._line_edit.text()

@@ -19,9 +19,16 @@ SETTINGS_SCHEMA = [
         label="API Key",
         type=FieldType.PASSWORD,
         secret=True,
-        description="OpenWeatherMap API key (get one at openweathermap.org/api)",
+        description="OpenWeatherMap API key",
         env_key="WEATHER_API_KEY",
         group="general",
+        metadata={
+            "api_key_url": "https://home.openweathermap.org/api_keys",
+            "help_text": (
+                "Get a free API key at https://home.openweathermap.org/api_keys\n"
+                "Sign up at openweathermap.org if you don't have an account."
+            ),
+        },
     ),
     SettingField(
         key="units",

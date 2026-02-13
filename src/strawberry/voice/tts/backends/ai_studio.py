@@ -100,6 +100,9 @@ class AIStudioTTS(TTSEngine):
                 secret=True,
                 env_key="GOOGLE_AI_STUDIO_API_KEY",
                 description="API key from Google AI Studio",
+                metadata={
+                    "api_key_url": "https://aistudio.google.com/apikey",
+                },
             ),
             SettingField(
                 key="model",

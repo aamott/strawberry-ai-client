@@ -130,8 +130,29 @@ class GoogleTTS(TTSEngine):
 
     @classmethod
     def get_settings_schema(cls) -> List[Any]:
-        # No runtime settings for now
-        return []
+        from strawberry.shared.settings import FieldType, SettingField
+
+        return [
+            SettingField(
+                key="api_key",
+                label="Google API Key",
+                type=FieldType.PASSWORD,
+                secret=True,
+                env_key="GOOGLE_API_KEY",
+                description="Google Cloud API key for Text-to-Speech",
+                metadata={
+                    "api_key_url": (
+                        "https://console.cloud.google.com/apis/credentials"
+                    ),
+                    "help_text": (
+                        "Requires a Google Cloud project with the\n"
+                        "Cloud Text-to-Speech API enabled.\n"
+                        "Alternatively, set GOOGLE_APPLICATION_CREDENTIALS\n"
+                        "to a service-account JSON file."
+                    ),
+                },
+            ),
+        ]
 
 
 if __name__ == "__main__":

@@ -52,6 +52,9 @@ class CobraVAD(VADBackend):
                     "API key from Picovoice Console. "
                     "Same key works for Porcupine, Leopard, Orca, etc."
                 ),
+                metadata={
+                    "api_key_url": "https://console.picovoice.ai/",
+                },
             ),
             SettingField(
                 key="threshold",

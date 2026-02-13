@@ -83,10 +83,11 @@ TENSORZERO_SCHEMA: List[SettingField] = [
         group="google",
         env_key="GOOGLE_AI_STUDIO_API_KEY",
         metadata={
+            "api_key_url": "https://aistudio.google.com/apikey",
             "help_text": (
                 "Get a key at https://aistudio.google.com/apikey\n"
                 "Leave empty to disable Google as a fallback."
-            )
+            ),
         },
     ),
     SettingField(
@@ -113,10 +114,11 @@ TENSORZERO_SCHEMA: List[SettingField] = [
         group="openai",
         env_key="OPENAI_API_KEY",
         metadata={
+            "api_key_url": "https://platform.openai.com/api-keys",
             "help_text": (
                 "Get a key at https://platform.openai.com/api-keys\n"
                 "Leave empty to disable OpenAI as a fallback."
-            )
+            ),
         },
     ),
     SettingField(
@@ -143,10 +145,11 @@ TENSORZERO_SCHEMA: List[SettingField] = [
         group="anthropic",
         env_key="ANTHROPIC_API_KEY",
         metadata={
+            "api_key_url": "https://console.anthropic.com/settings/keys",
             "help_text": (
-                "Get a key at https://console.anthropic.com/\n"
+                "Get a key at https://console.anthropic.com/settings/keys\n"
                 "Leave empty to disable Anthropic as a fallback."
-            )
+            ),
         },
     ),
     SettingField(

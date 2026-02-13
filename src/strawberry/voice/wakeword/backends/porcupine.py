@@ -43,6 +43,9 @@ class PorcupineDetector(WakeWordDetector):
                 secret=True,
                 env_key="PICOVOICE_API_KEY",
                 description="API key from Picovoice Console (same as STT/TTS)",
+                metadata={
+                    "api_key_url": "https://console.picovoice.ai/",
+                },
             ),
         ]
 
