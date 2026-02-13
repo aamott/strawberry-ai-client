@@ -1,0 +1,43 @@
+# Strawberry Skill Store — Curated Catalog
+#
+# Each entry represents a skill that can be installed via:
+#   strawberry-cli store install <name>
+#
+# Fields:
+#   name:        Folder name in skills/ (required)
+#   git_url:     Git clone URL (required)
+#   description: Short description shown in search results
+#   author:      Author name or GitHub handle
+#   tags:        Searchable keywords
+#   version:     Git branch or tag to clone (default: main)
+#   requires:    Python packages to pip-install
+
+skills:
+  - name: weather_skill
+    git_url: https://github.com/aamott/strawberry-ai-weather-skill.git
+    description: "Current weather and forecasts via OpenWeatherMap API"
+    author: aamott
+    tags: [weather, forecast, temperature, openweathermap, api, location]
+    version: main
+    requires:
+      - requests>=2.28
+
+  - name: news_skill
+    git_url: https://github.com/aamott/strawberry-news-skill.git
+    description: "Search and read news headlines and articles"
+    author: aamott
+    tags: [news, headlines, articles, search, rss]
+    version: main
+    requires:
+      - requests>=2.28
+      - feedparser>=6.0
+
+  - name: internet_skill
+    git_url: https://github.com/aamott/strawberry-internet-skill.git
+    description: "Web search and page content retrieval"
+    author: aamott
+    tags: [internet, web, search, browse, url, scrape]
+    version: main
+    requires:
+      - requests>=2.28
+      - beautifulsoup4>=4.12

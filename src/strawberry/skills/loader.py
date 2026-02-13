@@ -176,15 +176,7 @@ class SkillLoader:
             return []
 
         # Collect repo dirs and their entrypoints.
-        repo_entries: list[tuple] = []
-        for repo_dir in sorted(self.skills_path.iterdir()):
-            if not repo_dir.is_dir():
-                continue
-            if repo_dir.name.startswith(".") or repo_dir.name == "__pycache__":
-                continue
-            entrypoint = self._find_repo_entrypoint(repo_dir)
-            if entrypoint is not None:
-                repo_entries.append((repo_dir, entrypoint))
+        repo_entries = self._collect_repo_entries()
 
         # Split repos into deferred (async discovery) vs regular.
         deferred, regular = self._partition_repos(repo_entries)
@@ -203,6 +195,61 @@ class SkillLoader:
         self._load_top_level_files(on_skill_loaded, on_skill_failed)
 
         return list(self._skills.values())
+
+    def _collect_repo_entries(self) -> list[tuple]:
+        """Collect repo entrypoints from managed and built-in roots.
+
+        Store-managed skills are installed to ``skills/.installed/<skill>`` so
+        they do not show up as tracked git changes. Managed repos are scanned
+        first so they can override same-named built-in skills.
+
+        Returns:
+            List of ``(repo_dir, entrypoint_path)`` tuples.
+        """
+        repo_entries: list[tuple] = []
+
+        managed_root = self.skills_path / ".installed"
+        if managed_root.exists() and managed_root.is_dir():
+            repo_entries.extend(self._collect_repo_entries_from_dir(managed_root))
+
+        repo_entries.extend(
+            self._collect_repo_entries_from_dir(
+                self.skills_path,
+                exclude_names={".installed"},
+            )
+        )
+        return repo_entries
+
+    def _collect_repo_entries_from_dir(
+        self,
+        root_dir: Path,
+        exclude_names: Optional[set[str]] = None,
+    ) -> list[tuple]:
+        """Collect repo entrypoints from one directory level.
+
+        Args:
+            root_dir: Directory whose child folders are candidate repos.
+            exclude_names: Optional set of directory names to skip.
+
+        Returns:
+            List of ``(repo_dir, entrypoint_path)`` tuples.
+        """
+        entries: list[tuple] = []
+        excluded = exclude_names or set()
+
+        for repo_dir in sorted(root_dir.iterdir()):
+            if not repo_dir.is_dir():
+                continue
+            if repo_dir.name in excluded:
+                continue
+            if repo_dir.name.startswith(".") or repo_dir.name == "__pycache__":
+                continue
+
+            entrypoint = self._find_repo_entrypoint(repo_dir)
+            if entrypoint is not None:
+                entries.append((repo_dir, entrypoint))
+
+        return entries
 
     def _partition_repos(
         self, repo_entries: list[tuple],

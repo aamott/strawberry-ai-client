@@ -16,6 +16,8 @@ settings.json
 */settings.yaml
 config/settings.yaml
 config/tensorzero.generated.toml
+config/installed_skills.yaml
+skills/.installed/
 
 
 

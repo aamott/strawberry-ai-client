@@ -82,6 +82,8 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Strawberry AI Spoke CLI — chat, settings, and developer tools.",
         epilog=(
             "subcommands (use before other flags):\n"
+            "  store                  "
+            "Skill store (browse, install, manage)\n"
             "  skill-tester           "
             "Interactive skill tester (human REPL)\n"
             "  skill-tester --agent   "
@@ -92,10 +94,12 @@ def _build_parser() -> argparse.ArgumentParser:
             "One-shot message\n"
             "  strawberry-cli -i                        "
             "Interactive chat\n"
+            "  strawberry-cli store list                 "
+            "Browse available skills\n"
+            "  strawberry-cli store install weather_skill"
+            "  Install a skill\n"
             "  strawberry-cli --settings list            "
             "List settings\n"
-            "  strawberry-cli skill-tester --agent       "
-            "AI agent skill tester\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -511,6 +515,14 @@ def run_settings_mode(args: argparse.Namespace) -> int:
     return run_settings_command(settings, command, cmd_args)
 
 
+def _run_store() -> None:
+    """Delegate to the skill store CLI, forwarding remaining args."""
+    from strawberry.skills.store.cli import run_store_cli
+
+    remaining = sys.argv[2:]
+    sys.exit(run_store_cli(remaining))
+
+
 def _run_skill_tester() -> None:
     """Delegate to the skill interaction tester, forwarding remaining args.
 
@@ -536,7 +548,11 @@ def _run_skill_tester() -> None:
 
 def main() -> None:
     """Main entry point."""
-    # Intercept 'skill-tester' subcommand before argparse
+    # Intercept subcommands before argparse
+    if len(sys.argv) > 1 and sys.argv[1] == "store":
+        _run_store()
+        return
+
     if len(sys.argv) > 1 and sys.argv[1] == "skill-tester":
         _run_skill_tester()
         return
