@@ -97,17 +97,23 @@ class SkillService:
     def load_skills(
         self,
         on_skill_loaded: Optional[Callable] = None,
+        on_skill_failed: Optional[Callable] = None,
     ) -> List[SkillInfo]:
         """Load all skills from the skills directory.
 
         Args:
             on_skill_loaded: Optional callback per skill.
                 Signature: (skill_name, source, elapsed_ms).
+            on_skill_failed: Optional callback per failed skill.
+                Signature: (source, error, skill_name_if_known).
 
         Returns:
             List of loaded skills
         """
-        skills = self._loader.load_all(on_skill_loaded=on_skill_loaded)
+        skills = self._loader.load_all(
+            on_skill_loaded=on_skill_loaded,
+            on_skill_failed=on_skill_failed,
+        )
         self._skills_loaded = True
         logger.info(f"Loaded {len(skills)} skills from {self.skills_path}")
 

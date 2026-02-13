@@ -150,12 +150,15 @@ class SkillLoader:
     def load_all(
         self,
         on_skill_loaded: Optional[Callable[[str, str, float], None]] = None,
+        on_skill_failed: Optional[Callable[[str, str, str], None]] = None,
     ) -> List[SkillInfo]:
         """Load all skills from the skills directory.
 
         Args:
             on_skill_loaded: Optional callback called after each skill loads.
                 Signature: (skill_name, source, elapsed_ms).
+            on_skill_failed: Optional callback called for each failed skill.
+                Signature: (source, error, skill_name_if_known).
 
         Returns:
             List of loaded SkillInfo objects
@@ -191,13 +194,13 @@ class SkillLoader:
             self._import_repo_module(repo_dir, entrypoint)
 
         # Phase 2: Load regular repos while deferred discovery runs.
-        self._load_repo_batch(regular, on_skill_loaded)
+        self._load_repo_batch(regular, on_skill_loaded, on_skill_failed)
 
         # Phase 3: Collect deferred repos (wait_for_discovery called inside).
-        self._load_repo_batch(deferred, on_skill_loaded)
+        self._load_repo_batch(deferred, on_skill_loaded, on_skill_failed)
 
         # Phase 4: Load top-level Python files.
-        self._load_top_level_files(on_skill_loaded)
+        self._load_top_level_files(on_skill_loaded, on_skill_failed)
 
         return list(self._skills.values())
 
@@ -225,6 +228,7 @@ class SkillLoader:
         self,
         entries: list[tuple],
         on_skill_loaded: Optional[Callable] = None,
+        on_skill_failed: Optional[Callable] = None,
     ) -> None:
         """Load a batch of repo-style skills, recording failures."""
         import time as _time
@@ -248,10 +252,15 @@ class SkillLoader:
                         error=str(e),
                     )
                 )
+                if on_skill_failed:
+                    on_skill_failed(
+                        repo_dir.name, str(e), "",
+                    )
 
     def _load_top_level_files(
         self,
         on_skill_loaded: Optional[Callable] = None,
+        on_skill_failed: Optional[Callable] = None,
     ) -> None:
         """Load skills from top-level *.py files in the skills directory."""
         import time as _time
@@ -277,6 +286,10 @@ class SkillLoader:
                         error=str(e),
                     )
                 )
+                if on_skill_failed:
+                    on_skill_failed(
+                        py_file.stem, str(e), "",
+                    )
 
     def _find_repo_entrypoint(self, repo_dir: Path) -> Optional[Path]:
         """Find the entrypoint Python file for a repo-style skill.

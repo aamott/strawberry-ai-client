@@ -195,8 +195,9 @@ class InteractiveCLI:
         try:
             import time as _time
 
-            # Per-skill load callback (verbose only)
+            # Per-skill load callbacks (verbose only)
             skill_cb = None
+            fail_cb = None
             if self._verbose:
                 def _on_skill(name: str, source: str, ms: float) -> None:
                     t = f"{ms:.0f}ms" if ms < 1000 else f"{ms / 1000:.1f}s"
@@ -207,8 +208,21 @@ class InteractiveCLI:
                     sys.stdout.flush()
                 skill_cb = _on_skill
 
+                def _on_failed(source: str, error: str, skill_name: str) -> None:
+                    err = error[:200] + "..." if len(error) > 200 else error
+                    name = skill_name or source
+                    sys.stdout.write(
+                        f"  {_styled(name, RED)}"
+                        f" {_styled(f'({source}, FAILED: {err})', DIM)}\n"
+                    )
+                    sys.stdout.flush()
+                fail_cb = _on_failed
+
             t0 = _time.monotonic()
-            await self._core.start(on_skill_loaded=skill_cb)
+            await self._core.start(
+                on_skill_loaded=skill_cb,
+                on_skill_failed=fail_cb,
+            )
             startup_s = _time.monotonic() - t0
 
             # Create session
@@ -251,14 +265,23 @@ class InteractiveCLI:
         mode = _styled("Online", GREEN) if online else _styled("Local", YELLOW)
         model = self._core.get_model_info()
         skill_count = len(self._core.get_skill_summaries())
+        failures = self._core.get_skill_load_failures()
+        fail_count = len(failures)
 
         sys.stdout.write(f"\n{_styled('Strawberry CLI', CYAN, BOLD)}\n")
         sys.stdout.write(f"  Mode:   {mode}\n")
         sys.stdout.write(f"  Model:  {_styled(model, DIM)}\n")
-        sys.stdout.write(
-            f"  Skills: {_styled(str(skill_count), CYAN)}"
-            f" {_styled(f'({startup_s:.1f}s)', DIM)}\n"
-        )
+        if fail_count:
+            sys.stdout.write(
+                f"  Skills: {_styled(str(skill_count), CYAN)}"
+                f" {_styled(f'({startup_s:.1f}s)', DIM)}"
+                f", {_styled(f'{fail_count} failed', RED)}\n"
+            )
+        else:
+            sys.stdout.write(
+                f"  Skills: {_styled(str(skill_count), CYAN)}"
+                f" {_styled(f'({startup_s:.1f}s)', DIM)}\n"
+            )
         if self._verbose:
             sys.stdout.write(
                 f"  {_styled('[verbose mode]', YELLOW)}\n"

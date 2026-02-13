@@ -254,6 +254,31 @@ def _print_result(result, json_output, quiet, json_formatter) -> int:
     return EXIT_SUCCESS
 
 
+def _make_skill_callbacks(verbose: bool, quiet: bool, json_output: bool) -> tuple:
+    """Create skill loading callbacks for verbose mode.
+
+    Args:
+        verbose: Whether verbose mode is enabled.
+        quiet: Whether quiet mode is enabled.
+        json_output: Whether JSON output is enabled.
+
+    Returns:
+        Tuple of (on_skill_loaded callback, on_skill_failed callback).
+    """
+    if not (verbose and not quiet and not json_output):
+        return None, None
+
+    def _on_skill(name: str, source: str, ms: float) -> None:
+        t = f"{ms:.0f}ms" if ms < 1000 else f"{ms / 1000:.1f}s"
+        print(f"  {name} ({source}, {t})", flush=True)
+
+    def _on_failed(source: str, error: str, skill_name: str) -> None:
+        err = error[:200] + "..." if len(error) > 200 else error
+        print(f"  {skill_name or source} ({source}, FAILED: {err})", flush=True)
+
+    return _on_skill, _on_failed
+
+
 async def run_one_shot(
     messages: list[str],
     json_output: bool,
@@ -292,13 +317,8 @@ async def run_one_shot(
     # Create streaming handler (only for non-JSON mode)
     stream_handler = None if json_output else create_stream_handler(formatter, quiet)
 
-    # Per-skill load callback (verbose only)
-    skill_cb = None
-    if verbose and not quiet and not json_output:
-        def _on_skill(name: str, source: str, ms: float) -> None:
-            t = f"{ms:.0f}ms" if ms < 1000 else f"{ms / 1000:.1f}s"
-            print(f"  {name} ({source}, {t})", flush=True)
-        skill_cb = _on_skill
+    # Per-skill load callbacks (verbose only)
+    skill_cb, fail_cb = _make_skill_callbacks(verbose, quiet, json_output)
 
     runner = TestRunner(
         config_dir=config_dir,
@@ -306,6 +326,7 @@ async def run_one_shot(
         filter_logs=True,
         on_event=stream_handler,
         on_skill_loaded=skill_cb,
+        on_skill_failed=fail_cb,
     )
 
     try:
@@ -316,11 +337,20 @@ async def run_one_shot(
         # Startup messages (suppressed in quiet/JSON modes)
         if not quiet and not json_output:
             skill_count = runner.get_skill_count()
-            print(
-                f"[ready] Core loaded ({startup_s:.1f}s), "
-                f"{skill_count} skill(s)",
-                flush=True,
-            )
+            failures = runner.get_skill_failures()
+            fail_count = len(failures)
+            if fail_count:
+                print(
+                    f"[ready] Core loaded ({startup_s:.1f}s), "
+                    f"{skill_count} skill(s), {fail_count} failed",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[ready] Core loaded ({startup_s:.1f}s), "
+                    f"{skill_count} skill(s)",
+                    flush=True,
+                )
 
         # Verbose: dump system prompt before first message
         if verbose and not quiet and not json_output:

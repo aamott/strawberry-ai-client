@@ -294,6 +294,7 @@ class SpokeCore:
     async def start(
         self,
         on_skill_loaded: Optional[Callable] = None,
+        on_skill_failed: Optional[Callable] = None,
     ) -> None:
         """Initialize core services.
 
@@ -302,6 +303,8 @@ class SpokeCore:
                 loading.  Signature: ``(name, source, elapsed_ms)``.
                 Useful for verbose CLI output without coupling SpokeCore
                 to any particular UI.
+            on_skill_failed: Optional callback invoked per failed skill.
+                Signature: ``(source, error, skill_name_if_known)``.
         """
         if self._started:
             return
@@ -347,6 +350,7 @@ class SpokeCore:
             )
             await self._skill_mgr.load_and_emit(
                 on_skill_loaded=on_skill_loaded,
+                on_skill_failed=on_skill_failed,
             )
 
             # Initialize agent runners

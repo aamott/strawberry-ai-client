@@ -47,6 +47,7 @@ class TestRunner:
         filter_logs: bool = True,
         on_event: Optional[Callable[[str, Any], None]] = None,
         on_skill_loaded: Optional[Callable] = None,
+        on_skill_failed: Optional[Callable] = None,
     ) -> None:
         """Initialize TestRunner.
 
@@ -59,12 +60,15 @@ class TestRunner:
                 event_type: 'tool_start', 'tool_result', 'assistant', 'error'
             on_skill_loaded: Optional callback per skill during loading.
                 Signature: (skill_name, source, elapsed_ms).
+            on_skill_failed: Optional callback per failed skill.
+                Signature: (source, error, skill_name_if_known).
         """
         self._config_dir = config_dir
         self._offline = offline
         self._filter_logs = filter_logs
         self._on_event = on_event
         self._on_skill_loaded = on_skill_loaded
+        self._on_skill_failed = on_skill_failed
 
         self._core = None
         self._session_id: Optional[str] = None
@@ -93,7 +97,10 @@ class TestRunner:
         )
 
         self._core = SpokeCore(settings_manager=settings_manager)
-        await self._core.start(on_skill_loaded=self._on_skill_loaded)
+        await self._core.start(
+            on_skill_loaded=self._on_skill_loaded,
+            on_skill_failed=self._on_skill_failed,
+        )
 
         # Create session
         session = self._core.new_session()
@@ -120,6 +127,12 @@ class TestRunner:
         if self._core:
             return self._core.get_system_prompt()
         return ""
+
+    def get_skill_failures(self) -> List[Dict[str, str]]:
+        """Return list of skill load failures."""
+        if self._core:
+            return self._core.get_skill_load_failures()
+        return []
 
     async def stop(self) -> None:
         """Cleanup resources."""
