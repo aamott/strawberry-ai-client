@@ -111,8 +111,6 @@ class HubConnectionManager:
         hub_token = self._get_setting("hub.token", "")
         hub_timeout = self._get_setting("hub.timeout_seconds", 30)
 
-        self._configure_ping_pong_logging()
-
         if not hub_token:
             logger.warning("Hub token not configured - skipping hub connection")
             await self._emit(
@@ -385,17 +383,3 @@ class HubConnectionManager:
                         message="Lost connection to Hub. Running in local mode.",
                     )
                 )
-
-    def _configure_ping_pong_logging(self) -> None:
-        """Configure logging level for WebSocket ping/pong frames.
-
-        Respects the `hub.log_ping_pong` setting (bool). When disabled, both
-        `websockets.protocol` and `websockets.client` loggers are raised to
-        WARNING to suppress ping/pong chatter. When enabled, they are dropped
-        to DEBUG to surface detailed traffic.
-        """
-        log_ping_pong = bool(self._get_setting("hub.log_ping_pong", False))
-        desired_level = logging.DEBUG if log_ping_pong else logging.WARNING
-
-        for name in ("websockets.protocol", "websockets.client"):
-            logging.getLogger(name).setLevel(desired_level)

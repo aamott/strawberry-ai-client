@@ -96,20 +96,6 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         description="Launch browser to authenticate with Hub",
         group="hub",
     ),
-    SettingField(
-        key="hub.log_ping_pong",
-        label="Log Hub WebSocket Ping/Pong",
-        type=FieldType.CHECKBOX,
-        default=False,
-        description="Enable verbose logging of Hub WebSocket ping/pong frames",
-        group="hub",
-        metadata={
-            "help_text": (
-                "When enabled, WebSocket ping/pong frames are logged at DEBUG.\n"
-                "Keep disabled to reduce log noise during normal operation."
-            )
-        },
-    ),
     # Hub connection timeout
     SettingField(
         key="hub.timeout_seconds",
