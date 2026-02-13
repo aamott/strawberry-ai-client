@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 # Timeout for connecting to an MCP server and listing tools.
 CONNECT_TIMEOUT_SECONDS = 30
 
+# Timeout for individual HTTP requests (connect + read).
+# The default httpx 5s connect timeout is too short for servers behind
+# SSL/DynDNS (e.g. Home Assistant over HTTPS).
+HTTP_TIMEOUT_SECONDS = 30.0
+
 
 @dataclass
 class MCPToolInfo:
@@ -122,12 +127,15 @@ async def _connect_http(
     directly.  Instead we build a custom httpx.AsyncClient with the
     headers pre-configured and pass it via the http_client parameter.
     """
-    # Build a custom httpx client with user-supplied headers.
-    http_client: httpx.AsyncClient | None = None
-    if headers:
-        http_client = httpx.AsyncClient(headers=headers)
-        # Ensure the httpx client is cleaned up when the exit stack closes.
-        exit_stack.push_async_callback(http_client.aclose)
+    # Build a custom httpx client with generous timeouts.
+    # The default httpx 5s connect timeout is too short for servers
+    # behind SSL/DynDNS (e.g. Home Assistant over HTTPS).
+    http_client = httpx.AsyncClient(
+        headers=headers or {},
+        timeout=httpx.Timeout(HTTP_TIMEOUT_SECONDS),
+    )
+    # Ensure the httpx client is cleaned up when the exit stack closes.
+    exit_stack.push_async_callback(http_client.aclose)
 
     read_stream, write_stream, _ = await exit_stack.enter_async_context(
         streamable_http_client(server_url, http_client=http_client)

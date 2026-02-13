@@ -269,7 +269,7 @@ def _run_discovery() -> list:
 
     _bg_loop = _start_background_loop()
     future = asyncio.run_coroutine_threadsafe(_discover_and_build(), _bg_loop)
-    return future.result(timeout=30)
+    return future.result(timeout=60)
 
 
 # ── Module-level discovery (runs when SkillLoader imports this file) ────────
@@ -279,7 +279,7 @@ _generated_classes: list = []
 try:
     _generated_classes = _run_discovery()
 except Exception as e:
-    logger.error("MCP skill discovery failed: %s", e)
+    logger.error("MCP skill discovery failed: %s: %s", type(e).__name__, e)
 
 # Assign each generated class to module scope so SkillLoader picks them up
 # via inspect.getmembers(module, inspect.isclass).
