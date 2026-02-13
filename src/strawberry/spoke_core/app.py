@@ -201,7 +201,9 @@ class SpokeCore:
 
     def _schedule_hub_reconnection(self) -> None:
         """Schedule hub reconnection after settings change."""
-        self._hub_manager.schedule_reconnection()
+        self._hub_manager.schedule_reconnection(
+            skill_service=self._skill_mgr.service if self._skill_mgr else None,
+        )
 
     def _sync_hub_token_env(self, token_value: Any = None) -> None:
         """Sync hub token settings into process environment.

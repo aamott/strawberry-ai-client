@@ -107,6 +107,9 @@ class HubConnectionManager:
         Returns:
             True if connection succeeded, False otherwise.
         """
+        if skill_service is not None:
+            self._skill_service = skill_service
+
         hub_url = self._get_setting("hub.url", "http://localhost:8000")
         hub_token = self._get_setting("hub.token", "")
         hub_timeout = self._get_setting("hub.timeout_seconds", 30)
@@ -193,9 +196,7 @@ class HubConnectionManager:
             )
             logger.info(f"Connected to Hub at {hub_url}")
 
-            # Store and register skills with hub
-            if skill_service:
-                self._skill_service = skill_service
+            # Register skills with hub
             if self._skill_service:
                 await self._register_skills(self._skill_service)
 
@@ -266,16 +267,26 @@ class HubConnectionManager:
             )
             logger.info("Disconnected from Hub")
 
-    def schedule_reconnection(self) -> None:
+    def schedule_reconnection(
+        self,
+        skill_service: Optional["SkillService"] = None,
+    ) -> None:
         """Schedule hub reconnection after settings change.
 
         Uses asyncio to run the reconnection in the background.
+
+        Args:
+            skill_service: Optional SkillService to retain for reconnect-time
+                skill registration.
         """
+
+        if skill_service is not None:
+            self._skill_service = skill_service
 
         async def reconnect():
             try:
                 await self.disconnect()
-                await self.connect()
+                await self.connect(skill_service=self._skill_service)
             except Exception as e:
                 logger.error(f"Hub reconnection failed: {e}")
 
