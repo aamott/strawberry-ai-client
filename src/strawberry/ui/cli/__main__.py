@@ -79,6 +79,24 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="strawberry-cli",
         description="Strawberry AI Spoke CLI — chat, settings, and developer tools.",
+        epilog=(
+            "subcommands (use before other flags):\n"
+            "  skill-tester           "
+            "Interactive skill tester (human REPL)\n"
+            "  skill-tester --agent   "
+            "Machine-parseable skill tester (AI agent JSON-line)\n"
+            "\n"
+            "examples:\n"
+            '  strawberry-cli "What time is it?"        '
+            "One-shot message\n"
+            "  strawberry-cli -i                        "
+            "Interactive chat\n"
+            "  strawberry-cli --settings list            "
+            "List settings\n"
+            "  strawberry-cli skill-tester --agent       "
+            "AI agent skill tester\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     parser.add_argument(
@@ -410,12 +428,26 @@ def run_settings_mode(args: argparse.Namespace) -> int:
 
 
 def _run_skill_tester() -> None:
-    """Delegate to the skill interaction tester, forwarding remaining args."""
-    from strawberry.testing.skill_tester import main as tester_main
+    """Delegate to the skill interaction tester, forwarding remaining args.
 
-    # Remove 'skill-tester' from argv so the tester's own argparse works
-    sys.argv = [sys.argv[0]] + sys.argv[2:]
-    tester_main()
+    If ``--agent`` is present, routes to the machine-parseable JSON-line
+    interface (skill_tester_agent). Otherwise uses the interactive REPL.
+    """
+    remaining = sys.argv[2:]
+
+    if "--agent" in remaining:
+        # Agent mode: JSON-line protocol on stdin/stdout
+        from strawberry.testing.skill_tester_agent import main as agent_main
+
+        remaining.remove("--agent")
+        sys.argv = [sys.argv[0]] + remaining
+        agent_main()
+    else:
+        # Interactive human-friendly REPL
+        from strawberry.testing.skill_tester import main as tester_main
+
+        sys.argv = [sys.argv[0]] + remaining
+        tester_main()
 
 
 def main() -> None:

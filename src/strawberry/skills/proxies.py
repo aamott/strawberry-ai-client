@@ -86,7 +86,9 @@ class SkillCallResult:
 # ---------------------------------------------------------------------------
 
 # Common English stop words to strip from search queries.
-# Prevents "turn on the lamp" from matching everything via "the" or "on".
+# Only includes true noise words (articles, pronouns, filler).
+# Does NOT include action verbs like "turn", "on", "off", "set", "get"
+# — those are critical for smart-home skill discovery (e.g. HassTurnOn).
 _SEARCH_STOP_WORDS = frozenset(
     {
         "a",
@@ -97,7 +99,6 @@ _SEARCH_STOP_WORDS = frozenset(
         "for",
         "of",
         "in",
-        "on",
         "it",
         "and",
         "or",
@@ -110,10 +111,31 @@ _SEARCH_STOP_WORDS = frozenset(
         "please",
         "what",
         "how",
-        "get",
-        "set",
     }
 )
+
+# Regex to split camelCase / PascalCase into separate words.
+# "HassTurnOn" → ["Hass", "Turn", "On"]
+_CAMEL_RE = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def _tokenize_to_words(text: str) -> frozenset[str]:
+    """Tokenize text into a set of lowercase words.
+
+    Handles camelCase splitting (HassTurnOn → {hass, turn, on}),
+    underscores, and general punctuation so that word-boundary
+    matching works correctly (e.g. 'on' won't match 'information').
+
+    Args:
+        text: Raw searchable text (names, signatures, docstrings).
+
+    Returns:
+        Frozen set of lowercase word tokens.
+    """
+    # Split camelCase first, then split on non-alpha boundaries
+    expanded = _CAMEL_RE.sub(" ", text)
+    tokens = re.split(r"[^a-zA-Z0-9]+", expanded.lower())
+    return frozenset(t for t in tokens if t)
 
 
 # ---------------------------------------------------------------------------
@@ -187,19 +209,25 @@ class DeviceProxy:
         self,
         query_words: list[str],
     ) -> list[tuple]:
-        """Build (skill, method, searchable_text) triples."""
+        """Build (skill, method, word_set) triples."""
         candidates: list[tuple] = []
         for skill in self._loader.get_all_skills():
+            # Include class summary (MCP keyword aggregation) if present
+            class_summary = getattr(
+                skill.class_obj, "__class_summary__", ""
+            )
             for method in skill.methods:
                 if not query_words:
                     candidates.append((skill, method, True))
                 else:
-                    searchable = (
+                    raw = (
                         f"{method.name} {skill.name} "
                         f"{method.signature} "
-                        f"{method.docstring or ''}"
-                    ).lower()
-                    candidates.append((skill, method, searchable))
+                        f"{method.docstring or ''} "
+                        f"{class_summary}"
+                    )
+                    word_set = _tokenize_to_words(raw)
+                    candidates.append((skill, method, word_set))
         return candidates
 
     @staticmethod
@@ -207,20 +235,24 @@ class DeviceProxy:
         candidates: list[tuple],
         query_words: list[str],
     ) -> list[tuple]:
-        """Match candidates against query words (all-words first, then any-word)."""
+        """Match candidates against query words (all-words first, then any-word).
+
+        Uses word-set membership (not substring) so 'on' doesn't match
+        'information'.
+        """
         if not query_words:
             return [(s, m) for s, m, _ in candidates]
 
         matched = [
             (s, m)
-            for s, m, txt in candidates
-            if txt is True or all(w in txt for w in query_words)
+            for s, m, ws in candidates
+            if ws is True or all(w in ws for w in query_words)
         ]
         if not matched:
             matched = [
                 (s, m)
-                for s, m, txt in candidates
-                if txt is True or any(w in txt for w in query_words)
+                for s, m, ws in candidates
+                if ws is True or any(w in ws for w in query_words)
             ]
         return matched
 

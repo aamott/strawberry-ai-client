@@ -35,7 +35,8 @@ The unified CLI supports interactive chat, one-shot messages, settings, and deve
 strawberry-cli                          # Interactive chat (default)
 strawberry-cli "What time is it?"       # One-shot message
 strawberry-cli --settings               # Settings menu
-strawberry-cli skill-tester             # Skill interaction tester
+strawberry-cli skill-tester             # Skill interaction tester (human)
+strawberry-cli skill-tester --agent     # Skill tester (AI agent JSON-line)
 ```
 **Voice in CLI:** Type `/voice` to toggle voice mode.
 
