@@ -19,59 +19,6 @@ from ....shared.settings import SettingField
 from ...common.widgets import NoScrollComboBox, NoScrollDoubleSpinBox, NoScrollSpinBox
 from .field_base import BaseFieldWidget
 
-# Shared input styling for dark theme
-_INPUT_STYLE = """
-    QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
-        background-color: #1e1e3f;
-        color: #ffffff;
-        border: 1px solid #2a2a4a;
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-size: 13px;
-    }
-    QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
-        border-color: #e94560;
-    }
-    QComboBox::drop-down {
-        border: none;
-        padding-right: 8px;
-    }
-    QComboBox::down-arrow {
-        image: none;
-        border-left: 4px solid transparent;
-        border-right: 4px solid transparent;
-        border-top: 6px solid #a0a0a0;
-        margin-right: 6px;
-    }
-    QComboBox QAbstractItemView {
-        background-color: #1e1e3f;
-        color: #ffffff;
-        border: 1px solid #2a2a4a;
-        selection-background-color: #3a3a5a;
-    }
-"""
-
-_CHECKBOX_STYLE = """
-    QCheckBox {
-        color: #ffffff;
-        spacing: 8px;
-    }
-    QCheckBox::indicator {
-        width: 18px;
-        height: 18px;
-        border: 2px solid #2a2a4a;
-        border-radius: 4px;
-        background-color: #1e1e3f;
-    }
-    QCheckBox::indicator:checked {
-        background-color: #e94560;
-        border-color: #e94560;
-    }
-    QCheckBox::indicator:hover {
-        border-color: #3a3a5a;
-    }
-"""
-
 
 class TextFieldWidget(BaseFieldWidget):
     """Text input field (QLineEdit)."""
@@ -79,7 +26,6 @@ class TextFieldWidget(BaseFieldWidget):
     def _build_input(self) -> None:
         self._line_edit = QLineEdit()
         self._line_edit.setPlaceholderText(self.field.placeholder or "")
-        self._line_edit.setStyleSheet(_INPUT_STYLE)
         self._line_edit.textChanged.connect(self._on_value_changed)
         self._input_layout.addWidget(self._line_edit)
 
@@ -90,38 +36,6 @@ class TextFieldWidget(BaseFieldWidget):
         self._line_edit.setText(str(value) if value is not None else "")
 
 
-# Style for the show/hide eye toggle button
-_EYE_BTN_STYLE = """
-    QPushButton {
-        color: #a0a0a0;
-        background: transparent;
-        border: none;
-        font-size: 15px;
-        padding: 0 2px;
-        min-width: 24px;
-        max-width: 24px;
-    }
-    QPushButton:hover {
-        color: #ffffff;
-    }
-"""
-
-# Style for the "Get API Key" link button
-_LINK_BTN_STYLE = """
-    QPushButton {
-        color: #60a5fa;
-        background: transparent;
-        border: none;
-        font-size: 11px;
-        text-decoration: underline;
-        padding: 0 4px;
-    }
-    QPushButton:hover {
-        color: #93c5fd;
-    }
-"""
-
-
 class PasswordFieldWidget(BaseFieldWidget):
     """Password input field (masked QLineEdit)."""
 
@@ -129,14 +43,13 @@ class PasswordFieldWidget(BaseFieldWidget):
         self._line_edit = QLineEdit()
         self._line_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._line_edit.setPlaceholderText(self.field.placeholder or "Enter secret...")
-        self._line_edit.setStyleSheet(_INPUT_STYLE)
         self._line_edit.textChanged.connect(self._on_value_changed)
         self._input_layout.addWidget(self._line_edit)
 
         # Show/hide eye toggle
         self._visible = False
         self._eye_btn = QPushButton("\U0001F576")
-        self._eye_btn.setStyleSheet(_EYE_BTN_STYLE)
+        self._eye_btn.setObjectName("EyeToggle")
         self._eye_btn.setToolTip("Show/hide value")
         self._eye_btn.setFixedSize(24, 24)
         self._eye_btn.clicked.connect(self._toggle_visibility)
@@ -146,7 +59,7 @@ class PasswordFieldWidget(BaseFieldWidget):
         api_key_url = (self.field.metadata or {}).get("api_key_url")
         if api_key_url:
             link_btn = QPushButton("Get API Key \u2197")
-            link_btn.setStyleSheet(_LINK_BTN_STYLE)
+            link_btn.setObjectName("ApiKeyLink")
             link_btn.setToolTip(api_key_url)
             link_btn.clicked.connect(
                 lambda: QDesktopServices.openUrl(QUrl(api_key_url))
@@ -199,7 +112,6 @@ class NumberFieldWidget(BaseFieldWidget):
         self._spin.setMinimum(int(min_val) if not is_float else min_val)
         self._spin.setMaximum(int(max_val) if not is_float else max_val)
 
-        self._spin.setStyleSheet(_INPUT_STYLE)
         self._spin.valueChanged.connect(self._on_value_changed)
         self._input_layout.addWidget(self._spin)
 
@@ -222,7 +134,6 @@ class CheckboxFieldWidget(BaseFieldWidget):
 
     def _build_input(self) -> None:
         self._checkbox = QCheckBox()
-        self._checkbox.setStyleSheet(_CHECKBOX_STYLE)
         self._checkbox.stateChanged.connect(self._on_value_changed)
         self._input_layout.addWidget(self._checkbox)
 
@@ -260,7 +171,6 @@ class SelectFieldWidget(BaseFieldWidget):
     def _build_input(self) -> None:
         self._combo = NoScrollComboBox()
         self._combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self._combo.setStyleSheet(_INPUT_STYLE)
 
         # Populate options
         options = self._dynamic_options or self.field.options or []

@@ -26,137 +26,10 @@ if TYPE_CHECKING:
     from ....shared.settings import SettingsManager
     from ....shared.settings.manager import RegisteredNamespace
     from ....shared.settings.schema import SettingField
+    from ...gui_v2.themes.base import Theme
 
 logger = logging.getLogger(__name__)
 
-# ── Theme-aware stylesheet for the settings window ──────────────────────
-_WINDOW_STYLE = """
-    QDialog#SettingsWindow {
-        background-color: #1a1a2e;
-        color: #ffffff;
-    }
-
-    /* Tab bar */
-    QTabWidget::pane {
-        border: 1px solid #2a2a4a;
-        border-radius: 8px;
-        background-color: #16213e;
-        top: -1px;
-    }
-    QTabBar::tab {
-        background-color: #1a1a2e;
-        color: #a0a0a0;
-        border: 1px solid #2a2a4a;
-        border-bottom: none;
-        border-top-left-radius: 6px;
-        border-top-right-radius: 6px;
-        padding: 8px 20px;
-        margin-right: 2px;
-        font-size: 13px;
-    }
-    QTabBar::tab:selected {
-        background-color: #16213e;
-        color: #ffffff;
-        border-bottom: 2px solid #e94560;
-    }
-    QTabBar::tab:hover:!selected {
-        background-color: #2a2a4a;
-        color: #ffffff;
-    }
-
-    /* Scroll area */
-    QScrollArea {
-        background-color: transparent;
-        border: none;
-    }
-
-    /* Section frames */
-    QFrame#NamespaceSection {
-        background-color: #1e1e3f;
-        border: 1px solid #2a2a4a;
-        border-radius: 8px;
-        padding: 4px;
-    }
-
-    /* Group labels */
-    QLabel#GroupLabel {
-        color: #666666;
-        font-size: 11px;
-        font-style: italic;
-    }
-
-    /* Section header */
-    QLabel#SectionHeader {
-        color: #ffffff;
-        font-size: 14px;
-        font-weight: bold;
-    }
-
-    /* Status label */
-    QLabel#StatusLabel {
-        color: #666666;
-        font-size: 12px;
-    }
-
-    /* Buttons */
-    QPushButton#ApplyBtn, QPushButton#DiscardBtn {
-        background-color: #2a2a4a;
-        color: #ffffff;
-        border: 1px solid #3a3a5a;
-        border-radius: 6px;
-        padding: 8px 16px;
-        font-size: 13px;
-    }
-    QPushButton#ApplyBtn:hover, QPushButton#DiscardBtn:hover {
-        background-color: #3a3a5a;
-    }
-    QPushButton#ApplyBtn:disabled, QPushButton#DiscardBtn:disabled {
-        color: #666666;
-        background-color: #1a1a2e;
-        border-color: #2a2a4a;
-    }
-    QPushButton#SaveBtn {
-        background-color: #e94560;
-        color: #ffffff;
-        border: none;
-        border-radius: 6px;
-        padding: 8px 24px;
-        font-size: 13px;
-        font-weight: bold;
-    }
-    QPushButton#SaveBtn:hover {
-        background-color: #d63851;
-    }
-    QPushButton#SaveBtn:pressed {
-        background-color: #c02d44;
-    }
-    QPushButton#CancelBtn {
-        background-color: transparent;
-        color: #a0a0a0;
-        border: 1px solid #2a2a4a;
-        border-radius: 6px;
-        padding: 8px 16px;
-        font-size: 13px;
-    }
-    QPushButton#CancelBtn:hover {
-        color: #ffffff;
-        border-color: #3a3a5a;
-    }
-
-    /* Scrollbar */
-    QScrollBar:vertical {
-        width: 8px;
-        background: transparent;
-    }
-    QScrollBar::handle:vertical {
-        background-color: #2a2a4a;
-        border-radius: 4px;
-        min-height: 30px;
-    }
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-        height: 0;
-    }
-"""
 
 
 class SettingsWindow(QDialog):
@@ -179,11 +52,21 @@ class SettingsWindow(QDialog):
         self,
         settings_manager: "SettingsManager",
         parent: Optional[QWidget] = None,
+        theme: Optional["Theme"] = None,
     ):
         super().__init__(parent)
         self._settings = settings_manager
         self._pending_changes: Dict[str, Dict[str, Any]] = {}
         self._field_widgets: Dict[str, Any] = {}  # namespace.key -> widget
+
+        # Resolve theme: explicit > parent MainWindow > fallback dark
+        self._theme = theme
+        if self._theme is None and parent is not None:
+            self._theme = getattr(parent, "_theme", None)
+        if self._theme is None:
+            from ..themes import DARK_THEME
+
+            self._theme = DARK_THEME
 
         self._setup_window()
         self._build_ui()
@@ -194,7 +77,7 @@ class SettingsWindow(QDialog):
         self.setWindowTitle("Settings")
         self.setMinimumSize(700, 500)
         self.resize(800, 600)
-        self.setStyleSheet(_WINDOW_STYLE)
+        self.setStyleSheet(self._theme.get_settings_stylesheet())
 
     def _build_ui(self) -> None:
         """Build the dialog UI."""
@@ -205,7 +88,8 @@ class SettingsWindow(QDialog):
         # Title
         title = QLabel("⚙  Settings")
         title.setStyleSheet(
-            "color: #ffffff; font-size: 18px; font-weight: bold; margin-bottom: 4px;"
+            f"color: {self._theme.text_primary}; font-size: 18px;"
+            f" font-weight: bold; margin-bottom: 4px;"
         )
         layout.addWidget(title)
 
@@ -531,6 +415,7 @@ class SettingsWindow(QDialog):
             return
 
         if self._apply_changes():
+            self._sync_theme()
             self._status_label.setText("Changes applied")
 
     def _on_discard(self) -> None:
@@ -585,6 +470,18 @@ class SettingsWindow(QDialog):
         self._pending_changes.clear()
         self._update_buttons()
         return True
+
+    def _sync_theme(self) -> None:
+        """Re-sync theme from parent MainWindow after settings apply.
+
+        The MainWindow updates its _theme in response to on_change callbacks,
+        so we pull the latest reference and re-apply our stylesheet.
+        """
+        parent = self.parent()
+        new_theme = getattr(parent, "_theme", None) if parent else None
+        if new_theme and new_theme is not self._theme:
+            self._theme = new_theme
+            self.setStyleSheet(self._theme.get_settings_stylesheet())
 
     def _reload_values(self) -> None:
         """Reload all field values from settings."""

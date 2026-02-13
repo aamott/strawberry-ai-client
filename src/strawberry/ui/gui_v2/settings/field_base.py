@@ -12,36 +12,22 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 
 from ....shared.settings import SettingField
 
-# Shared style constants (dark-theme aware)
-LABEL_STYLE = "color: #a0a0a0; font-size: 12px;"
-DESC_STYLE = "color: #666666; font-size: 11px; margin-left: 158px;"
-ERROR_STYLE = "color: #ef4444; font-size: 11px; margin-left: 158px;"
-WARNING_STYLE = "color: #fbbf24; font-size: 11px; margin-left: 158px;"
-RESET_BTN_STYLE = """
-    QPushButton {
-        color: #a0a0a0;
-        background: transparent;
-        border: 1px solid #2a2a4a;
+# Style constants — error/warning colors are universal
+ERROR_COLOR = "#ef4444"
+WARNING_COLOR = "#fbbf24"
+ERROR_STYLE = f"color: {ERROR_COLOR}; font-size: 11px; margin-left: 158px;"
+WARNING_STYLE = f"color: {WARNING_COLOR}; font-size: 11px; margin-left: 158px;"
+INPUT_BORDER_ERROR = f"""
+    QWidget#FieldInputContainer {{
+        border: 2px solid {ERROR_COLOR};
         border-radius: 4px;
-        font-size: 14px;
-        padding: 0px;
-    }
-    QPushButton:hover {
-        color: #ffffff;
-        border-color: #3a3a5a;
-    }
+    }}
 """
-INPUT_BORDER_ERROR = """
-    QWidget#FieldInputContainer {
-        border: 2px solid #ef4444;
+INPUT_BORDER_WARNING = f"""
+    QWidget#FieldInputContainer {{
+        border: 2px solid {WARNING_COLOR};
         border-radius: 4px;
-    }
-"""
-INPUT_BORDER_WARNING = """
-    QWidget#FieldInputContainer {
-        border: 2px solid #fbbf24;
-        border-radius: 4px;
-    }
+    }}
 """
 
 
@@ -96,10 +82,10 @@ class BaseFieldWidget(QWidget):
         row = QHBoxLayout()
         row.setSpacing(8)
 
-        # Label
+        # Label (styled by parent settings stylesheet via .FieldLabel)
         self._label = QLabel(self.field.label)
         self._label.setMinimumWidth(150)
-        self._label.setStyleSheet(LABEL_STYLE)
+        self._label.setProperty("class", "FieldLabel")
         row.addWidget(self._label)
 
         # Input container (subclass populates via _build_input)
@@ -110,21 +96,21 @@ class BaseFieldWidget(QWidget):
         self._build_input()
         row.addWidget(self._input_container, stretch=1)
 
-        # Reset button (visible when value differs from default)
+        # Reset button (styled by parent settings stylesheet via #FieldResetBtn)
         self._reset_btn = QPushButton("↺")
+        self._reset_btn.setObjectName("FieldResetBtn")
         self._reset_btn.setFixedSize(24, 24)
         self._reset_btn.setToolTip(f"Reset to default: {self._default_value}")
-        self._reset_btn.setStyleSheet(RESET_BTN_STYLE)
         self._reset_btn.clicked.connect(self._on_reset_clicked)
         self._reset_btn.setVisible(False)
         row.addWidget(self._reset_btn)
 
         layout.addLayout(row)
 
-        # Description label
+        # Description label (styled by parent settings stylesheet via .FieldDesc)
         if self.field.description:
             desc_label = QLabel(self.field.description)
-            desc_label.setStyleSheet(DESC_STYLE)
+            desc_label.setProperty("class", "FieldDesc")
             desc_label.setWordWrap(True)
             layout.addWidget(desc_label)
 

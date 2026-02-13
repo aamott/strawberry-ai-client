@@ -229,7 +229,7 @@ QScrollBar::sub-line:vertical {{ height: 0; }}
 
 /* Toast notifications */
 #ToastCard {{
-    background-color: rgba(30, 30, 50, 0.92);
+    background-color: {self.bg_secondary};
     border: 1px solid {self.border_light};
     border-radius: 10px;
     color: {fg};
@@ -277,5 +277,325 @@ QScrollBar::sub-line:vertical {{ height: 0; }}
 #OfflineBanner {{
     background-color: {self.warning}; border-radius: 8px;
     padding: 8px; color: {bg};
+}}
+        """
+
+    def get_settings_stylesheet(self) -> str:  # noqa: E501
+        """Generate the QSS stylesheet for the settings dialog.
+
+        Covers: settings window chrome, tab bar, section frames,
+        buttons, field inputs, checkboxes, sliders, lists, and scrollbar.
+        """
+        bg = self.bg_primary
+        fg = self.text_primary
+        hover = self.bg_hover
+        sel = self.bg_selected
+        bdr = self.border
+        bdr_lt = self.border_light
+        muted = self.text_muted
+        sec = self.text_secondary
+        acc = self.accent_primary
+        inp = self.bg_input
+        panel = self.bg_secondary
+        section = (
+            self.bg_tertiary
+            if self.bg_tertiary != self.bg_secondary
+            else self.bg_input
+        )
+
+        return f"""
+/* Settings dialog */
+QDialog#SettingsWindow {{
+    background-color: {bg};
+    color: {fg};
+}}
+
+/* Tab bar */
+QTabWidget::pane {{
+    border: 1px solid {bdr};
+    border-radius: 8px;
+    background-color: {panel};
+    top: -1px;
+}}
+QTabBar::tab {{
+    background-color: {bg};
+    color: {sec};
+    border: 1px solid {bdr};
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 8px 20px;
+    margin-right: 2px;
+    font-size: 13px;
+}}
+QTabBar::tab:selected {{
+    background-color: {panel};
+    color: {fg};
+    border-bottom: 2px solid {acc};
+}}
+QTabBar::tab:hover:!selected {{
+    background-color: {hover};
+    color: {fg};
+}}
+
+/* Scroll area */
+QScrollArea {{
+    background-color: transparent;
+    border: none;
+}}
+
+/* Section frames */
+QFrame#NamespaceSection {{
+    background-color: {section};
+    border: 1px solid {bdr};
+    border-radius: 8px;
+    padding: 4px;
+}}
+
+/* Group labels */
+QLabel#GroupLabel {{
+    color: {muted};
+    font-size: 11px;
+    font-style: italic;
+}}
+
+/* Section header */
+QLabel#SectionHeader {{
+    color: {fg};
+    font-size: 14px;
+    font-weight: bold;
+}}
+
+/* Status label */
+QLabel#StatusLabel {{
+    color: {muted};
+    font-size: 12px;
+}}
+
+/* Buttons */
+QPushButton#ApplyBtn, QPushButton#DiscardBtn {{
+    background-color: {hover};
+    color: {fg};
+    border: 1px solid {bdr_lt};
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+}}
+QPushButton#ApplyBtn:hover, QPushButton#DiscardBtn:hover {{
+    background-color: {sel};
+}}
+QPushButton#ApplyBtn:disabled, QPushButton#DiscardBtn:disabled {{
+    color: {muted};
+    background-color: {bg};
+    border-color: {bdr};
+}}
+QPushButton#SaveBtn {{
+    background-color: {acc};
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 24px;
+    font-size: 13px;
+    font-weight: bold;
+}}
+QPushButton#SaveBtn:hover {{
+    opacity: 0.85;
+}}
+QPushButton#SaveBtn:pressed {{
+    opacity: 0.7;
+}}
+QPushButton#CancelBtn {{
+    background-color: transparent;
+    color: {sec};
+    border: 1px solid {bdr};
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+}}
+QPushButton#CancelBtn:hover {{
+    color: {fg};
+    border-color: {bdr_lt};
+}}
+
+/* Scrollbar */
+QScrollBar:vertical {{
+    width: 8px;
+    background: transparent;
+}}
+QScrollBar::handle:vertical {{
+    background-color: {bdr};
+    border-radius: 4px;
+    min-height: 30px;
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0;
+}}
+
+/* ── Field widget styles ── */
+
+/* Field labels */
+.FieldLabel {{
+    color: {sec};
+    font-size: 12px;
+}}
+
+/* Field descriptions */
+.FieldDesc {{
+    color: {muted};
+    font-size: 11px;
+    margin-left: 158px;
+}}
+
+/* Reset button */
+QPushButton#FieldResetBtn {{
+    color: {sec};
+    background: transparent;
+    border: 1px solid {bdr};
+    border-radius: 4px;
+    font-size: 14px;
+    padding: 0px;
+}}
+QPushButton#FieldResetBtn:hover {{
+    color: {fg};
+    border-color: {bdr_lt};
+}}
+
+/* Text inputs, spin boxes, combo boxes */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox,
+QPlainTextEdit, QDateEdit, QTimeEdit, QDateTimeEdit {{
+    background-color: {inp};
+    color: {fg};
+    border: 1px solid {bdr};
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+}}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus,
+QComboBox:focus, QPlainTextEdit:focus,
+QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {{
+    border-color: {acc};
+}}
+QComboBox::drop-down {{
+    border: none;
+    padding-right: 8px;
+}}
+QComboBox::down-arrow {{
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 6px solid {sec};
+    margin-right: 6px;
+}}
+QComboBox QAbstractItemView {{
+    background-color: {inp};
+    color: {fg};
+    border: 1px solid {bdr};
+    selection-background-color: {sel};
+}}
+QDateEdit::drop-down, QTimeEdit::drop-down, QDateTimeEdit::drop-down {{
+    border: none;
+    padding-right: 8px;
+}}
+QCalendarWidget {{
+    background-color: {inp};
+    color: {fg};
+}}
+
+/* Checkboxes */
+QCheckBox {{
+    color: {fg};
+    spacing: 8px;
+}}
+QCheckBox::indicator {{
+    width: 18px;
+    height: 18px;
+    border: 2px solid {bdr};
+    border-radius: 4px;
+    background-color: {inp};
+}}
+QCheckBox::indicator:checked {{
+    background-color: {acc};
+    border-color: {acc};
+}}
+QCheckBox::indicator:hover {{
+    border-color: {bdr_lt};
+}}
+
+/* List widgets */
+QListWidget {{
+    background-color: {inp};
+    color: {fg};
+    border: 1px solid {bdr};
+    border-radius: 6px;
+    padding: 4px;
+    font-size: 13px;
+}}
+QListWidget::item {{
+    padding: 4px 8px;
+    border-radius: 4px;
+}}
+QListWidget::item:selected {{
+    background-color: {sel};
+}}
+QListWidget::item:hover {{
+    background-color: {hover};
+}}
+
+/* Generic small buttons in field widgets */
+QPushButton.FieldBtn {{
+    background-color: {hover};
+    color: {fg};
+    border: 1px solid {bdr_lt};
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 13px;
+}}
+QPushButton.FieldBtn:hover {{
+    background-color: {sel};
+}}
+
+/* API key link button */
+QPushButton#ApiKeyLink {{
+    color: {self.text_link};
+    background: transparent;
+    border: none;
+    font-size: 11px;
+    text-decoration: underline;
+    padding: 0 4px;
+}}
+QPushButton#ApiKeyLink:hover {{
+    opacity: 0.8;
+}}
+
+/* Eye toggle button (show/hide password) */
+QPushButton#EyeToggle {{
+    color: {sec};
+    background: transparent;
+    border: none;
+    font-size: 15px;
+    padding: 0 2px;
+    min-width: 24px;
+    max-width: 24px;
+}}
+QPushButton#EyeToggle:hover {{
+    color: {fg};
+}}
+
+/* Slider */
+QSlider::groove:horizontal {{
+    height: 6px;
+    background: {bdr};
+    border-radius: 3px;
+}}
+QSlider::handle:horizontal {{
+    background: {acc};
+    width: 16px;
+    height: 16px;
+    margin: -5px 0;
+    border-radius: 8px;
+}}
+QSlider::sub-page:horizontal {{
+    background: {acc};
+    border-radius: 3px;
 }}
         """

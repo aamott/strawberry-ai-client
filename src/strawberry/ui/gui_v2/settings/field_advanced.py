@@ -31,100 +31,6 @@ from PySide6.QtWidgets import (
 from ....shared.settings import FieldType, SettingField
 from .field_base import BaseFieldWidget
 
-# Shared dark-theme input styling
-_INPUT_STYLE = """
-    QLineEdit, QPlainTextEdit {
-        background-color: #1e1e3f;
-        color: #ffffff;
-        border: 1px solid #2a2a4a;
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-size: 13px;
-    }
-    QLineEdit:focus, QPlainTextEdit:focus {
-        border-color: #e94560;
-    }
-"""
-
-_LIST_STYLE = """
-    QListWidget {
-        background-color: #1e1e3f;
-        color: #ffffff;
-        border: 1px solid #2a2a4a;
-        border-radius: 6px;
-        padding: 4px;
-        font-size: 13px;
-    }
-    QListWidget::item {
-        padding: 4px 8px;
-        border-radius: 4px;
-    }
-    QListWidget::item:selected {
-        background-color: #3a3a5a;
-    }
-    QListWidget::item:hover {
-        background-color: #2a2a4a;
-    }
-"""
-
-_BTN_STYLE = """
-    QPushButton {
-        background-color: #2a2a4a;
-        color: #ffffff;
-        border: 1px solid #3a3a5a;
-        border-radius: 4px;
-        padding: 4px 8px;
-        font-size: 13px;
-    }
-    QPushButton:hover {
-        background-color: #3a3a5a;
-    }
-    QPushButton:pressed {
-        background-color: #4a4a6a;
-    }
-"""
-
-_SLIDER_STYLE = """
-    QSlider::groove:horizontal {
-        height: 6px;
-        background: #2a2a4a;
-        border-radius: 3px;
-    }
-    QSlider::handle:horizontal {
-        background: #e94560;
-        width: 16px;
-        height: 16px;
-        margin: -5px 0;
-        border-radius: 8px;
-    }
-    QSlider::sub-page:horizontal {
-        background: #e94560;
-        border-radius: 3px;
-    }
-"""
-
-_DATETIME_STYLE = """
-    QDateEdit, QTimeEdit, QDateTimeEdit {
-        background-color: #1e1e3f;
-        color: #ffffff;
-        border: 1px solid #2a2a4a;
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-size: 13px;
-    }
-    QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
-        border-color: #e94560;
-    }
-    QDateEdit::drop-down, QTimeEdit::drop-down, QDateTimeEdit::drop-down {
-        border: none;
-        padding-right: 8px;
-    }
-    QCalendarWidget {
-        background-color: #1e1e3f;
-        color: #ffffff;
-    }
-"""
-
 
 class MultilineFieldWidget(BaseFieldWidget):
     """Multi-line text input (QPlainTextEdit)."""
@@ -133,7 +39,6 @@ class MultilineFieldWidget(BaseFieldWidget):
         self._text_edit = QPlainTextEdit()
         self._text_edit.setPlaceholderText(self.field.placeholder or "")
         self._text_edit.setMaximumHeight(100)
-        self._text_edit.setStyleSheet(_INPUT_STYLE)
         self._text_edit.textChanged.connect(self._on_value_changed)
         self._input_layout.addWidget(self._text_edit)
 
@@ -162,7 +67,7 @@ class ActionFieldWidget(BaseFieldWidget):
 
     def _build_input(self) -> None:
         self._button = QPushButton(self.field.label)
-        self._button.setStyleSheet(_BTN_STYLE)
+        self._button.setProperty("class", "FieldBtn")
         self._button.clicked.connect(self._on_action_clicked)
         self._input_layout.addWidget(self._button)
 
@@ -199,7 +104,6 @@ class ListFieldWidget(BaseFieldWidget):
         # List widget
         self._list = QListWidget()
         self._list.setMaximumHeight(120)
-        self._list.setStyleSheet(_LIST_STYLE)
         self._list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self._list.model().rowsMoved.connect(self._on_value_changed)
         layout.addWidget(self._list)
@@ -208,11 +112,11 @@ class ListFieldWidget(BaseFieldWidget):
         btn_layout = QHBoxLayout()
         self._add_btn = QPushButton("+")
         self._add_btn.setFixedWidth(30)
-        self._add_btn.setStyleSheet(_BTN_STYLE)
+        self._add_btn.setProperty("class", "FieldBtn")
         self._add_btn.clicked.connect(self._on_add_clicked)
         self._remove_btn = QPushButton("−")
         self._remove_btn.setFixedWidth(30)
-        self._remove_btn.setStyleSheet(_BTN_STYLE)
+        self._remove_btn.setProperty("class", "FieldBtn")
         self._remove_btn.clicked.connect(self._on_remove_clicked)
         btn_layout.addWidget(self._add_btn)
         btn_layout.addWidget(self._remove_btn)
@@ -277,7 +181,6 @@ class ProviderOrderWidget(BaseFieldWidget):
         # List with drag-drop
         self._list = QListWidget()
         self._list.setMaximumHeight(100)
-        self._list.setStyleSheet(_LIST_STYLE)
         self._list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self._list.model().rowsMoved.connect(self._on_value_changed)
         layout.addWidget(self._list)
@@ -292,7 +195,7 @@ class ProviderOrderWidget(BaseFieldWidget):
         ]:
             btn = QPushButton(text)
             btn.setFixedWidth(30)
-            btn.setStyleSheet(_BTN_STYLE)
+            btn.setProperty("class", "FieldBtn")
             btn.clicked.connect(handler)
             btn_layout.addWidget(btn)
         btn_layout.addStretch()
@@ -414,11 +317,10 @@ class PathFieldWidget(BaseFieldWidget):
             if self.field.type == FieldType.FILE_PATH
             else "Select directory..."
         )
-        self._line_edit.setStyleSheet(_INPUT_STYLE)
         self._line_edit.textChanged.connect(self._on_value_changed)
 
         self._browse_btn = QPushButton("Browse...")
-        self._browse_btn.setStyleSheet(_BTN_STYLE)
+        self._browse_btn.setProperty("class", "FieldBtn")
         self._browse_btn.clicked.connect(self._on_browse)
 
         self._input_layout.addWidget(self._line_edit, stretch=1)
@@ -457,7 +359,7 @@ class ColorFieldWidget(BaseFieldWidget):
 
         self._hex_label = QLabel("#000000")
         self._hex_label.setMinimumWidth(70)
-        self._hex_label.setStyleSheet("color: #a0a0a0; font-size: 13px;")
+        self._hex_label.setProperty("class", "FieldLabel")
 
         self._current_color = QColor("#000000")
 
@@ -487,7 +389,6 @@ class ColorFieldWidget(BaseFieldWidget):
         hex_name = self._current_color.name()
         self._color_btn.setStyleSheet(
             f"background-color: {hex_name};"
-            " border: 1px solid #3a3a5a;"
             " border-radius: 6px;"
         )
         self._hex_label.setText(hex_name)
@@ -498,7 +399,6 @@ class SliderFieldWidget(BaseFieldWidget):
 
     def _build_input(self) -> None:
         self._slider = QSlider(Qt.Orientation.Horizontal)
-        self._slider.setStyleSheet(_SLIDER_STYLE)
 
         # Set range
         min_val = int(self.field.min_value or 0)
@@ -509,7 +409,7 @@ class SliderFieldWidget(BaseFieldWidget):
 
         self._value_label = QLabel()
         self._value_label.setMinimumWidth(40)
-        self._value_label.setStyleSheet("color: #a0a0a0; font-size: 13px;")
+        self._value_label.setProperty("class", "FieldLabel")
 
         self._input_layout.addWidget(self._slider, stretch=1)
         self._input_layout.addWidget(self._value_label)
@@ -546,7 +446,6 @@ class DateTimeFieldWidget(BaseFieldWidget):
             self._picker.setCalendarPopup(True)
             self._picker.dateTimeChanged.connect(self._on_value_changed)
 
-        self._picker.setStyleSheet(_DATETIME_STYLE)
         self._input_layout.addWidget(self._picker)
 
     def get_value(self) -> str:
