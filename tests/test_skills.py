@@ -138,6 +138,7 @@ class TestSkillLoader:
         greet_data = next(d for d in data if d["function_name"] == "greet")
         assert greet_data["class_name"] == "TestSkill"
         assert "name: str" in greet_data["signature"]
+        assert greet_data["device_agnostic"] is False
 
     def test_empty_skills_dir(self):
         """Test loading from empty directory."""
@@ -179,10 +180,21 @@ class TestExampleSkills:
         """Test CalculatorSkill is loaded."""
         skill = example_loader.get_skill("CalculatorSkill")
         assert skill is not None
+        assert skill.device_agnostic is True
 
         method_names = [m.name for m in skill.methods]
         assert "add" in method_names
         assert "multiply" in method_names
+
+    def test_calculator_registration_marks_device_agnostic(self, example_loader):
+        """CalculatorSkill registration payload includes device_agnostic flag."""
+        rows = [
+            row
+            for row in example_loader.get_registration_data()
+            if row["class_name"] == "CalculatorSkill"
+        ]
+        assert rows
+        assert all(row["device_agnostic"] is True for row in rows)
 
     def test_calculator_operations(self, example_loader):
         """Test calculator methods work."""

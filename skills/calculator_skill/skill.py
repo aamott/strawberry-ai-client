@@ -3,6 +3,7 @@
 
 class CalculatorSkill:
     """Basic calculator operations."""
+    device_agnostic = True
 
     def add(self, a: float, b: float) -> float:
         """Add two numbers.

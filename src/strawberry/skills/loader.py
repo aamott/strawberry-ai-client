@@ -54,6 +54,8 @@ class SkillInfo:
     settings_schema: Optional[List["SettingField"]] = None
     # Repo directory name (e.g. "weather_skill") for namespace derivation
     repo_name: Optional[str] = None
+    # If True, hub can route calls to any connected device with this skill.
+    device_agnostic: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API."""
@@ -70,6 +72,7 @@ class SkillInfo:
                 "function_name": m.name,
                 "signature": m.signature,
                 "docstring": m.docstring,
+                "device_agnostic": self.device_agnostic,
             }
             for m in self.methods
         ]
@@ -553,6 +556,7 @@ class SkillLoader:
 
         # Check for class-level SETTINGS_SCHEMA as well
         class_schema = getattr(cls, "SETTINGS_SCHEMA", None)
+        device_agnostic = bool(getattr(cls, "device_agnostic", False))
 
         return SkillInfo(
             name=name,
@@ -562,6 +566,7 @@ class SkillLoader:
             instance=instance,
             settings_schema=class_schema,
             repo_name=repo_name,
+            device_agnostic=device_agnostic,
         )
 
     def _accepts_settings_manager(self, cls: type) -> bool:
