@@ -198,6 +198,22 @@ class TestBuildSkillClass:
         assert result == "tool result"
         mock_fn.assert_called_once_with("ping", {"host": "localhost"})
 
+    def test_class_is_device_agnostic_by_default(self) -> None:
+        """Generated MCP classes should default to device-agnostic."""
+        info = _make_server_info("Srv")
+        cls = build_skill_class(info, _make_fake_call_tool())
+        assert getattr(cls, "device_agnostic", False) is True
+
+    def test_class_device_agnostic_can_be_overridden(self) -> None:
+        """Class builder should support explicit device-agnostic overrides."""
+        info = _make_server_info("Srv")
+        cls = build_skill_class(
+            info,
+            _make_fake_call_tool(),
+            device_agnostic=False,
+        )
+        assert getattr(cls, "device_agnostic", True) is False
+
 
 class TestBuildAllSkillClasses:
     """Tests for build_all_skill_classes."""
@@ -226,6 +242,37 @@ class TestBuildAllSkillClasses:
         fns = {"Srv": _make_fake_call_tool()}
         classes = build_all_skill_classes(servers, fns, caller_module="test.mod")
         assert classes[0].__module__ == "test.mod"
+
+    def test_uses_default_device_agnostic_when_no_override(self) -> None:
+        """Default device-agnostic value should apply to all servers."""
+        servers = [_make_server_info("Alpha"), _make_server_info("Beta")]
+        fns = {
+            "Alpha": _make_fake_call_tool(),
+            "Beta": _make_fake_call_tool(),
+        }
+        classes = build_all_skill_classes(
+            servers,
+            fns,
+            default_device_agnostic=False,
+        )
+        assert all(getattr(cls, "device_agnostic", True) is False for cls in classes)
+
+    def test_per_server_device_agnostic_override(self) -> None:
+        """Per-server overrides should take precedence over the default."""
+        servers = [_make_server_info("Alpha"), _make_server_info("Beta")]
+        fns = {
+            "Alpha": _make_fake_call_tool(),
+            "Beta": _make_fake_call_tool(),
+        }
+        classes = build_all_skill_classes(
+            servers,
+            fns,
+            default_device_agnostic=True,
+            per_server_device_agnostic={"Beta": False},
+        )
+        by_name = {cls.__name__: cls for cls in classes}
+        assert getattr(by_name["AlphaSkill"], "device_agnostic", False) is True
+        assert getattr(by_name["BetaSkill"], "device_agnostic", True) is False
 
 
 # ── Loader integration tests ───────────────────────────────────────────────

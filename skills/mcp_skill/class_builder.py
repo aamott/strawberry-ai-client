@@ -220,6 +220,8 @@ def build_skill_class(
     server_info: MCPServerInfo,
     call_tool_fn: Callable,
     caller_module: str | None = None,
+    *,
+    device_agnostic: bool = True,
 ) -> Type:
     """Build a dynamic *Skill class for an MCP server.
 
@@ -229,6 +231,8 @@ def build_skill_class(
         caller_module: __module__ to assign to the class. The SkillLoader
             filters classes by obj.__module__ == module_name, so this must
             match the entrypoint module's fully-qualified name.
+        device_agnostic: Whether this generated skill should be marked as
+            device-agnostic for Hub routing.
 
     Returns:
         A new class like HomeAssistantSkill with one method per tool.
@@ -240,6 +244,7 @@ def build_skill_class(
         "__doc__": f"MCP skill for {server_info.server_name}. "
         f"Provides {len(server_info.tools)} tool(s).",
         "_mcp_server_name": server_info.server_name,
+        "device_agnostic": device_agnostic,
     }
 
     for tool in server_info.tools:
@@ -269,6 +274,9 @@ def build_all_skill_classes(
     servers: List[MCPServerInfo],
     call_tool_fns: Dict[str, Callable],
     caller_module: str | None = None,
+    *,
+    default_device_agnostic: bool = True,
+    per_server_device_agnostic: Dict[str, bool] | None = None,
 ) -> List[Type]:
     """Build skill classes for all discovered MCP servers.
 
@@ -276,11 +284,16 @@ def build_all_skill_classes(
         servers: List of discovered server infos.
         call_tool_fns: Dict mapping server_name -> async call_tool function.
         caller_module: __module__ to assign to generated classes (see build_skill_class).
+        default_device_agnostic: Fallback device-agnostic value to apply when
+            a server does not define an explicit override.
+        per_server_device_agnostic: Optional mapping of server_name -> explicit
+            device-agnostic value.
 
     Returns:
         List of dynamically created skill classes.
     """
     classes: List[Type] = []
+    overrides = per_server_device_agnostic or {}
     for server in servers:
         fn = call_tool_fns.get(server.server_name)
         if fn is None:
@@ -289,6 +302,15 @@ def build_all_skill_classes(
                 server.server_name,
             )
             continue
-        cls = build_skill_class(server, fn, caller_module=caller_module)
+        resolved_device_agnostic = overrides.get(
+            server.server_name,
+            default_device_agnostic,
+        )
+        cls = build_skill_class(
+            server,
+            fn,
+            caller_module=caller_module,
+            device_agnostic=resolved_device_agnostic,
+        )
         classes.append(cls)
     return classes

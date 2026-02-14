@@ -121,3 +121,4 @@ ai-pc-spoke/
 - Ensure system prompt is configurable via settings (`settings_schema.py`).
 - Confirm skills re-register after brief Hub disconnects.
 - Allow user-provided MCP tool descriptions in `mcp_config.json`.
+- MCP-generated skills are device-agnostic by default; use `skills.mcp_skill.default_device_agnostic` for the global default and per-server `device_agnostic` in `mcp_config.json` for overrides.

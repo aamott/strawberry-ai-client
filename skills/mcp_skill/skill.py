@@ -25,6 +25,8 @@ from typing import Any, Dict
 try:
     from mcp import types
 
+    from strawberry.shared.settings import FieldType, SettingField, SettingsManager
+
     from .class_builder import build_all_skill_classes
     from .mcp_client import discover_all_servers
 
@@ -33,6 +35,9 @@ except ModuleNotFoundError as exc:
     types = None
     build_all_skill_classes = None
     discover_all_servers = None
+    FieldType = None
+    SettingField = None
+    SettingsManager = None
     _MCP_AVAILABLE = False
     _MCP_IMPORT_ERROR = exc
 
@@ -44,6 +49,27 @@ logger = logging.getLogger(__name__)
 _THIS_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _THIS_DIR.parent.parent  # skills/mcp_skill -> skills -> ai-pc-spoke
 _CONFIG_PATH = _PROJECT_ROOT / "config" / "mcp_config.json"
+_SETTINGS_DIR = _PROJECT_ROOT / "config"
+
+# Settings schema registered automatically by SkillLoader.
+# Namespace: skills.mcp_skill
+if SettingField is not None and FieldType is not None:
+    SETTINGS_SCHEMA = [
+        SettingField(
+            key="default_device_agnostic",
+            label="Default MCP Skills Device-Agnostic",
+            type=FieldType.CHECKBOX,
+            default=True,
+            description=(
+                "Default device-agnostic value for generated MCP skill classes. "
+                "Each MCP server can override this in mcp_config.json with "
+                "'device_agnostic'."
+            ),
+            group="routing",
+        )
+    ]
+else:
+    SETTINGS_SCHEMA = []
 
 
 def _load_mcp_config() -> Dict[str, Any]:
@@ -64,6 +90,58 @@ def _load_mcp_config() -> Dict[str, Any]:
     except Exception as e:
         logger.error("Failed to parse MCP config: %s", e)
         return {}
+
+
+def _read_default_device_agnostic_setting() -> bool:
+    """Read the MCP default device-agnostic setting from settings storage.
+
+    Returns:
+        The configured default if present; otherwise True.
+    """
+    if SettingsManager is None:
+        return True
+    try:
+        settings = SettingsManager(_SETTINGS_DIR, auto_save=False)
+        value = settings.get("skills.mcp_skill", "default_device_agnostic", True)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"1", "true", "yes", "on"}:
+                return True
+            if lowered in {"0", "false", "no", "off"}:
+                return False
+        return bool(value)
+    except Exception as exc:
+        logger.debug(
+            "Failed to read skills.mcp_skill.default_device_agnostic: %s",
+            exc,
+        )
+        return True
+
+
+def _resolve_server_device_agnostic_overrides(
+    config: Dict[str, Any],
+) -> Dict[str, bool]:
+    """Collect per-server device-agnostic overrides from mcp_config.json.
+
+    Args:
+        config: Parsed mcp_config.json.
+
+    Returns:
+        Mapping of server_name -> override value.
+    """
+    overrides: Dict[str, bool] = {}
+    servers_config = config.get("mcpServers", {})
+    if not isinstance(servers_config, dict):
+        return overrides
+
+    for server_name, server_config in servers_config.items():
+        if not isinstance(server_config, dict):
+            continue
+        if "device_agnostic" in server_config:
+            overrides[server_name] = bool(server_config["device_agnostic"])
+    return overrides
 
 
 # ── Persistent background event loop ───────────────────────────────────────
@@ -256,8 +334,14 @@ async def _discover_and_build() -> list:
 
     # Only build classes for servers we actually have sessions for
     connected_servers = [s for s in servers if s.server_name in _sessions]
+    default_device_agnostic = _read_default_device_agnostic_setting()
+    per_server_device_agnostic = _resolve_server_device_agnostic_overrides(config)
     classes = build_all_skill_classes(
-        connected_servers, call_tool_fns, caller_module=__name__
+        connected_servers,
+        call_tool_fns,
+        caller_module=__name__,
+        default_device_agnostic=default_device_agnostic,
+        per_server_device_agnostic=per_server_device_agnostic,
     )
 
     logger.info(
