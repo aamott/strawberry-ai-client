@@ -68,8 +68,14 @@ def test_system_prompt_local_mode_uses_device(tmp_path: Path) -> None:
     svc.load_skills()
 
     prompt = svc.get_system_prompt()
-    assert "Runtime mode: OFFLINE/LOCAL." in prompt
-    assert "device.DemoSkill.ping" in prompt
+    # Offline prompt uses device.* syntax
+    assert "device.<SkillClass>.<method>" in prompt
+    # DemoSkill (1 method total) is under threshold -> embedded
+    assert "DemoSkill (1 method)" in prompt
+    assert "Sample methods: ping" in prompt
+    # Search-first guidance present
+    assert "search_skills" in prompt
+    assert "python_exec" in prompt
 
 
 def test_system_prompt_remote_mode_uses_devices(tmp_path: Path) -> None:
@@ -83,8 +89,39 @@ def test_system_prompt_remote_mode_uses_devices(tmp_path: Path) -> None:
     svc.set_mode_override(SkillMode.REMOTE)
     prompt = svc.get_system_prompt()
 
-    assert "Runtime mode: ONLINE (Hub)." in prompt
-    assert "devices." in prompt
+    # Online prompt uses devices.* syntax
+    assert "devices.<device>.<SkillClass>.<method>" in prompt
+    # Never embeds skills in online mode
+    assert "## Available Skills" not in prompt
+    assert "DemoSkill" not in prompt
+    # Search-first guidance
+    assert "search_skills" in prompt
+
+
+def test_system_prompt_local_omits_catalog_above_threshold(
+    tmp_path: Path,
+) -> None:
+    """When total functions exceed MAX_FUNCTIONS_FOR_EMBED,
+    the local prompt should NOT embed the skill catalog."""
+    import strawberry.skills.prompt as prompt_mod
+
+    skills_dir = tmp_path / "skills"
+    _write_min_skill(skills_dir)
+
+    svc = SkillService(skills_path=skills_dir, hub_client=None, use_sandbox=False)
+    svc.load_skills()
+
+    # Temporarily lower threshold so 1 method is "above" it
+    original = prompt_mod.MAX_FUNCTIONS_FOR_EMBED
+    try:
+        prompt_mod.MAX_FUNCTIONS_FOR_EMBED = 0
+        prompt = svc.get_system_prompt()
+        assert "## Available Skills" not in prompt
+        assert "DemoSkill" not in prompt
+        # search_skills is still documented
+        assert "search_skills" in prompt
+    finally:
+        prompt_mod.MAX_FUNCTIONS_FOR_EMBED = original
 
 
 @pytest.mark.asyncio

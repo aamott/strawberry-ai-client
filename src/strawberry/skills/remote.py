@@ -9,12 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from ..hub import HubClient
 from ..utils.async_bridge import run_sync
-from .prompt import (
-    BASE_ROLE_PROMPT,
-    OFFLINE_TOOL_INSTRUCTIONS,
-    TOOL_LIST,
-    build_mode_switch_message,
-)
+from .prompt import build_mode_switch_message
 
 logger = logging.getLogger(__name__)
 
@@ -400,17 +395,11 @@ class DeviceManager:
 # are kept for backward compatibility and re-exported from the new builder.
 
 REMOTE_MODE_PROMPT = (
-    f"{BASE_ROLE_PROMPT} You have access to skills across all "
-    "connected devices.\n"
-    "\n"
-    f"{TOOL_LIST}\n"
-    "\n"
-    "## How to Call Skills (ONLINE mode)\n"
+    "You are Strawberry, a helpful AI assistant."
+    " You have access to skills across all connected devices.\n"
     "\n"
     "Execute skills via python_exec with code that calls\n"
     "devices.<Device>.<SkillName>.<method>(...).\n"
-    "\n"
-    "## Rules\n"
     "\n"
     "1. Use python_exec to call skills.\n"
     "2. Always use print() to see output.\n"
@@ -419,13 +408,11 @@ REMOTE_MODE_PROMPT = (
 )
 
 LOCAL_MODE_PROMPT = (
-    f"{BASE_ROLE_PROMPT} You have access to skills on this device.\n"
+    "You are Strawberry, a helpful AI assistant."
+    " You have access to skills on this device.\n"
     "\n"
-    f"{TOOL_LIST}\n"
-    "\n"
-    f"{OFFLINE_TOOL_INSTRUCTIONS}\n"
-    "\n"
-    "## Rules\n"
+    "Execute skills via python_exec with code that calls\n"
+    "device.<SkillName>.<method>(...).\n"
     "\n"
     "1. Use python_exec to call skills.\n"
     "2. Always use print() to see output.\n"

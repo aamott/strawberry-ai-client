@@ -229,7 +229,10 @@ class TestSkillService:
         prompt = service.get_system_prompt()
 
         assert "Strawberry" in prompt
-        assert "TimeSkill" in prompt or "CalculatorSkill" in prompt
+        # With 85+ total functions the embedded catalog is omitted
+        # (above MAX_FUNCTIONS_FOR_EMBED); search_skills is the
+        # primary discovery mechanism.
+        assert "search_skills" in prompt
         assert "device" in prompt
 
     def test_parse_skill_calls(self, service):
