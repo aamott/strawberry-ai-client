@@ -109,9 +109,9 @@ ai-pc-spoke/
 ## Common Installation Options
 
 - **CLI only**: `pip install -e "ai-pc-spoke"` (no UI, no voice)
-- **CLI + GUI**: `pip install -e "ai-pc-spoke[ui]"` (recommended)
+- **CLI + GUI**: `pip install -e "ai-pc-spoke[ui]"` 
 - **CLI + Voice**: `pip install -e "ai-pc-spoke[picovoice,silero]"`
-- **Everything**: `pip install -e "ai-pc-spoke[all]"`
+- **Everything**: `pip install -e "ai-pc-spoke[all]"` (recommended)
 
 
 
