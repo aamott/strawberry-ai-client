@@ -154,7 +154,10 @@ class HubAgentRunner(AgentRunner):
         try:
             final_content: Optional[str] = None
 
-            stream = hub_client.chat_stream(messages=messages, enable_tools=True)
+            stream = hub_client.chat_stream(
+                messages=messages,
+                enable_tools=True,
+            )
             try:
                 while True:
                     event = await stream.__anext__()

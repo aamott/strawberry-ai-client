@@ -100,6 +100,20 @@ class TestHubClientHealth:
 class TestHubClientChat:
     """Tests for chat functionality."""
 
+    def test_build_chat_payload_includes_session_id(self, hub_client):
+        """Payload builder should include session_id when provided."""
+        messages = [ChatMessage(role="user", content="hello")]
+        payload = hub_client._build_chat_payload(
+            messages=messages,
+            temperature=0.7,
+            enable_tools=True,
+            stream=True,
+            model=None,
+            max_tokens=None,
+            session_id="session-123",
+        )
+        assert payload["session_id"] == "session-123"
+
     @pytest.mark.asyncio
     async def test_chat_success(self, hub_client, mock_client):
         """Test successful chat request."""
@@ -216,3 +230,73 @@ class TestHubClientSkills:
 
         assert len(results) == 1
         assert results[0]["path"] == "MusicSkill.play"
+
+
+class _MockStreamingErrorResponse:
+    """Streaming response mock that requires aread() before json/text access."""
+
+    def __init__(self) -> None:
+        self.status_code = 400
+        self._read_called = False
+
+    async def aread(self) -> bytes:
+        self._read_called = True
+        return b'{"detail":"bad request"}'
+
+    def json(self) -> dict[str, str]:
+        if not self._read_called:
+            raise RuntimeError("read() not called")
+        return {"detail": "bad request"}
+
+    @property
+    def text(self) -> str:
+        if not self._read_called:
+            raise RuntimeError("read() not called")
+        return "bad request"
+
+    def aiter_lines(self):
+        async def _empty() -> AsyncMock:  # pragma: no cover
+            if False:
+                yield ""
+
+        return _empty()
+
+
+class _MockStreamContext:
+    """Async context manager wrapper for stream response mocks."""
+
+    def __init__(self, response) -> None:
+        self._response = response
+
+    async def __aenter__(self):
+        return self._response
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class TestHubClientChatStream:
+    """Tests for streaming chat behavior."""
+
+    @pytest.mark.asyncio
+    async def test_chat_stream_reads_error_body_before_check(
+        self,
+        hub_client,
+        mock_client,
+    ):
+        """Streaming errors should not fail with unread response content access."""
+        error_response = _MockStreamingErrorResponse()
+        mock_client.stream.return_value = _MockStreamContext(error_response)
+        mock_client.is_closed = False
+
+        stream = hub_client.chat_stream(
+            messages=[ChatMessage(role="user", content="hello")],
+            enable_tools=True,
+        )
+
+        with pytest.raises(HubError) as exc_info:
+            await stream.__anext__()
+
+        assert error_response._read_called is True
+        assert exc_info.value.status_code == 400
+        assert "bad request" in str(exc_info.value)

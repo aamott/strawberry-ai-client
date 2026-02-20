@@ -293,6 +293,31 @@ class HubClient:
     # Chat / LLM
     # =========================================================================
 
+    def _build_chat_payload(
+        self,
+        messages: List[ChatMessage],
+        temperature: float,
+        enable_tools: bool,
+        stream: bool,
+        model: Optional[str],
+        max_tokens: Optional[int],
+        session_id: Optional[str],
+    ) -> Dict[str, Any]:
+        """Build Hub chat payload with optional fields."""
+        payload: Dict[str, Any] = {
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "temperature": temperature,
+            "enable_tools": enable_tools,
+            "stream": stream,
+        }
+        if model:
+            payload["model"] = model
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
+        if session_id:
+            payload["session_id"] = session_id
+        return payload
+
     @_retry_config
     async def chat(
         self,
@@ -302,6 +327,7 @@ class HubClient:
         max_tokens: Optional[int] = None,
         enable_tools: bool = False,
         stream: bool = False,
+        session_id: Optional[str] = None,
     ) -> ChatResponse:
         """Send a chat completion request to the Hub.
 
@@ -312,21 +338,20 @@ class HubClient:
             max_tokens: Maximum tokens in response
             enable_tools: If True, Hub runs agent loop and executes tools.
                          If False, Hub just passes through to LLM.
+            session_id: Optional Hub session identifier for continuity.
 
         Returns:
             ChatResponse with the assistant's reply
         """
-        payload = {
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "temperature": temperature,
-            "enable_tools": enable_tools,
-            "stream": stream,
-        }
-
-        if model:
-            payload["model"] = model
-        if max_tokens:
-            payload["max_tokens"] = max_tokens
+        payload = self._build_chat_payload(
+            messages=messages,
+            temperature=temperature,
+            enable_tools=enable_tools,
+            stream=stream,
+            model=model,
+            max_tokens=max_tokens,
+            session_id=session_id,
+        )
 
         response = await self.client.post("/api/v1/chat/completions", json=payload)
         self._check_response(response)
@@ -348,6 +373,7 @@ class HubClient:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         enable_tools: bool = False,
+        session_id: Optional[str] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
         """Stream Hub chat completion events.
 
@@ -360,20 +386,20 @@ class HubClient:
             temperature: Sampling temperature.
             max_tokens: Optional token cap.
             enable_tools: If True, Hub executes tools and streams tool events.
+            session_id: Optional Hub session identifier for continuity.
 
         Yields:
             Parsed event dicts.
         """
-        payload: Dict[str, Any] = {
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "temperature": temperature,
-            "enable_tools": enable_tools,
-            "stream": True,
-        }
-        if model:
-            payload["model"] = model
-        if max_tokens:
-            payload["max_tokens"] = max_tokens
+        payload = self._build_chat_payload(
+            messages=messages,
+            temperature=temperature,
+            enable_tools=enable_tools,
+            stream=True,
+            model=model,
+            max_tokens=max_tokens,
+            session_id=session_id,
+        )
 
         stream_cm = self.client.stream(
             "POST",
@@ -384,6 +410,12 @@ class HubClient:
         line_iter: Optional[Any] = None
         try:
             response = await stream_cm.__aenter__()
+
+            # For stream requests, httpx does not preload response content.
+            # If Hub returns a non-2xx status, read the body first so
+            # _check_response can safely access JSON/text error details.
+            if response.status_code >= 400:
+                await response.aread()
             self._check_response(response)
 
             line_iter = response.aiter_lines()
