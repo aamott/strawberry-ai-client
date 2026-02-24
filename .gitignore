@@ -28,3 +28,7 @@ skills/.installed/
 
 # Environment variables
 .env
+.env.bak
+config/mcp_config.json
+config/.device_id
+.device_id
