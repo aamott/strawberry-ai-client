@@ -167,8 +167,16 @@ class InteractiveCLI:
 
     def _print_assistant(self, content: str) -> None:
         """Print an assistant response."""
-        sys.stdout.write(f"\r\n{content}\n\n")
+        header = _styled("Strawberry:", CYAN, BOLD)
+        sys.stdout.write(f"\r\n{header}\n{_styled(content, CYAN)}\n\n")
         sys.stdout.flush()
+
+    def _print_injected_message(self, content: str) -> None:
+        """Print a system injected message (like tool results or system notices)."""
+        sys.stdout.write(f"\r{_styled(content, GRAY, DIM)}\n")
+        sys.stdout.flush()
+        if not self._busy:
+            self._show_prompt()
 
     def _print_verbose_injection(self, content: str) -> None:
         """Show injected system/mode-switch user messages in verbose mode.
@@ -307,12 +315,10 @@ class InteractiveCLI:
             )
         sys.stdout.write(f"  {_styled('Type /help for commands', DIM)}\n\n")
 
-        # Verbose: dump full system prompt
-        if self._verbose:
-            prompt = self._core.get_system_prompt()
-            sys.stdout.write(
-                f"{_styled('[system prompt]', CYAN)}\n{prompt}\n\n"
-            )
+        # Dump full system prompt so user sees ALL messages the LLM receives
+        prompt = self._core.get_system_prompt()
+        header_str = _styled("[System Prompt (initial)]", DIM)
+        sys.stdout.write(f"{header_str}\n{_styled(prompt, GRAY, DIM)}\n\n")
 
         sys.stdout.flush()
         self._show_prompt()
@@ -377,7 +383,7 @@ class InteractiveCLI:
 
     # ── Event handling ────────────────────────────────────────────────
 
-    def _handle_event(self, event: Any) -> None:
+    def _handle_event(self, event: Any) -> None:  # noqa: C901
         """Handle a SpokeCore event. Called by the EventBus subscription.
 
         This is the single callback that reacts to all core events —
@@ -414,8 +420,13 @@ class InteractiveCLI:
                 # TTS if voice is active
                 if self._voice_enabled and self._voice_core:
                     self._voice_core.speak(event.content)
-            elif self._verbose and event.role == "user":
-                self._print_verbose_injection(event.content)
+            elif event.role == "user":
+                if event.content.startswith(
+                    "[System Notice:"
+                ) or event.content.startswith("[Tool Result:"):
+                    self._print_injected_message(event.content)
+                elif self._verbose:
+                    self._print_verbose_injection(event.content)
 
         elif isinstance(event, CoreError):
             self._print_error(f"Error: {event.error}")

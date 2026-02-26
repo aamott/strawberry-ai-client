@@ -288,7 +288,9 @@ class LocalAgentRunner(AgentRunner):
             if legacy_code_blocks:
                 if response.content:
                     await self._emit_assistant_message(session, response.content)
-                await self._handle_legacy_code_blocks(session, legacy_code_blocks)
+                await self._handle_legacy_code_blocks(
+                    session, legacy_code_blocks, seen_tool_calls
+                )
                 continue
 
             # No tool calls - final response
@@ -407,6 +409,13 @@ class LocalAgentRunner(AgentRunner):
                     "instead of calling tools again.]"
                 )
             session.add_message("user", tool_msg)
+            await self._emit(
+                MessageAdded(
+                    session_id=session.id,
+                    role="user",
+                    content=tool_msg,
+                )
+            )
 
         return False
 
@@ -414,14 +423,30 @@ class LocalAgentRunner(AgentRunner):
         self,
         session: "ChatSession",
         code_blocks: List[str],
+        seen_tool_calls: set[str],
     ) -> None:
         """Handle legacy code blocks extracted from LLM response.
 
         Args:
             session: Chat session.
             code_blocks: List of code strings to execute.
+            seen_tool_calls: Set of seen tool call signatures (for dedup).
         """
         for code in code_blocks:
+            tool_key = json.dumps(
+                {
+                    "name": "python_exec",
+                    "arguments": {"code": code},
+                },
+                sort_keys=True,
+            )
+            is_duplicate = tool_key in seen_tool_calls
+            if is_duplicate:
+                logger.warning(
+                    "Duplicate tool call detected: python_exec — executing anyway"
+                )
+            seen_tool_calls.add(tool_key)
+
             await self._emit(
                 ToolCallStarted(
                     session_id=session.id,
@@ -449,7 +474,21 @@ class LocalAgentRunner(AgentRunner):
             tool_msg = self._format_tool_result_message(
                 "python_exec", success, result_text,
             )
+            if is_duplicate:
+                tool_msg += (
+                    "\n\n[NOTICE: This is a duplicate call — you already made "
+                    "this exact call earlier in this conversation. Unless you "
+                    "specifically need to repeat it, respond to the user now "
+                    "instead of calling tools again.]"
+                )
             session.add_message("user", tool_msg)
+            await self._emit(
+                MessageAdded(
+                    session_id=session.id,
+                    role="user",
+                    content=tool_msg,
+                )
+            )
 
     @staticmethod
     def _format_tool_result_message(
