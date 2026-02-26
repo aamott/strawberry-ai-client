@@ -16,7 +16,7 @@ class SyncManager:
     Handles:
     - Pushing local sessions/messages to Hub
     - Pulling remote sessions/messages from Hub
-    - Processing the sync queue for offline operations
+    - Processing the sync queue for local operations
     """
 
     # Max retries for sync operations
@@ -33,7 +33,7 @@ class SyncManager:
 
         Args:
             db: Local session database
-            hub_client: Hub client (can be None if offline)
+            hub_client: Hub client (can be None if not connected)
         """
         self.db = db
         self.hub_client = hub_client

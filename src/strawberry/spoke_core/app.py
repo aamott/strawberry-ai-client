@@ -35,7 +35,7 @@ class SpokeCore:
     - Loading settings + config
     - Wiring skills + tool schemas
     - Exposing chat session abstraction
-    - Managing agent loop (online/offline)
+    - Managing agent loop (online/local)
     """
 
     def __init__(
@@ -453,14 +453,19 @@ class SpokeCore:
             # Check for mode switch BEFORE adding the user message so
             # the LLM sees the context change first, then the question.
             current_online = self.is_online()
-            current_mode = "online" if current_online else "offline"
+            current_mode = "online" if current_online else "local"
             if (
                 session.last_mode is not None
                 and current_mode != session.last_mode
             ):
                 from ..skills.prompt import build_mode_switch_message
 
-                notice = build_mode_switch_message(current_mode)
+                skills = (
+                    self._skill_mgr.service.get_all_skills()
+                    if self._skill_mgr
+                    else []
+                )
+                notice = build_mode_switch_message(current_mode, skills=skills)
                 session.add_message("user", notice)
                 logger.info(
                     "Injected mode-switch message (%s -> %s) into session %s",
@@ -508,7 +513,7 @@ class SpokeCore:
         enable_tools=True so the Hub runs the agent loop and executes
         skills on registered devices.
 
-        When offline, runs the agent loop locally using TensorZeroClient.
+        When running locally, runs the agent loop using TensorZeroClient.
 
         Delegates to HubAgentRunner or LocalAgentRunner based on
         connection state.  Mode-switch messages are injected earlier
@@ -519,7 +524,7 @@ class SpokeCore:
             await self._emit(CoreError(error="Core not started"))
             return None
 
-        # Route based on online/offline mode (delegate to agent runners)
+        # Route based on online/local mode (delegate to agent runners)
         if self.is_online() and self._hub_runner:
             return await self._hub_runner.run(session, max_iterations)
 

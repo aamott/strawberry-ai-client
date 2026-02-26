@@ -250,7 +250,7 @@ class LocalAgentRunner(AgentRunner):
         session: "ChatSession",
         max_iterations: int = 5,
     ) -> Optional[str]:
-        """Run agent loop locally (for offline mode)."""
+        """Run agent loop locally (for local mode)."""
         function_name = self._select_function_name()
 
         # Build system prompt (mode switching is handled at the session
@@ -310,7 +310,7 @@ class LocalAgentRunner(AgentRunner):
         return final_content
 
     def _select_function_name(self) -> str:
-        """Select TensorZero function for local/offline mode.
+        """Select TensorZero function for local mode.
 
         The generated TOML always defines ``chat_local`` with the correct
         fallback chain (cloud providers + Ollama, no Hub). TensorZero

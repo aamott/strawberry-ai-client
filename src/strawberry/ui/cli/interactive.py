@@ -49,19 +49,19 @@ class InteractiveCLI:
     in dim gray; the ``>`` prompt is re-shown after each notification.
 
     Args:
-        offline: If True, skip hub connection.
+        local: If True, skip hub connection.
         timeout: Per-message timeout in seconds.
         config_dir: Path to config directory (default: project config/).
     """
 
     def __init__(
         self,
-        offline: bool = False,
+        local: bool = False,
         timeout: int = 120,
         config_dir: Optional[Path] = None,
         verbose: bool = False,
     ) -> None:
-        self._offline = offline
+        self._local = local
         self._timeout = float(timeout)
         self._config_dir = config_dir
         self._verbose = verbose
@@ -232,8 +232,8 @@ class InteractiveCLI:
             # Subscribe to SpokeCore events
             self._subscription = self._core.subscribe(self._handle_event)
 
-            # Connect to hub unless offline
-            if not self._offline:
+            # Connect to hub unless local mode
+            if not self._local:
                 try:
                     await self._core.connect_hub()
                 except Exception as e:

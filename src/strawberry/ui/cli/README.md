@@ -21,8 +21,8 @@ strawberry-cli "What time is it?"
 # JSON output (for testing/scripting)
 strawberry-cli "What time is it?" --json
 
-# Force offline mode
-strawberry-cli "2+2?" --offline
+# Force local mode
+strawberry-cli "2+2?" --local
 
 # Skill interaction tester
 strawberry-cli skill-tester
@@ -36,7 +36,7 @@ strawberry-cli skill-tester
 | `-j, --json` | Output JSON for parsing |
 | `-q, --quiet` | Only print final response |
 | `-c, --compact` | Truncate tool output for concise display |
-| `--offline` | Skip hub, force local mode |
+| `--local` | Skip hub, force local mode |
 | `--show-logs` | Display debug logs |
 | `--timeout N` | Set timeout (default: 120s) |
 | `--settings ...` | Run settings subcommands (see below) |

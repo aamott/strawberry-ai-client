@@ -468,7 +468,7 @@ class IntegratedApp:
             )
         else:
             self._window.toast.show(
-                "Switched to offline mode",
+                "Switched to local mode",
                 ToastLevel.WARNING,
                 duration_ms=4000,
             )

@@ -1,4 +1,4 @@
-"""Offline mode tracking based on TensorZero response metadata."""
+"""Local mode tracking based on TensorZero response metadata."""
 
 import logging
 from datetime import datetime
@@ -10,14 +10,14 @@ logger = logging.getLogger(__name__)
 
 
 class OfflineModeTracker:
-    """Tracks offline mode based on TensorZero responses.
+    """Tracks local mode based on TensorZero responses.
 
-    Determines if the application is in offline mode by monitoring which
+    Determines if the application is in local mode by monitoring which
     variant (hub vs local_ollama) is being used for LLM responses.
-    After consecutive fallback responses, transitions to offline mode.
+    After consecutive fallback responses, transitions to local mode.
     """
 
-    # Number of consecutive fallbacks before declaring offline mode
+    # Number of consecutive fallbacks before declaring local mode
     FALLBACK_THRESHOLD = 2
 
     def __init__(self) -> None:
@@ -29,7 +29,7 @@ class OfflineModeTracker:
         self._pending_sync_count = 0
 
     def on_response(self, response: ChatResponse) -> None:
-        """Update offline state based on TensorZero response.
+        """Update local mode state based on TensorZero response.
 
         Args:
             response: ChatResponse from TensorZero with variant metadata
@@ -51,30 +51,30 @@ class OfflineModeTracker:
             self._set_offline(False)
 
     def _set_offline(self, offline: bool) -> None:
-        """Set offline state and notify listeners if changed."""
+        """Set local mode state and notify listeners if changed."""
         if offline != self._is_offline:
             self._is_offline = offline
-            status = "OFFLINE" if offline else "ONLINE"
-            logger.info(f"Offline mode changed: {status}")
+            status = "LOCAL" if offline else "ONLINE"
+            logger.info(f"Mode changed: {status}")
 
             # Notify all listeners
             for listener in self._listeners:
                 try:
                     listener(offline)
                 except Exception as e:
-                    logger.error(f"Error in offline mode listener: {e}")
+                    logger.error(f"Error in mode listener: {e}")
 
     def set_offline_state(self, offline: bool) -> None:
-        """Set offline state explicitly.
+        """Set local mode state explicitly.
 
         Args:
-            offline: True to mark offline mode, False to mark online.
+            offline: True to mark local mode, False to mark online.
         """
         self._set_offline(offline)
 
     @property
     def is_offline(self) -> bool:
-        """Check if currently in offline mode."""
+        """Check if currently in local mode."""
         return self._is_offline
 
     @property
@@ -98,7 +98,7 @@ class OfflineModeTracker:
         self._pending_sync_count = max(0, value)
 
     def add_listener(self, callback: Callable[[bool], None]) -> None:
-        """Add a listener for offline mode changes.
+        """Add a listener for local mode changes.
 
         Args:
             callback: Function called with (is_offline: bool) when state changes
@@ -130,7 +130,7 @@ class OfflineModeTracker:
             model_name: Optional model name to include in status
 
         Returns:
-            Status string like "Online · Hub" or "Offline · Local: llama3.2:3b"
+            Status string like "Online · Hub" or "Local · llama3.2:3b"
         """
         if self._is_offline:
             model_info = f"Local: {model_name}" if model_name else "Local model"
@@ -139,6 +139,6 @@ class OfflineModeTracker:
                 if self._pending_sync_count > 0
                 else ""
             )
-            return f"Offline · {model_info}{pending}"
+            return f"Local · {model_info}{pending}"
         else:
             return f"Online · Hub{f': {model_name}' if model_name else ''}"

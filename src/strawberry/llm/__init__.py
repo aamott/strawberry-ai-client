@@ -1,4 +1,4 @@
-"""LLM module with TensorZero client and offline mode support."""
+"""LLM module with TensorZero client and local mode support."""
 
 from .offline_tracker import OfflineModeTracker
 from .tensorzero_client import ChatResponse, TensorZeroClient

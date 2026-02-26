@@ -1,7 +1,13 @@
 """System prompt generation for the skill service.
 
-Contains the default prompt template and helpers for building
-skill descriptions and example calls.
+Contains composable prompt sections and builders for constructing
+system prompts and mode-switch messages.
+
+Architecture::
+
+    ROLE_SECTION (static)
+      + build_tools_section(mode, skills)  (dynamic)
+      = full system prompt  -or-  mode-switch message
 """
 
 from __future__ import annotations
@@ -26,33 +32,17 @@ MAX_SKILLS_IN_PROMPT = 8
 
 
 # ---------------------------------------------------------------------------
-# Offline (LOCAL) system prompt  — modeled after Hub's updated prompt
+# Role section (static, mode-agnostic)
 # ---------------------------------------------------------------------------
 
-# This is the search-only variant (no embedded skill catalog).
-# Used when total functions > MAX_FUNCTIONS_FOR_EMBED.
-DEFAULT_SYSTEM_PROMPT_TEMPLATE = """\
-You are Strawberry, a helpful AI assistant with access to
-skills on this local device.
+ROLE_SECTION = """\
+You are Strawberry, a helpful AI assistant with access to skills.
 
 Skills are pythonic classes that contain methods you can run via
 the `python_exec` tool.
 
-## Available Tools
-
-You have exactly 3 tools and a set of python skills:
-1) search_skills(query) - Find skills by keyword
-   (searches method names and descriptions).
-2) describe_function(path) - Get the full signature for a skill
-   method. Call this if you need more information about a skill
-   function, e.g. after an error.
-3) python_exec(code) - Execute Python code, including skills.
-
 ## Critical Notes
 
-- There is NO object named `default_api`. It does not exist.
-  The ONLY way to call skills is: `device.<SkillClass>.<method>(...)`
-  inside python_exec.
 - Try to be helpful. If the user requests something that you suspect
   requires a skill (fetching weather, adding numbers, etc), call
   `search_skills` to find the skill. If you need more information
@@ -69,19 +59,84 @@ You have exactly 3 tools and a set of python skills:
   answer. Where useful, include interim responses ("Let me find that
   for you") to keep the user engaged.
 
+## Searching Tips
+
+search_skills matches against method names, skill names, and
+descriptions. Search by **action** or **verb**, not by specific
+entity/object names.
+- To turn on a lamp, search 'turn on' or 'lamp'.
+- To set brightness, search 'light' or 'brightness'.
+- If a skill doesn't show up on the first try, continue searching
+  and experiment with different keywords."""
+
+
+# ---------------------------------------------------------------------------
+# Tools section builder (mode-dependent)
+# ---------------------------------------------------------------------------
+
+
+def build_tools_section(mode: "SkillMode", skills: "List[SkillInfo]") -> str:
+    """Build the tools/syntax/catalog section for the given mode.
+
+    In **local** mode the section uses ``device.<Skill>.<method>()`` syntax
+    and optionally embeds a compact skill catalog when total functions
+    are within ``MAX_FUNCTIONS_FOR_EMBED``.
+
+    In **online** (remote) mode the section uses
+    ``devices.<Device>.<Skill>.<method>()`` syntax and never embeds
+    skills (the Hub is authoritative).
+
+    Args:
+        mode: Current skill runtime mode (LOCAL or REMOTE).
+        skills: Loaded skill list (used for catalog embedding in local mode).
+
+    Returns:
+        Tools section string ready for prompt composition.
+    """
+    from .sandbox.proxy_gen import SkillMode
+
+    parts: list[str] = []
+
+    # -- Available tools header (shared) --
+    parts.append("""\
+## Available Tools
+
+You have exactly 3 tools and a set of python skills:
+1) search_skills(query) - Find skills by keyword
+   (searches method names and descriptions).
+2) describe_function(path) - Get the full signature for a skill
+   method. Call this if you need more information about a skill
+   function, e.g. after an error.
+3) python_exec(code) - Execute Python code, including skills.""")
+
+    # -- search_skills --
+    if mode == SkillMode.LOCAL:
+        parts.append("""\
 ## search_skills
 
 - search_skills(query) - Find skill functions by keyword.
   Searches method names and descriptions and returns a list of
   skill methods with a short description.
-  Example: `search_skills(query="weather")`
+  Example: `search_skills(query="weather")`""")
+    else:
+        parts.append("""\
+## search_skills
 
+- search_skills(query) - Find skill functions by keyword.
+  Returns skill methods, devices they belong to, and a short
+  description.""")
+
+    # -- describe_function (shared) --
+    parts.append("""\
 ## describe_function
 
 - describe_function(path) - Get the full signature and docstring
   for a skill method. Helpful for debugging or when you need more
-  information.
+  information.""")
 
+    # -- python_exec (mode-specific syntax) --
+    if mode == SkillMode.LOCAL:
+        parts.append("""\
 ## python_exec
 
 - Use `python_exec` to execute skills. It takes a string of Python
@@ -92,21 +147,39 @@ You have exactly 3 tools and a set of python skills:
   `device.<SkillClass>.<method>(...)`
 - print the final output so the result is surfaced to you.
   Otherwise you won't see a result.
+- There is NO object named `default_api`. It does not exist.
+  The ONLY way to call skills is: `device.<SkillClass>.<method>(...)`
+  inside python_exec.
 - Do NOT use `devices.*` or `default_api.*` — they do not exist
-  in offline mode. Only `device.*` works.
+  in local mode. Only `device.*` works.""")
+    else:
+        parts.append("""\
+## python_exec
 
-## Searching Tips
+- Use the `devices` object for remote devices:
+  `devices.<device>.<SkillClass>.<method>(...)`
+- print the final output so the result is surfaced to you.
+- Do NOT use `device.*` syntax — it only works in local mode.
+  Only `devices.<device>.*` works.""")
 
-search_skills matches against method names, skill names, and
-descriptions. Search by **action** or **verb**, not by specific
-entity/object names.
-- To turn on a lamp, search 'turn on' or 'lamp'.
-- To set brightness, search 'light' or 'brightness'.
-- If a skill doesn't show up on the first try, continue searching
-  and experiment with different keywords.
+    # -- Skill catalog (local only, below threshold) --
+    if mode == SkillMode.LOCAL and skills:
+        total_fns = _count_total_functions(skills)
+        if total_fns <= MAX_FUNCTIONS_FOR_EMBED:
+            catalog = _build_local_skill_descriptions(skills)
+            if catalog:
+                parts.append(catalog)
+        else:
+            logger.info(
+                "Total functions (%d) > MAX_FUNCTIONS_FOR_EMBED (%d); "
+                "omitting embedded skill catalog from system prompt.",
+                total_fns,
+                MAX_FUNCTIONS_FOR_EMBED,
+            )
 
-{skill_descriptions}\
-
+    # -- Examples --
+    if mode == SkillMode.LOCAL:
+        parts.append("""\
 ## Examples
 
 Weather:
@@ -131,86 +204,30 @@ Documentation lookup:
      .resolve_library_id(libraryName='react'))")
   c) python_exec(code="print(
      device.Context7Skill
-     .query_docs(libraryId='...', query='getting started'))")
+     .query_docs(libraryId='...', query='getting started'))")""")
+    else:
+        # Brief online example so the LLM sees devices.* usage
+        parts.append("""\
+## Example
 
+python_exec(code="print(devices.my_device.WeatherSkill\
+.get_current_weather(location='Seattle'))")""")
+
+    # -- Rules --
+    parts.append("""\
 ## Rules
 
-1. Use python_exec to call skills — do NOT call skill methods
-   directly as tools. It won't work.
+1. Do NOT call skill methods directly as tools — always use
+   python_exec. It won't work otherwise.
 2. Do NOT output code blocks or ```tool_outputs``` — use python_exec.
 3. For smart-home commands (turn on/off, lights, locks, media), look
    for HomeAssistantSkill. Pass the device/entity name as the 'name'
    kwarg.
 
 If there are multiple possible skills, choose the most relevant
-and proceed unless you NEED clarification.
-"""
+and proceed unless you NEED clarification.""")
 
-# Remote-mode template intentionally omits loaded skill listings.
-# In online mode, the Hub is authoritative for available skills and
-# device routing, so the model should discover via search_skills.
-ONLINE_SYSTEM_PROMPT_TEMPLATE = """\
-You are Strawberry, a helpful AI assistant connected to the Hub.
-You can access skills across all connected devices.
-
-Skills are pythonic classes that contain methods you can run via
-the `python_exec` tool.
-
-## Available Tools
-
-You have exactly 3 tools and a set of python skills:
-1) search_skills(query) - Find skills by keyword
-   (searches method names and descriptions).
-2) describe_function(path) - Get the full signature for a skill
-   method. Call this if you need more information about a skill
-   function, e.g. after an error.
-3) python_exec(code) - Execute Python code, including skills.
-
-## Critical Notes
-
-- Try to be helpful. If the user requests something that you suspect
-  requires a skill, call `search_skills` to find it.
-- Do NOT say "I can't" until you have searched for skills and
-  confirmed the skill does not exist. It may take multiple searches.
-- After you find the right skill, execute it immediately.
-- After tool calls complete, ALWAYS provide a final natural-language
-  answer.
-
-## search_skills
-
-- search_skills(query) - Find skill functions by keyword.
-  Returns skill methods, devices they belong to, and a short
-  description.
-
-## describe_function
-
-- describe_function(path) - Get the full signature and docstring.
-
-## python_exec
-
-- Use the `devices` object for remote devices:
-  `devices.<device>.<SkillClass>.<method>(...)`
-- print the final output so the result is surfaced to you.
-- Do NOT use offline-mode syntax like `device.<Skill>.<method>`.
-
-## Searching Tips
-
-search_skills matches against method names, skill names, and
-descriptions. Search by **action** or **verb**.
-- If a skill doesn't show up on the first try, continue searching
-  and experiment with different keywords.
-
-## Rules
-
-1. Use python_exec to call skills — do NOT call skill methods
-   directly as tools. It won't work.
-2. Do NOT output code blocks or ```tool_outputs``` — use python_exec.
-3. For smart-home commands (turn on/off, lights, locks, media), look
-   for HomeAssistantSkill. Pass the device/entity name as 'name'.
-
-If there are multiple possible devices or skills, choose the most
-relevant and proceed unless you NEED clarification.
-"""
+    return "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -218,72 +235,57 @@ relevant and proceed unless you NEED clarification.
 # ---------------------------------------------------------------------------
 
 
-def build_mode_switch_message(to_mode: str) -> str:
+def build_mode_switch_message(
+    to_mode: str,
+    skills: List["SkillInfo"] | None = None,
+) -> str:
     """Build a conversation-level message explaining a mode switch.
 
-    This message is injected into the session as a user-role context message
-    so the LLM sees it regardless of which runner (Hub or local) processes
-    the next turn.
+    Composes a short mode-change notice followed by the full tools
+    section so the LLM is re-grounded on available skills and syntax.
+
+    This message is injected into the session as a user-role context
+    message so the LLM sees it regardless of which runner (Hub or
+    local) processes the next turn.
 
     Args:
-        to_mode: Target mode — ``"online"`` or ``"offline"``.
+        to_mode: Target mode — ``"online"`` or ``"local"``.
+        skills: Loaded skills list. Passed to :func:`build_tools_section`
+            for potential skill catalog embedding. Defaults to ``[]``.
 
     Returns:
-        Formatted mode switch notice string.
+        Formatted mode switch notice + tools section string.
     """
+    from .sandbox.proxy_gen import SkillMode
+
+    if skills is None:
+        skills = []
+
     if to_mode == "online":
-        return (
+        notice = (
             "[System Notice: Switched to ONLINE mode]\n"
             "Connected to the Hub. Skills from all connected devices "
             "are now available.\n"
             "\n"
-            "SYNTAX CHANGE — use "
-            "`devices.<Device>.<SkillName>.<method>(...)` "
-            "(not `device.*`).\n"
-            "\n"
-            "Your 3 tools still work:\n"
-            "- search_skills(query) — find skills across all devices\n"
-            "- describe_function(path) — get full signature\n"
-            "- python_exec(code) — execute skill calls\n"
-            "\n"
             "IMPORTANT: The available skills may differ from before. "
             "Use search_skills to find the correct skill path and "
-            "device name before calling anything.\n"
-            "\n"
-            "Example:\n"
-            '  python_exec({"code": "print(devices.my_device.WeatherSkill'
-            ".get_current_weather(location='Seattle'))\"})\n"
-            "\n"
-            "Do NOT use `device.*` syntax (local-only). "
-            "Do NOT call skill methods directly as tool calls — "
-            "always use python_exec."
+            "device name before calling anything."
         )
-    # offline
-    return (
-        "[System Notice: Switched to LOCAL mode]\n"
-        "You are now running locally. All local skills on this device "
-        "are fully available and working.\n"
-        "\n"
-        "SYNTAX CHANGE — use `device.<SkillName>.<method>(...)` "
-        "(not `devices.*`).\n"
-        "\n"
-        "Your 3 tools still work:\n"
-        "- search_skills(query) — find available local skills\n"
-        "- describe_function(path) — get full signature\n"
-        "- python_exec(code) — execute skill calls\n"
-        "\n"
-        "IMPORTANT: The available skills may differ from before. "
-        "Use search_skills to find the correct skill path before "
-        "calling anything.\n"
-        "\n"
-        "Example:\n"
-        '  python_exec({"code": "print(device.WeatherSkill'
-        ".get_current_weather(location='Seattle'))\"})\n"
-        "\n"
-        "Do NOT use `devices.*` syntax (Hub is disconnected). "
-        "Do NOT call skill methods directly as tool calls — "
-        "always use python_exec."
-    )
+        skill_mode = SkillMode.REMOTE
+    else:
+        notice = (
+            "[System Notice: Switched to LOCAL mode]\n"
+            "You are now running locally. All local skills on this device "
+            "are fully available and working.\n"
+            "\n"
+            "IMPORTANT: The available skills may differ from before. "
+            "Use search_skills to find the correct skill path before "
+            "calling anything."
+        )
+        skill_mode = SkillMode.LOCAL
+
+    tools = build_tools_section(skill_mode, skills)
+    return f"{notice}\n\n{tools}"
 
 
 # ---------------------------------------------------------------------------
@@ -291,12 +293,12 @@ def build_mode_switch_message(to_mode: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _count_total_functions(skills: List[SkillInfo]) -> int:
+def _count_total_functions(skills: List["SkillInfo"]) -> int:
     """Count total methods across all loaded skills."""
     return sum(len(s.methods) for s in skills)
 
 
-def _build_local_skill_descriptions(skills: List[SkillInfo]) -> str:
+def _build_local_skill_descriptions(skills: List["SkillInfo"]) -> str:
     """Build compact local skill descriptions for the system prompt.
 
     Only called when total functions <= MAX_FUNCTIONS_FOR_EMBED.
@@ -345,77 +347,58 @@ def _build_local_skill_descriptions(skills: List[SkillInfo]) -> str:
 
 
 def build_system_prompt(
-    skills: List[SkillInfo],
-    mode: SkillMode,
+    skills: List["SkillInfo"],
+    mode: "SkillMode",
     device_name: str,
     custom_template: Optional[str] = None,
-    mode_notice: Optional[str] = None,
 ) -> str:
     """Generate the system prompt with skill descriptions.
 
-    In LOCAL mode the prompt uses ``DEFAULT_SYSTEM_PROMPT_TEMPLATE``.
-    If the total number of skill functions is ≤ ``MAX_FUNCTIONS_FOR_EMBED``,
-    a compact skill catalog is embedded in the prompt so the LLM can
-    skip the search step for common requests.  Above that threshold the
-    ``{skill_descriptions}`` placeholder is left empty and the LLM must
-    use ``search_skills`` for all discovery (Claude tool-search style).
+    Composes ``ROLE_SECTION`` + ``build_tools_section(mode, skills)``
+    for the initial system prompt sent to the LLM.
 
-    In REMOTE mode the prompt uses ``ONLINE_SYSTEM_PROMPT_TEMPLATE``
-    which never embeds skills — the Hub is authoritative.
+    When *custom_template* is provided it takes precedence — the
+    ``{skill_descriptions}`` placeholder is filled with the embedded
+    skill catalog (if applicable) and the result is returned as-is.
 
     Args:
         skills: List of loaded SkillInfo objects.
         mode: Current skill runtime mode (LOCAL or REMOTE).
-        device_name: Normalized device name for prefix generation.
+        device_name: Normalized device name (reserved for future use).
         custom_template: Optional custom template (must contain
-            ``{skill_descriptions}``). Falls back to the mode's
-            default template.
-        mode_notice: Optional extra notice prepended to the prompt.
-            **Deprecated** — prefer injecting a mode-switch message
-            into the conversation via :func:`build_mode_switch_message`.
+            ``{skill_descriptions}``). Falls back to the composable
+            default.
 
     Returns:
         Complete system prompt string for the LLM.
     """
     from .sandbox.proxy_gen import SkillMode
 
-    # Choose template
+    # Custom template path (legacy — fills {skill_descriptions})
     if custom_template:
-        template = custom_template
-    elif mode == SkillMode.LOCAL:
-        template = DEFAULT_SYSTEM_PROMPT_TEMPLATE
-    else:
-        template = ONLINE_SYSTEM_PROMPT_TEMPLATE
-
-    # Build skill catalog (LOCAL only, below threshold)
-    skill_text = ""
-    if mode == SkillMode.LOCAL:
-        total_fns = _count_total_functions(skills)
-        if total_fns <= MAX_FUNCTIONS_FOR_EMBED:
-            skill_text = _build_local_skill_descriptions(skills)
-        else:
-            logger.info(
-                "Total functions (%d) > MAX_FUNCTIONS_FOR_EMBED (%d); "
-                "omitting embedded skill catalog from system prompt.",
-                total_fns,
-                MAX_FUNCTIONS_FOR_EMBED,
+        skill_text = ""
+        if mode == SkillMode.LOCAL:
+            total_fns = _count_total_functions(skills)
+            if total_fns <= MAX_FUNCTIONS_FOR_EMBED:
+                skill_text = _build_local_skill_descriptions(skills)
+            else:
+                logger.info(
+                    "Total functions (%d) > MAX_FUNCTIONS_FOR_EMBED (%d); "
+                    "omitting embedded skill catalog from custom template.",
+                    total_fns,
+                    MAX_FUNCTIONS_FOR_EMBED,
+                )
+        try:
+            return custom_template.format(skill_descriptions=skill_text)
+        except KeyError:
+            logger.warning(
+                "Custom system prompt template missing "
+                "{skill_descriptions} placeholder; using as-is."
             )
+            return custom_template
 
-    # Fill template
-    try:
-        prompt = template.format(skill_descriptions=skill_text)
-    except KeyError:
-        logger.warning(
-            "System prompt template missing {skill_descriptions} "
-            "placeholder; continuing without embedded catalog."
-        )
-        prompt = template
-
-    # Prepend optional mode notice (deprecated but still supported)
-    if mode_notice:
-        prompt = f"{mode_notice.strip()}\n\n{prompt}"
-
-    return prompt
+    # Default composable path
+    return f"{ROLE_SECTION}\n\n{build_tools_section(mode, skills)}"
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +406,7 @@ def build_system_prompt(
 # ---------------------------------------------------------------------------
 
 
-def build_example_call(skill_name: str, method: SkillMethod) -> str:
+def build_example_call(skill_name: str, method: "SkillMethod") -> str:
     """Build a ready-to-use python_exec example for a skill method.
 
     Parses the method signature to generate placeholder arguments so the
@@ -453,13 +436,17 @@ def build_example_call(skill_name: str, method: SkillMethod) -> str:
         param = param.strip()
         if not param:
             continue
-        # Skip **kwargs params and the bare '*' keyword-only separator
-        if param.startswith("**") or param == "*":
+        # Skip *args, **kwargs params, and the bare '*' keyword-only separator
+        if param.startswith("*"):
             continue
 
         # Extract name and optional default
         # Formats: "name: type", "name: type = default", "name=default"
         name = param.split(":")[0].split("=")[0].strip()
+
+        # Skip typical instance/class bound arguments
+        if name in ("self", "cls"):
+            continue
 
         # Check for a default value
         if "=" in param:

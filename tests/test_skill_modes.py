@@ -244,4 +244,4 @@ async def test_offline_mode_blocks_remote_proxy_usage(tmp_path: Path) -> None:
     result = svc.execute_code("print(devices.other_pc.DemoSkill.ping())")
     assert result.success is False
     assert result.error
-    assert "OFFLINE/LOCAL" in result.error
+    assert "local mode" in result.error

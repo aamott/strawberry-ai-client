@@ -52,7 +52,7 @@ class Gatekeeper:
         """Set or update the device manager for remote calls.
 
         TODO: This method exists but is not currently called anywhere.
-        The online/offline mode switching is handled differently:
+        The online/local mode switching is handled differently:
         - SkillService uses DeviceProxy (local) or DeviceManagerProxy (online)
         - Mode is determined at initialization, not switched dynamically
         - Consider removing or integrating this if dynamic mode switching is needed.

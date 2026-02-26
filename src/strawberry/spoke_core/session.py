@@ -12,7 +12,7 @@ class ChatSession:
     """Holds state for a single chat session.
 
     Attributes:
-        last_mode: The mode ("online" or "offline") when the last message
+        last_mode: The mode ("online" or "local") when the last message
             was processed. ``None`` means no message has been sent yet.
             Used to detect mode switches mid-conversation.
     """

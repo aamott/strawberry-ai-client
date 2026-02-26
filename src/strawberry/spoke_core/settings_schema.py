@@ -17,7 +17,6 @@ from strawberry.shared.settings import (
     get_field_by_key,
     group_fields,
 )
-from strawberry.skills.prompt import DEFAULT_SYSTEM_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
     from strawberry.shared.settings import SettingsManager
@@ -145,12 +144,13 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         key="llm.system_prompt",
         label="System Prompt",
         type=FieldType.MULTILINE,
-        default=DEFAULT_SYSTEM_PROMPT_TEMPLATE,
-        description="System prompt template for the LLM",
+        default="",
+        description="Custom system prompt template for the LLM",
         group="llm",
         metadata={
             "help_text": (
-                "The system prompt sent to the LLM in offline mode.\n"
+                "Custom system prompt template for the LLM.\n"
+                "Leave empty to use the built-in composable prompt.\n"
                 "Use {skill_descriptions} as a placeholder for the\n"
                 "auto-generated list of loaded skills.\n\n"
                 "Reset to the built-in default by clearing this field."
@@ -208,10 +208,11 @@ def _migrate_v1_to_v2(values: Dict[str, Any]) -> Dict[str, Any]:
     - Replace empty llm.system_prompt with the default template.
     - Remove dead keys that were never wired to code.
     """
-    # Replace empty system prompt with the actual default
+    # Clear empty/whitespace-only system prompts so the built-in
+    # composable prompt is used instead.
     prompt = values.get("llm.system_prompt", "")
     if not prompt or not prompt.strip():
-        values["llm.system_prompt"] = DEFAULT_SYSTEM_PROMPT_TEMPLATE
+        values["llm.system_prompt"] = ""
 
     # Remove dead keys
     for key in _V1_DEAD_KEYS:

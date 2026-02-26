@@ -146,7 +146,7 @@ class TestOfflineModeTracker:
         tracker.on_response(fallback)
 
         status = tracker.get_status_text("llama3.2:3b")
-        assert "Offline" in status
+        assert "Local" in status
         assert "llama3.2:3b" in status
 
     def test_pending_sync_count(self):

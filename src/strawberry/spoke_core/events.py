@@ -88,7 +88,7 @@ class ConnectionChanged(CoreEvent):
 
 @dataclass
 class ModeChanged(CoreEvent):
-    """Online/offline mode changed."""
+    """Online/local mode changed."""
 
     online: bool
     message: str = ""

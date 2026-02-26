@@ -43,7 +43,7 @@ class TestRunner:
     def __init__(
         self,
         config_dir: Optional[Path] = None,
-        offline: bool = False,
+        local: bool = False,
         filter_logs: bool = True,
         on_event: Optional[Callable[[str, Any], None]] = None,
         on_skill_loaded: Optional[Callable] = None,
@@ -53,7 +53,7 @@ class TestRunner:
 
         Args:
             config_dir: Path to config directory. Defaults to project config/.
-            offline: If True, skip hub connection.
+            local: If True, skip hub connection.
             filter_logs: If True, suppress TensorZero/Rust logs.
             on_event: Optional callback for streaming events.
                 Called with (event_type, data) for real-time output.
@@ -64,7 +64,7 @@ class TestRunner:
                 Signature: (source, error, skill_name_if_known).
         """
         self._config_dir = config_dir
-        self._offline = offline
+        self._local = local
         self._filter_logs = filter_logs
         self._on_event = on_event
         self._on_skill_loaded = on_skill_loaded
@@ -109,8 +109,8 @@ class TestRunner:
         # Subscribe to events
         self._subscription = self._core.subscribe(self._handle_event)
 
-        # Connect to hub unless offline mode
-        if not self._offline:
+        # Connect to hub unless local mode
+        if not self._local:
             try:
                 await self._core.connect_hub()
             except Exception as e:

@@ -52,7 +52,7 @@ class Session:
     is_synced: bool = False
     sync_status: SyncStatus = SyncStatus.LOCAL
     deleted_at: Optional[datetime] = None  # Soft delete timestamp
-    # Mode tracking: "online" | "offline" | None
+    # Mode tracking: "online" | "local" | None
     # Tracks which mode prompt was last sent to avoid duplicates
     last_mode_prompt: Optional[str] = None
 
@@ -138,7 +138,7 @@ class LocalSessionDB:
                 sequence_number INTEGER DEFAULT 0
             );
 
-            -- Sync queue for offline operations
+            -- Sync queue for local operations
             CREATE TABLE IF NOT EXISTS sync_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 operation TEXT NOT NULL,

@@ -3,7 +3,7 @@
 Usage:
     strawberry-cli                              # Interactive mode
     strawberry-cli "What time is it?"            # One-shot message
-    strawberry-cli "message" --json --offline    # JSON output, offline
+    strawberry-cli "message" --json --local      # JSON output, local mode
     strawberry-cli --settings                    # Settings menu
     strawberry-cli skill-tester                  # Skill interaction tester
 """
@@ -131,7 +131,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--offline",
+        "--local",
         action="store_true",
         help="Skip hub connection, force local mode.",
     )
@@ -288,7 +288,7 @@ async def run_one_shot(
     json_output: bool,
     quiet: bool,
     compact: bool,
-    offline: bool,
+    local: bool,
     timeout: int,
     config_dir: Path | None,
     verbose: bool = False,
@@ -300,7 +300,7 @@ async def run_one_shot(
         json_output: If True, output JSON.
         quiet: If True, only print final response.
         compact: If True, use compact formatter with truncation.
-        offline: If True, skip hub connection.
+        local: If True, skip hub connection.
         timeout: Timeout in seconds.
         config_dir: Config directory path.
         verbose: If True, show full tool calls and system prompt.
@@ -326,7 +326,7 @@ async def run_one_shot(
 
     runner = TestRunner(
         config_dir=config_dir,
-        offline=offline,
+        local=local,
         filter_logs=True,
         on_event=stream_handler,
         on_skill_loaded=skill_cb,
@@ -383,7 +383,7 @@ async def run_one_shot(
 
 
 async def run_interactive(
-    offline: bool,
+    local: bool,
     timeout: int,
     config_dir: Path | None,
     verbose: bool = False,
@@ -394,7 +394,7 @@ async def run_interactive(
     slash commands, voice support, and event notifications.
 
     Args:
-        offline: If True, skip hub connection.
+        local: If True, skip hub connection.
         timeout: Timeout in seconds.
         config_dir: Config directory path.
         verbose: If True, show full tool calls and system prompt.
@@ -405,7 +405,7 @@ async def run_interactive(
     from .interactive import InteractiveCLI
 
     cli = InteractiveCLI(
-        offline=offline,
+        local=local,
         timeout=timeout,
         config_dir=config_dir,
         verbose=verbose,
@@ -589,7 +589,7 @@ def main() -> None:
     if args.interactive:
         exit_code = asyncio.run(
             run_interactive(
-                offline=args.offline,
+                local=args.local,
                 timeout=args.timeout,
                 config_dir=args.config,
                 verbose=args.verbose,
@@ -602,7 +602,7 @@ def main() -> None:
                 json_output=args.json,
                 quiet=args.quiet,
                 compact=args.compact,
-                offline=args.offline,
+                local=args.local,
                 timeout=args.timeout,
                 config_dir=args.config,
                 verbose=args.verbose,

@@ -173,7 +173,7 @@ def _resolve_providers(
             prov.model_name = desc.default_model
             # Enable Hub only when an auth token is configured.
             # This avoids TensorZero startup validation failures on machines
-            # running fully offline without a Hub token.
+            # running locally without a Hub token.
             hub_token = settings.get("spoke_core", "hub.token", "")
             if not hub_token:
                 # Legacy compatibility for older setups still using HUB_TOKEN.
@@ -367,7 +367,7 @@ def generate_toml(settings: "SettingsManager") -> str:
 
     all_providers = _resolve_providers(settings, fallback_order)
 
-    # Split into online (with hub) and offline (without hub) lists
+    # Split into online (with hub) and local (without hub) lists
     online_providers = all_providers
     offline_providers = [p for p in all_providers if p.descriptor.id != "hub"]
 
@@ -403,9 +403,9 @@ def generate_toml(settings: "SettingsManager") -> str:
         parts.append("# Online: Hub primary, cloud + local fallbacks")
         parts.append(_build_function_section("chat", online_providers))
 
-    # Offline function (chat_local) — excludes Hub
+    # Local function (chat_local) — excludes Hub
     if offline_providers:
-        parts.append("# Offline: cloud + local only (no Hub)")
+        parts.append("# Local: cloud + local only (no Hub)")
         parts.append(_build_function_section("chat_local", offline_providers))
 
     return "\n".join(parts)

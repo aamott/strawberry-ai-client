@@ -404,7 +404,7 @@ REMOTE_MODE_PROMPT = (
     "1. Use python_exec to call skills.\n"
     "2. Always use print() to see output.\n"
     "3. After tool calls, respond naturally to the user.\n"
-    "4. Search for skills first if you're not sure what's available."
+    "4. Use search_skills(query) first if you're not sure what's available."
 )
 
 LOCAL_MODE_PROMPT = (
@@ -417,9 +417,9 @@ LOCAL_MODE_PROMPT = (
     "1. Use python_exec to call skills.\n"
     "2. Always use print() to see output.\n"
     "3. After tool calls, respond naturally to the user.\n"
-    "4. Search for skills first if you're not sure what's available."
+    "4. Use search_skills(query) first if you're not sure what's available."
 )
 
-# Backward-compatible constants — now generated from prompt.py
-SWITCHED_TO_REMOTE_PROMPT = build_mode_switch_message("online")
-SWITCHED_TO_LOCAL_PROMPT = build_mode_switch_message("offline")
+# Backward-compatible constants — generated from prompt.py with no skills
+SWITCHED_TO_REMOTE_PROMPT = build_mode_switch_message("online", skills=[])
+SWITCHED_TO_LOCAL_PROMPT = build_mode_switch_message("local", skills=[])

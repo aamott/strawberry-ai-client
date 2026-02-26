@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..hub import HubClient
 from .loader import SkillInfo, SkillLoader
-from .prompt import DEFAULT_SYSTEM_PROMPT_TEMPLATE, build_system_prompt
+from .prompt import build_system_prompt
 from .proxies import (
     DeviceProxy,
     SkillCallResult,
@@ -39,8 +39,6 @@ class SkillService:
     - Parse and execute skill calls from LLM responses
     """
 
-    # Re-export from prompt module for backward compatibility
-    DEFAULT_SYSTEM_PROMPT_TEMPLATE = DEFAULT_SYSTEM_PROMPT_TEMPLATE
 
     def __init__(
         self,
@@ -66,7 +64,7 @@ class SkillService:
             allow_unsafe_exec: Allow direct execution outside sandbox
             custom_system_prompt: Custom system prompt template. Must
                 contain ``{skill_descriptions}`` placeholder. If None
-                or empty, DEFAULT_SYSTEM_PROMPT_TEMPLATE is used.
+                or empty, the default composable prompt is used.
             settings_manager: Optional SettingsManager for skill settings.
         """
         self.skills_path = Path(skills_path)
@@ -390,13 +388,13 @@ class SkillService:
             except Exception as e:
                 logger.error(f"Heartbeat failed: {e}")
 
-    def get_system_prompt(self, *, mode_notice: Optional[str] = None) -> str:
+    def get_system_prompt(self) -> str:
         """Generate the system prompt with skill descriptions.
 
         Delegates to :func:`prompt.build_system_prompt`.
 
         Returns:
-            System prompt string for LLM
+            System prompt string for LLM.
         """
         self._ensure_skills_loaded()
         skills = self.get_all_skills()
@@ -406,7 +404,6 @@ class SkillService:
             mode=mode,
             device_name=self.device_name,
             custom_template=self._custom_system_prompt,
-            mode_notice=mode_notice,
         )
 
     def set_custom_system_prompt(self, prompt: Optional[str]) -> None:
@@ -550,13 +547,13 @@ class SkillService:
 
         mode = self._get_effective_mode()
 
-        # Enforce mode correctness: in OFFLINE/LOCAL mode there is no Hub client, so
+        # Enforce mode correctness: in LOCAL mode there is no Hub client, so
         # devices.* and device_manager.* must not be used.
         if mode == SkillMode.LOCAL and ("devices." in code or "device_manager." in code):
             return SkillCallResult(
                 success=False,
                 error=(
-                    "Remote devices proxy is unavailable in OFFLINE/LOCAL mode. "
+                    "Remote devices proxy is unavailable in local mode. "
                     "Use device.<SkillName>.<method>(...) instead of devices.*"
                 ),
             )

@@ -1,21 +1,19 @@
-"""Tests for online/offline mode switching.
+"""Tests for online/local mode switching.
 
 Covers:
 - build_mode_switch_message() content
+- build_tools_section() composability
 - ChatSession.last_mode tracking
 - SpokeCore._agent_loop mode switch injection
-- Prompt composability (BASE_ROLE_PROMPT, TOOL_LIST, etc.)
+- Prompt composability (ROLE_SECTION, build_tools_section)
 """
 
 from strawberry.skills.prompt import (
-    BASE_ROLE_PROMPT,
-    COMMON_RULES,
-    COMMON_SEARCH_TIPS,
-    DEFAULT_SYSTEM_PROMPT_TEMPLATE,
-    OFFLINE_TOOL_INSTRUCTIONS,
-    TOOL_LIST,
+    ROLE_SECTION,
     build_mode_switch_message,
+    build_tools_section,
 )
+from strawberry.skills.sandbox.proxy_gen import SkillMode
 from strawberry.spoke_core.session import ChatSession
 
 # =============================================================================
@@ -28,95 +26,95 @@ class TestBuildModeSwitchMessage:
 
     def test_online_message_mentions_devices_syntax(self):
         """Online switch should tell LLM to use devices.* syntax."""
-        msg = build_mode_switch_message("online")
+        msg = build_mode_switch_message("online", skills=[])
         assert "devices." in msg
         assert "ONLINE" in msg
 
     def test_online_message_warns_against_local_syntax(self):
         """Online switch should tell LLM not to use device.* syntax."""
-        msg = build_mode_switch_message("online")
+        msg = build_mode_switch_message("online", skills=[])
         assert "device.*" in msg
         assert "Do NOT" in msg
 
-    def test_offline_message_mentions_device_syntax(self):
-        """Offline switch should tell LLM to use device.* syntax."""
-        msg = build_mode_switch_message("offline")
+    def test_local_message_mentions_device_syntax(self):
+        """Local switch should tell LLM to use device.* syntax."""
+        msg = build_mode_switch_message("local", skills=[])
         assert "device." in msg
         assert "LOCAL" in msg
 
-    def test_offline_message_warns_against_remote_syntax(self):
-        """Offline switch should tell LLM not to use devices.* syntax."""
-        msg = build_mode_switch_message("offline")
+    def test_local_message_warns_against_remote_syntax(self):
+        """Local switch should tell LLM not to use devices.* syntax."""
+        msg = build_mode_switch_message("local", skills=[])
         assert "devices.*" in msg
         assert "Do NOT" in msg
 
     def test_online_message_mentions_tools(self):
         """Online switch should reference the 3 tools."""
-        msg = build_mode_switch_message("online")
+        msg = build_mode_switch_message("online", skills=[])
         assert "search_skills" in msg
         assert "describe_function" in msg
         assert "python_exec" in msg
 
-    def test_offline_message_mentions_tools(self):
-        """Offline switch should reference the 3 tools."""
-        msg = build_mode_switch_message("offline")
+    def test_local_message_mentions_tools(self):
+        """Local switch should reference the 3 tools."""
+        msg = build_mode_switch_message("local", skills=[])
         assert "search_skills" in msg
         assert "describe_function" in msg
         assert "python_exec" in msg
 
     def test_online_message_is_system_notice(self):
         """Online switch should be formatted as a system notice."""
-        msg = build_mode_switch_message("online")
+        msg = build_mode_switch_message("online", skills=[])
         assert msg.startswith("[System Notice:")
 
-    def test_offline_message_is_system_notice(self):
-        """Offline switch should be formatted as a system notice."""
-        msg = build_mode_switch_message("offline")
+    def test_local_message_is_system_notice(self):
+        """Local switch should be formatted as a system notice."""
+        msg = build_mode_switch_message("local", skills=[])
         assert msg.startswith("[System Notice:")
 
     def test_online_message_requires_skill_rediscovery(self):
         """Online switch should instruct LLM to re-search for skills."""
-        msg = build_mode_switch_message("online")
+        msg = build_mode_switch_message("online", skills=[])
         assert "search_skills" in msg
         assert "may differ" in msg
 
-    def test_offline_message_requires_skill_rediscovery(self):
-        """Offline switch should instruct LLM to re-search for skills."""
-        msg = build_mode_switch_message("offline")
+    def test_local_message_requires_skill_rediscovery(self):
+        """Local switch should instruct LLM to re-search for skills."""
+        msg = build_mode_switch_message("local", skills=[])
         assert "search_skills" in msg
         assert "may differ" in msg
 
     def test_online_message_enforces_python_exec(self):
         """Online switch should reinforce that skills go through python_exec."""
-        msg = build_mode_switch_message("online")
+        msg = build_mode_switch_message("online", skills=[])
         assert "python_exec" in msg
         assert "Do NOT call skill methods directly" in msg
 
-    def test_offline_message_enforces_python_exec(self):
-        """Offline switch should reinforce that skills go through python_exec."""
-        msg = build_mode_switch_message("offline")
+    def test_local_message_enforces_python_exec(self):
+        """Local switch should reinforce that skills go through python_exec."""
+        msg = build_mode_switch_message("local", skills=[])
         assert "python_exec" in msg
         assert "Do NOT call skill methods directly" in msg
 
-    def test_offline_message_has_example(self):
-        """Offline switch should include a python_exec example with device.* syntax."""
-        msg = build_mode_switch_message("offline")
+    def test_local_message_has_example(self):
+        """Local switch should include a python_exec example with device.* syntax."""
+        msg = build_mode_switch_message("local", skills=[])
         assert "device.WeatherSkill" in msg
 
     def test_online_message_has_example(self):
         """Online switch should include a python_exec example with devices.* syntax."""
-        msg = build_mode_switch_message("online")
+        msg = build_mode_switch_message("online", skills=[])
         assert "devices." in msg
         assert "WeatherSkill" in msg
 
-    def test_offline_message_emphasizes_skills_work(self):
-        """Offline switch should emphasize local skills are functional."""
-        msg = build_mode_switch_message("offline")
+    def test_local_message_emphasizes_skills_work(self):
+        """Local switch should emphasize local skills are functional."""
+        msg = build_mode_switch_message("local", skills=[])
         assert "fully available and working" in msg
 
     def test_online_message_emphasizes_skills_available(self):
         """Online switch should emphasize skills from all devices are available."""
-        msg = build_mode_switch_message("online")
+        msg = build_mode_switch_message("online", skills=[])
         assert "all connected devices" in msg
 
 
@@ -136,8 +134,8 @@ class TestSessionLastMode:
     def test_last_mode_can_be_set(self):
         """Should be able to set last_mode."""
         session = ChatSession()
-        session.last_mode = "offline"
-        assert session.last_mode == "offline"
+        session.last_mode = "local"
+        assert session.last_mode == "local"
 
     def test_last_mode_survives_messages(self):
         """Adding messages should not affect last_mode."""
@@ -150,13 +148,13 @@ class TestSessionLastMode:
     def test_clear_resets_messages_not_mode(self):
         """clear() removes messages but should not affect last_mode."""
         session = ChatSession()
-        session.last_mode = "offline"
+        session.last_mode = "local"
         session.add_message("user", "test")
         session.clear()
         assert len(session.messages) == 0
         # last_mode is preserved — it tracks the mode of the last turn,
         # not the message content
-        assert session.last_mode == "offline"
+        assert session.last_mode == "local"
 
 
 # =============================================================================
@@ -167,50 +165,62 @@ class TestSessionLastMode:
 class TestPromptParts:
     """Tests that the prompt parts compose correctly."""
 
-    def test_base_role_prompt_is_short(self):
-        """BASE_ROLE_PROMPT should be a brief identity statement."""
-        assert "Strawberry" in BASE_ROLE_PROMPT
-        assert len(BASE_ROLE_PROMPT) < 200
+    def test_role_section_has_identity(self):
+        """ROLE_SECTION should identify as Strawberry."""
+        assert "Strawberry" in ROLE_SECTION
 
-    def test_tool_list_mentions_three_tools(self):
-        """TOOL_LIST should mention all 3 tools."""
-        assert "search_skills" in TOOL_LIST
-        assert "describe_function" in TOOL_LIST
-        assert "python_exec" in TOOL_LIST
+    def test_role_section_has_behavioral_guidelines(self):
+        """ROLE_SECTION should have behavioral guidelines."""
+        assert "search_skills" in ROLE_SECTION
+        assert "Do NOT say" in ROLE_SECTION
 
-    def test_offline_instructions_use_device_syntax(self):
-        """OFFLINE_TOOL_INSTRUCTIONS should use device.* syntax."""
-        assert "device." in OFFLINE_TOOL_INSTRUCTIONS
-        # device_manager is mentioned only in a prohibition ("Do NOT use")
-        assert "Do NOT use" in OFFLINE_TOOL_INSTRUCTIONS
-        assert "device_manager" in OFFLINE_TOOL_INSTRUCTIONS
+    def test_role_section_has_search_tips(self):
+        """ROLE_SECTION should have search guidance."""
+        assert "Searching Tips" in ROLE_SECTION
+        assert "action" in ROLE_SECTION.lower()
 
-    def test_offline_instructions_forbid_remote(self):
-        """OFFLINE_TOOL_INSTRUCTIONS should forbid devices.* syntax."""
-        assert "Do NOT use devices.*" in OFFLINE_TOOL_INSTRUCTIONS
+    def test_role_section_is_mode_agnostic(self):
+        """ROLE_SECTION should contain no mode-specific syntax."""
+        assert "device." not in ROLE_SECTION
+        assert "devices." not in ROLE_SECTION
+        assert "local mode" not in ROLE_SECTION.lower()
+        assert "online mode" not in ROLE_SECTION.lower()
 
-    def test_common_search_tips_present(self):
-        """COMMON_SEARCH_TIPS should have search guidance."""
-        assert "search_skills" in COMMON_SEARCH_TIPS
-        assert "action" in COMMON_SEARCH_TIPS.lower()
+    def test_local_tools_section_mentions_three_tools(self):
+        """Local tools section should mention all 3 tools."""
+        section = build_tools_section(SkillMode.LOCAL, [])
+        assert "search_skills" in section
+        assert "describe_function" in section
+        assert "python_exec" in section
 
-    def test_common_rules_present(self):
-        """COMMON_RULES should have behavioral rules."""
-        assert "python_exec" in COMMON_RULES
-        assert "concise" in COMMON_RULES.lower()
+    def test_local_tools_section_uses_device_syntax(self):
+        """Local tools section should use device.* syntax."""
+        section = build_tools_section(SkillMode.LOCAL, [])
+        assert "device." in section
+        assert "Do NOT use `devices.*`" in section
 
-    def test_default_template_includes_all_parts(self):
-        """DEFAULT_SYSTEM_PROMPT_TEMPLATE should compose all parts."""
-        template = DEFAULT_SYSTEM_PROMPT_TEMPLATE
-        assert BASE_ROLE_PROMPT in template
-        assert "search_skills" in template
-        assert "device." in template
-        assert "{skill_descriptions}" in template
+    def test_online_tools_section_uses_devices_syntax(self):
+        """Online tools section should use devices.* syntax."""
+        section = build_tools_section(SkillMode.REMOTE, [])
+        assert "devices." in section
+        assert "device.*" in section  # mentioned in "Do NOT use device.*"
 
-    def test_default_template_has_offline_instructions(self):
-        """Template should include offline-specific instructions."""
-        assert "OFFLINE" in DEFAULT_SYSTEM_PROMPT_TEMPLATE
-        assert "Do NOT use devices.*" in DEFAULT_SYSTEM_PROMPT_TEMPLATE
+    def test_local_tools_section_has_examples(self):
+        """Local tools section should include usage examples."""
+        section = build_tools_section(SkillMode.LOCAL, [])
+        assert "Examples" in section
+        assert "WeatherSkill" in section
+
+    def test_local_tools_section_has_rules(self):
+        """Local tools section should include rules."""
+        section = build_tools_section(SkillMode.LOCAL, [])
+        assert "Rules" in section
+        assert "python_exec" in section
+
+    def test_online_tools_section_has_rules(self):
+        """Online tools section should include rules."""
+        section = build_tools_section(SkillMode.REMOTE, [])
+        assert "Rules" in section
 
 
 # =============================================================================
@@ -230,7 +240,9 @@ class TestModeSwitchInjection:
     def _simulate_send(session: ChatSession, mode: str, user_text: str):
         """Simulate the send_message mode-switch + user-message logic."""
         if session.last_mode is not None and mode != session.last_mode:
-            session.add_message("user", build_mode_switch_message(mode))
+            session.add_message(
+                "user", build_mode_switch_message(mode, skills=[])
+            )
         session.last_mode = mode
         session.add_message("user", user_text)
 
@@ -238,9 +250,9 @@ class TestModeSwitchInjection:
         """First message in a session should not inject a mode switch."""
         session = ChatSession()
         assert session.last_mode is None
-        self._simulate_send(session, "offline", "hello")
+        self._simulate_send(session, "local", "hello")
 
-        assert session.last_mode == "offline"
+        assert session.last_mode == "local"
         # Only the user message, no switch notice
         assert len(session.messages) == 1
         assert session.messages[0].content == "hello"
@@ -248,17 +260,17 @@ class TestModeSwitchInjection:
     def test_same_mode_no_injection(self):
         """Same mode as last time should not inject a mode switch."""
         session = ChatSession()
-        self._simulate_send(session, "offline", "hello")
+        self._simulate_send(session, "local", "hello")
 
         initial_count = len(session.messages)
-        self._simulate_send(session, "offline", "again")
+        self._simulate_send(session, "local", "again")
         # Only the new user message added
         assert len(session.messages) == initial_count + 1
 
-    def test_offline_to_online_injects_message(self):
-        """Switching from offline to online should inject mode switch."""
+    def test_local_to_online_injects_message(self):
+        """Switching from local to online should inject mode switch."""
         session = ChatSession()
-        self._simulate_send(session, "offline", "hello")
+        self._simulate_send(session, "local", "hello")
         session.add_message("assistant", "hi there")
 
         self._simulate_send(session, "online", "turn on lamp")
@@ -268,13 +280,13 @@ class TestModeSwitchInjection:
         assert "ONLINE" in session.messages[2].content
         assert session.messages[3].content == "turn on lamp"
 
-    def test_online_to_offline_injects_message(self):
-        """Switching from online to offline should inject mode switch."""
+    def test_online_to_local_injects_message(self):
+        """Switching from online to local should inject mode switch."""
         session = ChatSession()
         self._simulate_send(session, "online", "hello")
         session.add_message("assistant", "hi there")
 
-        self._simulate_send(session, "offline", "what about now?")
+        self._simulate_send(session, "local", "what about now?")
 
         assert len(session.messages) == 4
         assert "LOCAL" in session.messages[2].content
@@ -286,7 +298,7 @@ class TestModeSwitchInjection:
         self._simulate_send(session, "online", "hello")
         session.add_message("assistant", "hi")
 
-        self._simulate_send(session, "offline", "what about now?")
+        self._simulate_send(session, "local", "what about now?")
 
         # Find the mode switch and user message
         switch_idx = next(
@@ -305,23 +317,23 @@ class TestModeSwitchInjection:
         """Multiple mode switches should inject a message each time."""
         session = ChatSession()
 
-        # First turn: offline (no injection)
-        self._simulate_send(session, "offline", "msg1")
+        # First turn: local (no injection)
+        self._simulate_send(session, "local", "msg1")
         assert len(session.messages) == 1
 
         # Switch to online: switch_notice + msg2
         self._simulate_send(session, "online", "msg2")
         assert len(session.messages) == 3  # msg1 + switch + msg2
 
-        # Switch back to offline: switch_notice + msg3
-        self._simulate_send(session, "offline", "msg3")
+        # Switch back to local: switch_notice + msg3
+        self._simulate_send(session, "local", "msg3")
         assert len(session.messages) == 5  # + switch + msg3
 
     def test_injected_message_role_is_user(self):
         """Mode switch messages should be injected as user role."""
         session = ChatSession()
         self._simulate_send(session, "online", "hello")
-        self._simulate_send(session, "offline", "bye")
+        self._simulate_send(session, "local", "bye")
 
         switch_msg = session.messages[1]  # switch is between hello and bye
         assert switch_msg.role == "user"
