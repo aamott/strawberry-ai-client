@@ -129,6 +129,22 @@ class HubAgentRunner(AgentRunner):
             await self._emit(CoreError(error=error_msg))
             return True, None  # signal caller to return None
 
+        if event_type == "injected_message":
+            role = str(event.get("role") or "user")
+            content = str(event.get("content") or "")
+            if content:
+                # We do not append it to `session.messages` here because the Hub maintains
+                # the single source of truth for the conversation history. However, we
+                # emit the event so the CLI can display it to the user.
+                await self._emit(
+                    MessageAdded(
+                        session_id=session.id,
+                        role=role,
+                        content=content,
+                    )
+                )
+            return False, None
+
         return False, None
 
     async def run(
