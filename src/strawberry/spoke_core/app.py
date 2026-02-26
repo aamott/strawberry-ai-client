@@ -17,7 +17,7 @@ from .events import (
     MessageAdded,
 )
 from .hub_connection_manager import HubConnectionManager
-from .session import ChatSession
+from .session import ChatMessage, ChatSession
 from .settings_schema import (
     SPOKE_CORE_SCHEMA,
     register_skills_config_schema,
@@ -460,6 +460,12 @@ class SpokeCore:
             ):
                 from ..skills.prompt import build_mode_switch_message
 
+                # Truncate stale tool-call messages from the previous
+                # mode.  When switching online→local, the Hub's native
+                # tool-call patterns confuse the local LLM.  We keep
+                # only the last assistant message for continuity.
+                self._truncate_session_on_mode_switch(session)
+
                 skills = (
                     self._skill_mgr.service.get_all_skills()
                     if self._skill_mgr
@@ -467,6 +473,14 @@ class SpokeCore:
                 )
                 notice = build_mode_switch_message(current_mode, skills=skills)
                 session.add_message("user", notice)
+                # Emit event so CLI/UI can display the injection
+                await self._emit(
+                    MessageAdded(
+                        session_id=session_id,
+                        role="user",
+                        content=notice,
+                    )
+                )
                 logger.info(
                     "Injected mode-switch message (%s -> %s) into session %s",
                     session.last_mode,
@@ -503,6 +517,53 @@ class SpokeCore:
         finally:
             session.busy = False
         return result_content
+
+    def _truncate_session_on_mode_switch(
+        self, session: ChatSession,
+    ) -> None:
+        """Truncate session history when switching execution modes.
+
+        Hub and local modes use fundamentally different tool-calling
+        patterns.  When the mode switches (e.g. Hub disconnects), the
+        stale tool-call messages from the previous mode confuse the
+        new runner's LLM — it mimics the old patterns instead of
+        following the new system prompt's instructions.
+
+        Strategy: keep only the last user + assistant exchange for
+        conversational continuity.  The mode-switch message (injected
+        by the caller immediately after this) re-grounds the LLM.
+
+        Args:
+            session: The active chat session.
+        """
+        if len(session.messages) <= 2:
+            return  # Nothing meaningful to truncate
+
+        # Walk backward to find the last assistant message and its
+        # preceding user message — that pair gives continuity.
+        last_assistant = None
+        last_user = None
+        for msg in reversed(session.messages):
+            if last_assistant is None and msg.role == "assistant":
+                last_assistant = msg
+            elif last_assistant is not None and msg.role == "user":
+                last_user = msg
+                break
+
+        # Keep only the retained pair
+        kept: list[ChatMessage] = []
+        if last_user:
+            kept.append(last_user)
+        if last_assistant:
+            kept.append(last_assistant)
+
+        removed = len(session.messages) - len(kept)
+        session.messages[:] = kept
+        logger.info(
+            "Truncated %d stale messages from session %s on mode switch",
+            removed,
+            session.id,
+        )
 
     async def _agent_loop(
         self, session: ChatSession, max_iterations: int = 5

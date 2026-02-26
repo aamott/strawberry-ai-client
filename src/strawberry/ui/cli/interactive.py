@@ -170,6 +170,25 @@ class InteractiveCLI:
         sys.stdout.write(f"\r\n{content}\n\n")
         sys.stdout.flush()
 
+    def _print_verbose_injection(self, content: str) -> None:
+        """Show injected system/mode-switch user messages in verbose mode.
+
+        Normal user messages are already echoed by the prompt; this only
+        prints messages containing ``[System Notice:`` so the developer
+        can verify mode-switch injection during debugging.
+
+        Args:
+            content: The injected user-role message content.
+        """
+        if "[System Notice:" not in content:
+            return
+        # Truncate to first 3 lines for readability
+        lines = content.split("\n")
+        preview = "\n".join(lines[:3])
+        if len(lines) > 3:
+            preview += f"\n  ... ({len(lines) - 3} more lines)"
+        self._print_system(f"[injected mode-switch message]\n{preview}")
+
     # ── Main run loop ─────────────────────────────────────────────────
 
     async def run(self) -> int:
@@ -374,12 +393,7 @@ class InteractiveCLI:
         )
 
         if isinstance(event, ConnectionChanged):
-            if event.connected:
-                self._print_system(f"Connected to Hub ({event.url or 'unknown'})")
-            elif event.error:
-                self._print_system(f"Hub: {event.error}")
-            else:
-                self._print_system("Disconnected from Hub")
+            self._handle_connection_event(event)
 
         elif isinstance(event, ModeChanged):
             self._print_system(event.message)
@@ -400,9 +414,24 @@ class InteractiveCLI:
                 # TTS if voice is active
                 if self._voice_enabled and self._voice_core:
                     self._voice_core.speak(event.content)
+            elif self._verbose and event.role == "user":
+                self._print_verbose_injection(event.content)
 
         elif isinstance(event, CoreError):
             self._print_error(f"Error: {event.error}")
+
+    def _handle_connection_event(self, event: Any) -> None:
+        """Display connection change notifications.
+
+        Args:
+            event: A ConnectionChanged event.
+        """
+        if event.connected:
+            self._print_system(f"Connected to Hub ({event.url or 'unknown'})")
+        elif event.error:
+            self._print_system(f"Hub: {event.error}")
+        else:
+            self._print_system("Disconnected from Hub")
 
     # ── Slash commands ────────────────────────────────────────────────
 
