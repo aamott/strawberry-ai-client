@@ -178,39 +178,58 @@ class SettingsManager:
         if namespace not in self._values:
             self._values[namespace] = {}
 
-        # Apply defaults for missing values and load secrets from env
-        # Apply Defaults
-        for field in schema:
-            if field.key not in self._values[namespace]:
-                self._values[namespace][field.key] = field.default
-
-            # Normalize LIST fields (convert CSV strings to lists for backward compat)
-            if field.type == FieldType.LIST:
-                current_value = self._values[namespace].get(field.key)
-                if current_value is not None and not isinstance(current_value, list):
-                    self._values[namespace][field.key] = parse_list_value(current_value)
-
-            # Load secrets with custom env_key from environment variables (os.environ)
-            # This handles explicit overrides defined in schema (e.g. API keys)
-            if field.secret and field.env_key:
-                env_value = self._env_storage.get(field.env_key)
-                if env_value:
-                    self._values[namespace][field.key] = env_value
-                    logger.debug(
-                        f"Loaded secret '{field.key}' from env var '{field.env_key}'"
-                    )
-
-        # Apply Env Overrides from .env file
-        # This handles standard NAMESPACE__KEY variables for this namespace
-        env_data = self._env_storage.load()
-        for env_key, value in env_data.items():
-            # Check if this env var belongs to THIS namespace
-            ns, k = env_key_to_namespace(env_key, [namespace])
-            if ns == namespace:
-                self._values[namespace][k] = value
-                logger.debug(f"Loaded override '{k}' from env var '{env_key}'")
+        self._apply_defaults_and_env(namespace, schema)
 
         logger.debug(f"Registered settings namespace: {namespace}")
+
+    def _apply_defaults_and_env(
+        self,
+        namespace: str,
+        schema: List[SettingField],
+    ) -> None:
+        """Apply defaults, normalize lists, and load env overrides.
+
+        Called during :meth:`register` to populate the value dict with
+        schema defaults and then layer on environment-variable overrides
+        (both explicit ``env_key`` and the ``NAMESPACE__KEY`` convention).
+
+        Args:
+            namespace: The settings namespace.
+            schema: List of ``SettingField`` definitions.
+        """
+        ns_vals = self._values[namespace]
+
+        for field in schema:
+            if field.key not in ns_vals:
+                ns_vals[field.key] = field.default
+
+            # Normalize LIST fields (CSV string → list)
+            if field.type == FieldType.LIST:
+                cur = ns_vals.get(field.key)
+                if cur is not None and not isinstance(cur, list):
+                    ns_vals[field.key] = parse_list_value(cur)
+
+            # Explicit env_key override (secrets, booleans, etc.)
+            if field.env_key:
+                env_value = self._env_storage.get(field.env_key)
+                if env_value is not None:
+                    if field.type == FieldType.CHECKBOX:
+                        env_value = env_value.strip().lower() in (
+                            "true", "1", "yes", "on",
+                        )
+                    ns_vals[field.key] = env_value
+                    logger.debug(
+                        "Loaded '%s' from env var '%s'",
+                        field.key, field.env_key,
+                    )
+
+        # NAMESPACE__KEY convention overrides from .env
+        env_data = self._env_storage.load()
+        for env_key, value in env_data.items():
+            ns, k = env_key_to_namespace(env_key, [namespace])
+            if ns == namespace:
+                ns_vals[k] = value
+                logger.debug("Loaded override '%s' from env var '%s'", k, env_key)
 
     def unregister(self, namespace: str) -> None:
         """Remove a registered namespace.

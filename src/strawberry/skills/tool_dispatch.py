@@ -14,6 +14,10 @@ from typing import Any, Dict, List
 
 # Hints appended to common python_exec errors so the LLM can self-correct.
 _ERROR_HINTS: Dict[str, str] = {
+    "default_api": (
+        "\nFIX: 'default_api' does not exist. Replace it with 'device'. "
+        "Correct syntax: device.<SkillName>.<method>(...)"
+    ),
     "import": (
         "\nHint: Imports are not allowed in python_exec. "
         "All skill methods are available via device.<SkillName>.<method>()."

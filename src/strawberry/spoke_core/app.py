@@ -466,12 +466,7 @@ class SpokeCore:
                 # only the last assistant message for continuity.
                 self._truncate_session_on_mode_switch(session)
 
-                skills = (
-                    self._skill_mgr.service.get_all_skills()
-                    if self._skill_mgr
-                    else []
-                )
-                notice = build_mode_switch_message(current_mode, skills=skills)
+                notice = build_mode_switch_message(current_mode)
                 session.add_message("user", notice)
                 # Emit event so CLI/UI can display the injection
                 await self._emit(

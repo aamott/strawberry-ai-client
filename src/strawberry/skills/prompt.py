@@ -52,33 +52,30 @@ MAX_SKILLS_IN_PROMPT = 8
 ROLE_SECTION = """\
 You are Strawberry, a helpful AI assistant with access to skills.
 
-## Critical Notes
+## How to Complete a Task (MANDATORY)
 
-- Try to be helpful. If the user requests something that you suspect
-  requires a skill (fetching weather, adding numbers, etc), call
-  `search_skills` to find the skill. If you need more information
-  about a skill function, call `describe_function`.
-- Do NOT say "I can't" until you have searched for skills and
-  confirmed that the skill does not exist. It may take multiple
-  searches.
-- After you find the right skill, execute it immediately. Don't ask
-  for confirmation unless you actually need clarification (e.g., a
-  required location you don't have).
-- If a tool call fails, fix the error and retry immediately.
-  Do NOT give up or ask the user for help after a single error.
-- After tool calls complete, ALWAYS provide a final natural-language
-  answer. Where useful, include interim responses ("Let me find that
-  for you") to keep the user engaged.
+Every task requires THREE steps — never skip step 2:
+  Step 1: search_skills(query="...") to find the right method.
+  Step 2: python_exec(code="print(device.<Skill>.<method>(...))").
+  Step 3: Reply to the user with a natural-language summary.
+
+search_skills only FINDS skills — it does NOT execute them.
+You MUST call python_exec to actually DO anything.
+
+## Other Rules
+
+- If a tool call fails, fix the error and retry. Don't give up.
+- Do NOT say "I can't" until you've searched and confirmed no
+  matching skill exists.
+- Don't ask for confirmation unless you're missing required info.
 
 ## Searching Tips
 
-search_skills matches against method names, skill names, and
-descriptions. Search by **action** or **verb**, not by specific
-entity/object names.
-- To turn on a lamp, search 'turn on' or 'lamp'.
-- To set brightness, search 'light' or 'brightness'.
-- If a skill doesn't show up on the first try, continue searching
-  and experiment with different keywords."""
+search_skills matches method names, skill names, and descriptions.
+Search by action/verb, not specific entity names.
+- Lights: search 'light' or 'brightness'
+- Weather: search 'weather'
+- If nothing found, try different keywords."""
 
 
 # ---------------------------------------------------------------------------
@@ -350,15 +347,11 @@ You have exactly 3 tools and a set of python skills:
   code and executes it. The code should call a skill method and
   print the final output. Avoid importing — just use default
   python functions.
-- Use the `device` object:
+- The ONLY way to call skills:
   `device.<SkillClass>.<method>(...)`
-- print the final output so the result is surfaced to you.
-  Otherwise you won't see a result.
-- There is NO object named `default_api`. It does not exist.
-  The ONLY way to call skills is: `device.<SkillClass>.<method>(...)`
-  inside python_exec.
-- Do NOT use `devices.*` or `default_api.*` — they do not exist
-  in local mode. Only `device.*` works."""
+- ALWAYS wrap calls in print() so you see the result.
+- WRONG names (will error): `default_api`, `api`, `devices`, `client`
+  The ONLY valid object is `device`. Nothing else exists."""
         return """\
 ## python_exec
 
@@ -371,32 +364,34 @@ You have exactly 3 tools and a set of python skills:
     def examples_section(self, skill_mode: "SkillMode") -> str:
         """Provide Python-exec examples per skill mode."""
         if skill_mode == _local_mode():
-            return """\
-## Examples
-
-Weather:
-- User: "What's the weather in Seattle?"
-  a) search_skills(query="weather")
-  b) python_exec(code="print(
-     device.WeatherSkill
-     .get_current_weather('Seattle'))")
-
-Smart home:
-- User: "Set the short lamp to red"
-  a) search_skills(query="light")
-  b) python_exec(code="print(
-     device.HomeAssistantSkill
-     .HassLightSet(name='short lamp', color='red'))")
-
-Documentation lookup:
-- User: "Look up React docs"
-  a) search_skills(query="documentation")
-  b) python_exec(code="print(
-     device.Context7Skill
-     .resolve_library_id(libraryName='react'))")
-  c) python_exec(code="print(
-     device.Context7Skill
-     .query_docs(libraryId='...', query='getting started'))")"""
+            return (
+                "## Examples\n"
+                "\n"
+                "Each example shows the full flow: search → execute"
+                " → reply. ALWAYS follow all 3 steps.\n"
+                "\n"
+                "Weather:\n"
+                '- User: "Weather in Portland"\n'
+                "  1. search_skills(query=\"weather\")\n"
+                "  2. python_exec(code=\"print(device"
+                ".WeatherSkill.get_current_weather("
+                "location='Portland'))\")\n"
+                "  3. Read the result, then reply naturally"
+                ' (e.g. "It\'s 55°F and rainy").\n'
+                "\n"
+                "Smart home:\n"
+                '- User: "Turn the desk lamp purple"\n'
+                "  1. search_skills(query=\"light\")\n"
+                "  2. python_exec(code=\"print(device"
+                ".HomeAssistantSkill.HassLightSet("
+                "name='desk lamp', color='purple'))\")\n"
+                "  3. Read the result, then confirm"
+                ' (e.g. "Done! Desk lamp is now purple.").\n'
+                "\n"
+                "Key pattern:\n"
+                "  python_exec(code=\"print(device"
+                ".<SkillClass>.<method>(<args>))\")"
+            )
         # Brief online example so the LLM sees devices.* usage
         return """\
 ## Example
@@ -409,15 +404,16 @@ python_exec(code="print(devices.my_device.WeatherSkill\
         return """\
 ## Rules
 
-1. Do NOT call skill methods directly as tools — always use
-   python_exec. It won't work otherwise.
-2. Do NOT output code blocks or ```tool_outputs``` — use python_exec.
-3. For smart-home commands (turn on/off, lights, locks, media), look
-   for HomeAssistantSkill. Pass the device/entity name as the 'name'
-   kwarg.
-
-If there are multiple possible skills, choose the most relevant
-and proceed unless you NEED clarification."""
+1. search_skills only discovers skills. You MUST call python_exec
+   to actually execute anything. Never reply "Done" without a
+   python_exec call first.
+2. Inside python_exec, the ONLY object is `device`.
+   NEVER use: default_api, api, client, devices, or any other name.
+3. ALWAYS wrap calls in print() so you can see the output.
+4. After python_exec succeeds, reply in natural language. Don't repeat it.
+5. For smart-home (lights, locks, media): use HomeAssistantSkill
+   with name= kwarg.
+6. If multiple skills match, pick the best and proceed."""
 
     def build_example_call(
         self, skill_name: str, method: "SkillMethod",
@@ -526,51 +522,57 @@ def build_mode_switch_message(
 ) -> str:
     """Build a conversation-level message explaining a skill-mode switch.
 
-    Composes a short mode-change notice followed by the full tools
-    section so the LLM is re-grounded on available skills and syntax.
+    Composes a concise mode-change notice followed by the updated tool
+    instructions (WITHOUT the skill catalog).  The LLM should use
+    ``search_skills`` to rediscover what's available — dumping the
+    catalog here causes the LLM to treat skill names as native tools.
 
-    This message is injected into the session as a user-role context
-    message so the LLM sees it regardless of which runner (Hub or
-    local) processes the next turn.
+    .. note:: The ``skills`` parameter is accepted for backward
+       compatibility but is intentionally NOT embedded in the message.
+       Embedding the catalog after a mode switch causes the LLM to
+       pattern-match on familiar skill names and attempt direct tool
+       calls instead of following the python_exec workflow.
 
     Args:
         to_mode: Target mode — ``"online"`` or ``"local"``.
-        skills: Loaded skills list. Defaults to ``[]``.
+        skills: Accepted for API compat; not embedded in the message.
         tool_mode: Tool mode name (default ``"python_exec"``).
 
     Returns:
-        Formatted mode switch notice + tools section string.
+        Formatted mode switch notice + tool instructions string.
     """
     from .sandbox.proxy_gen import SkillMode
-
-    if skills is None:
-        skills = []
 
     if to_mode == "online":
         notice = (
             "[System Notice: Switched to ONLINE mode]\n"
             "Connected to the Hub. Skills from all connected devices "
-            "are now available.\n"
-            "\n"
-            "IMPORTANT: The available skills may differ from before. "
-            "Use search_skills to find the correct skill path and "
-            "device name before calling anything."
+            "are now available."
         )
         skill_mode = SkillMode.REMOTE
     else:
         notice = (
             "[System Notice: Switched to LOCAL mode]\n"
-            "You are now running locally. All local skills on this device "
-            "are fully available and working.\n"
-            "\n"
-            "IMPORTANT: The available skills may differ from before. "
-            "Use search_skills to find the correct skill path before "
-            "calling anything."
+            "The Hub has gone offline. You are now running locally."
         )
         skill_mode = SkillMode.LOCAL
 
-    tools = build_tools_section(skill_mode, skills, tool_mode=tool_mode)
-    return f"{notice}\n\n{tools}"
+    context = (
+        "The available tools and skills have changed and their mode "
+        "of execution has changed. Any tools you were using before "
+        "(such as native Hub tools) are NO LONGER AVAILABLE.\n"
+        "\n"
+        "You MUST use search_skills to rediscover available skills "
+        "before calling anything — do NOT reuse tool names from the "
+        "previous mode.\n"
+        "\n"
+        "Updated instructions follow."
+    )
+
+    # Pass empty skills list — the catalog must NOT be embedded in
+    # mode-switch messages (see docstring).
+    tools = build_tools_section(skill_mode, skills=[], tool_mode=tool_mode)
+    return f"{notice}\n\n{context}\n\n{tools}"
 
 
 def build_tool_mode_switch_message(

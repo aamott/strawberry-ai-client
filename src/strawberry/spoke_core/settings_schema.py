@@ -137,6 +137,7 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
         description=(
             "Allow skills to run code directly outside the sandbox (security risk)"
         ),
+        env_key="ALLOW_UNSAFE_EXEC",
         group="skills",
     ),
     # LLM Settings

@@ -382,6 +382,14 @@ class HubConnectionManager:
             if self._hub_connected:
                 self._hub_connected = False
                 logger.warning("Hub WebSocket disconnected")
+
+                # Clear the SkillService's hub_client so tool dispatch
+                # falls back to local mode immediately.  Without this,
+                # _get_effective_mode() still returns REMOTE and tools
+                # like search_skills try to reach the dead Hub.
+                if self._skill_service:
+                    self._skill_service.set_hub_client(None)
+
                 await self._emit(
                     ConnectionChanged(
                         connected=False,

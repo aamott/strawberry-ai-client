@@ -6,7 +6,6 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
-
 from skills.weather_skill.skill import WeatherSkill
 
 

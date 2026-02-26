@@ -786,11 +786,9 @@ class SkillService:
     def _prepare_python_exec_code(self, code: str) -> str:
         """Rewrite python_exec code to behave more like a notebook cell.
 
-        If the last top-level statement is a bare expression (for example:
-        `devices.new.InternetSearchSkill.search_web_detailed("bacon")`), rewrite
-        the code to evaluate the expression and print its str(). This ensures
-        `python_exec` returns useful output even when the user/model forgets to
-        wrap the expression in `print(...)`.
+        Applies auto-corrections for common LLM mistakes (e.g.
+        ``default_api`` -> ``device``) and ensures the last bare expression
+        is auto-printed so ``python_exec`` returns useful output.
 
         Args:
             code: Original Python code.
@@ -800,6 +798,13 @@ class SkillService:
         """
         if not code or not code.strip():
             return code
+
+        # Auto-correct common LLM hallucination: default_api -> device
+        if "default_api." in code:
+            mode = self._get_effective_mode()
+            replacement = "device." if mode == SkillMode.LOCAL else "devices."
+            code = code.replace("default_api.", replacement)
+            logger.debug("Auto-corrected default_api -> %s in python_exec", replacement)
 
         try:
             module = ast.parse(code)

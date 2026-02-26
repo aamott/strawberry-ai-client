@@ -43,10 +43,10 @@ class TestBuildModeSwitchMessage:
         assert "LOCAL" in msg
 
     def test_local_message_warns_against_remote_syntax(self):
-        """Local switch should tell LLM not to use devices.* syntax."""
+        """Local switch should tell LLM not to use remote syntax."""
         msg = build_mode_switch_message("local", skills=[])
-        assert "devices.*" in msg
-        assert "Do NOT" in msg
+        assert "devices" in msg  # mentioned in the "don't use" list
+        assert "NEVER" in msg or "Do NOT" in msg
 
     def test_online_message_mentions_tools(self):
         """Online switch should reference the 3 tools."""
@@ -76,25 +76,25 @@ class TestBuildModeSwitchMessage:
         """Online switch should instruct LLM to re-search for skills."""
         msg = build_mode_switch_message("online", skills=[])
         assert "search_skills" in msg
-        assert "may differ" in msg
+        assert "have changed" in msg or "rediscover" in msg
 
     def test_local_message_requires_skill_rediscovery(self):
         """Local switch should instruct LLM to re-search for skills."""
         msg = build_mode_switch_message("local", skills=[])
         assert "search_skills" in msg
-        assert "may differ" in msg
+        assert "have changed" in msg or "rediscover" in msg
 
     def test_online_message_enforces_python_exec(self):
         """Online switch should reinforce that skills go through python_exec."""
         msg = build_mode_switch_message("online", skills=[])
         assert "python_exec" in msg
-        assert "Do NOT call skill methods directly" in msg
+        assert "MUST" in msg or "Do NOT call skill methods directly" in msg
 
     def test_local_message_enforces_python_exec(self):
         """Local switch should reinforce that skills go through python_exec."""
         msg = build_mode_switch_message("local", skills=[])
         assert "python_exec" in msg
-        assert "Do NOT call skill methods directly" in msg
+        assert "MUST" in msg or "Do NOT call skill methods directly" in msg
 
     def test_local_message_has_example(self):
         """Local switch should include a python_exec example with device.* syntax."""
@@ -107,15 +107,45 @@ class TestBuildModeSwitchMessage:
         assert "devices." in msg
         assert "WeatherSkill" in msg
 
-    def test_local_message_emphasizes_skills_work(self):
-        """Local switch should emphasize local skills are functional."""
+    def test_local_message_explains_hub_offline(self):
+        """Local switch should explain the Hub went offline."""
         msg = build_mode_switch_message("local", skills=[])
-        assert "fully available and working" in msg
+        assert "Hub" in msg and "offline" in msg
 
     def test_online_message_emphasizes_skills_available(self):
         """Online switch should emphasize skills from all devices are available."""
         msg = build_mode_switch_message("online", skills=[])
         assert "all connected devices" in msg
+
+    def test_warns_old_tools_unavailable(self):
+        """Mode switch should warn that previous tools are no longer available."""
+        for mode in ("local", "online"):
+            msg = build_mode_switch_message(mode, skills=[])
+            assert "NO LONGER AVAILABLE" in msg
+
+    def test_skill_catalog_not_embedded(self):
+        """Mode switch must NOT embed the skill catalog.
+
+        Embedding skill names causes the LLM to attempt direct native
+        tool calls (e.g. ``HassLightSet``) instead of using the
+        python_exec workflow.  The LLM should use search_skills to
+        rediscover available skills after a mode switch.
+        """
+        from unittest.mock import MagicMock
+
+        fake_skill = MagicMock()
+        fake_skill.name = "FakeSkill"
+        fake_skill.class_obj.__doc__ = "A fake skill."
+        fake_method = MagicMock()
+        fake_method.name = "do_thing"
+        fake_skill.methods = [fake_method]
+
+        for mode in ("local", "online"):
+            msg = build_mode_switch_message(mode, skills=[fake_skill])
+            assert "FakeSkill" not in msg, (
+                f"Skill catalog was embedded in {mode} mode switch message"
+            )
+            assert "Available Skills" not in msg
 
 
 # =============================================================================
@@ -180,8 +210,8 @@ class TestPromptParts:
         assert "action" in ROLE_SECTION.lower()
 
     def test_role_section_is_mode_agnostic(self):
-        """ROLE_SECTION should contain no mode-specific syntax."""
-        assert "device." not in ROLE_SECTION
+        """ROLE_SECTION should not reference specific mode names."""
+        # device.<Skill> pattern is mode-agnostic (it's a template)
         assert "devices." not in ROLE_SECTION
         assert "local mode" not in ROLE_SECTION.lower()
         assert "online mode" not in ROLE_SECTION.lower()
@@ -194,10 +224,11 @@ class TestPromptParts:
         assert "python_exec" in section
 
     def test_local_tools_section_uses_device_syntax(self):
-        """Local tools section should use device.* syntax."""
+        """Local tools section should use device.* syntax and warn against wrong names."""
         section = build_tools_section(SkillMode.LOCAL, [])
         assert "device." in section
-        assert "Do NOT use `devices.*`" in section
+        # Warns against wrong object names (devices, default_api, etc.)
+        assert "NEVER" in section or "Do NOT" in section
 
     def test_online_tools_section_uses_devices_syntax(self):
         """Online tools section should use devices.* syntax."""

@@ -327,13 +327,33 @@ class LocalAgentRunner(AgentRunner):
     ) -> bool:
         """Handle native tool calls from LLM response.
 
+        .. warning:: DO NOT suppress or fake duplicate tool calls.
+
+           It is tempting to detect duplicate tool calls and skip execution,
+           injecting a canned "already completed" message instead. **Do not
+           do this.** The rationale:
+
+           1. **Skills are cheap; LLM iterations are expensive.** Re-running
+              a skill costs almost nothing. Tricking the model into thinking
+              it executed a skill when it didn't wastes an entire LLM round
+              when the model inevitably notices the mismatch or retries.
+           2. **Legitimate repeated calls exist.** Some skills (polling,
+              retries with different state, actuator confirmation) genuinely
+              need to be called more than once with identical arguments.
+           3. **Honesty > cleverness.** The model must always receive
+              truthful tool results. Lying about execution breaks the
+              agent contract and leads to cascading hallucinations.
+
+           Instead we *warn* the model that the call looks like a duplicate
+           and let it decide. The max-iteration guard handles true loops.
+
         Args:
             session: Chat session.
             tool_calls: List of ToolCall objects from LLM.
             seen_tool_calls: Set of seen tool call signatures (for dedup).
 
         Returns:
-            True if loop should abort (duplicate detected), False to continue.
+            True if loop should abort (consecutive duplicates), False otherwise.
         """
         for tool_call in tool_calls:
             tool_key = json.dumps(
@@ -343,21 +363,12 @@ class LocalAgentRunner(AgentRunner):
                 },
                 sort_keys=True,
             )
-            if tool_key in seen_tool_calls:
-                error = (
-                    "Model attempted to repeat the same tool call. "
-                    "Aborting to prevent an infinite loop."
+            is_duplicate = tool_key in seen_tool_calls
+            if is_duplicate:
+                logger.warning(
+                    "Duplicate tool call detected: %s — executing anyway",
+                    tool_call.name,
                 )
-                await self._emit(CoreError(error=error))
-                session.add_message("assistant", error)
-                await self._emit(
-                    MessageAdded(
-                        session_id=session.id,
-                        role="assistant",
-                        content=error,
-                    )
-                )
-                return True
             seen_tool_calls.add(tool_key)
 
             await self._emit(
@@ -368,7 +379,6 @@ class LocalAgentRunner(AgentRunner):
                 )
             )
 
-            # Execute tool
             result = await self._skills.execute_tool_async(
                 tool_call.name, tool_call.arguments
             )
@@ -386,12 +396,16 @@ class LocalAgentRunner(AgentRunner):
                 )
             )
 
-            # Add tool result to session for next iteration
-            tool_msg = (
-                f"[Tool: {tool_call.name}]\n{result_text}\n\n"
-                "[Now respond naturally to the user based on this result. "
-                "Do not rerun the same tool call again unless the user asks. ]"
+            tool_msg = self._format_tool_result_message(
+                tool_call.name, success, result_text,
             )
+            if is_duplicate:
+                tool_msg += (
+                    "\n\n[NOTICE: This is a duplicate call — you already made "
+                    "this exact call earlier in this conversation. Unless you "
+                    "specifically need to repeat it, respond to the user now "
+                    "instead of calling tools again.]"
+                )
             session.add_message("user", tool_msg)
 
         return False
@@ -432,13 +446,60 @@ class LocalAgentRunner(AgentRunner):
                 )
             )
 
-            # Add tool result to session for next iteration
-            tool_msg = (
-                f"[Tool: python_exec]\n{result_text}\n\n"
-                "[Now respond naturally to the user based on this result. "
-                "Do not rerun the same code again unless the user asks. ]"
+            tool_msg = self._format_tool_result_message(
+                "python_exec", success, result_text,
             )
             session.add_message("user", tool_msg)
+
+    @staticmethod
+    def _format_tool_result_message(
+        tool_name: str,
+        success: bool,
+        result_text: str,
+    ) -> str:
+        """Build the session message injected after a tool call.
+
+        Tailors the follow-up instruction to the tool type so the model
+        knows whether to execute next (after search) or respond to the
+        user (after python_exec).
+
+        Args:
+            tool_name: Name of the tool that was called.
+            success: Whether the tool succeeded.
+            result_text: Output or error text from the tool.
+
+        Returns:
+            Formatted message string to add to the session.
+        """
+        if not success:
+            return (
+                f"[Tool Result: {tool_name} — ERROR]\n"
+                f"{result_text}\n\n"
+                "Fix the error and try again with corrected arguments."
+            )
+
+        if tool_name == "search_skills":
+            return (
+                f"[Tool Result: search_skills — SUCCESS]\n"
+                f"{result_text}\n\n"
+                "Now call python_exec to execute the skill. "
+                "search_skills only finds skills — it does NOT run them."
+            )
+
+        if tool_name == "describe_function":
+            return (
+                f"[Tool Result: describe_function — SUCCESS]\n"
+                f"{result_text}\n\n"
+                "Now call python_exec to execute the skill."
+            )
+
+        # python_exec or any other tool
+        return (
+            f"[Tool Result: {tool_name} — SUCCESS]\n"
+            f"{result_text}\n\n"
+            "Give the user a short, natural-language answer "
+            "confirming what was done. Do NOT repeat this tool call."
+        )
 
     def _extract_legacy_code_blocks(self, content: str) -> List[str]:
         """Extract executable code blocks from LLM response.
