@@ -24,6 +24,20 @@ class SkillLoadFailure:
 
 
 @dataclass
+class SkillParam:
+    """A single parameter from a skill method signature.
+
+    Populated at load time from ``inspect.signature()`` so downstream
+    consumers (e.g. prompt generation) get clean structured data
+    instead of re-parsing the signature string.
+    """
+
+    name: str
+    type_hint: str = ""  # e.g. "int", "str", "Optional[str]"
+    default: Optional[str] = None  # repr of default value; None = required
+
+
+@dataclass
 class SkillMethod:
     """Information about a skill method."""
 
@@ -31,6 +45,7 @@ class SkillMethod:
     signature: str
     docstring: Optional[str]
     callable: Callable
+    params: List["SkillParam"] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API."""
@@ -529,13 +544,40 @@ class SkillLoader:
             if method_name.startswith("_"):
                 continue
 
-            # Get signature
+            # Get signature and structured params
+            skill_params: List[SkillParam] = []
             try:
                 sig = inspect.signature(method)
                 # Remove 'self' parameter for display
                 params = [p for name, p in sig.parameters.items() if name != "self"]
                 new_sig = sig.replace(parameters=params)
                 sig_str = f"{method_name}{new_sig}"
+
+                # Build structured param list from the signature
+                for p_name, p in sig.parameters.items():
+                    if p_name == "self":
+                        continue
+                    # Skip *args and **kwargs
+                    if p.kind in (
+                        inspect.Parameter.VAR_POSITIONAL,
+                        inspect.Parameter.VAR_KEYWORD,
+                    ):
+                        continue
+                    type_hint = ""
+                    if p.annotation is not inspect.Parameter.empty:
+                        type_hint = getattr(
+                            p.annotation, "__name__", str(p.annotation),
+                        )
+                    default = None
+                    if p.default is not inspect.Parameter.empty:
+                        default = repr(p.default)
+                    skill_params.append(
+                        SkillParam(
+                            name=p_name,
+                            type_hint=type_hint,
+                            default=default,
+                        )
+                    )
             except ValueError:
                 sig_str = f"{method_name}(...)"
 
@@ -548,6 +590,7 @@ class SkillLoader:
                     signature=sig_str,
                     docstring=docstring,
                     callable=method,
+                    params=skill_params,
                 )
             )
 
