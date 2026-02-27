@@ -560,11 +560,10 @@ def build_mode_switch_message(
     context = (
         "The available tools and skills have changed and their mode "
         "of execution has changed. Any tools you were using before "
-        "(such as native Hub tools) are NO LONGER AVAILABLE.\n"
+        "might not be available anymore.\n"
         "\n"
         "You MUST use search_skills to rediscover available skills "
-        "before calling anything — do NOT reuse tool names from the "
-        "previous mode.\n"
+        "before calling anything.\n"
         "\n"
         "Updated instructions follow."
     )
