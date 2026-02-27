@@ -655,6 +655,14 @@ class SpokeCore:
             "tensorzero", "ollama.model", "llama3.2:3b",
         )
 
+    def get_device_name(self) -> str:
+        """Get the configured device name for this spoke."""
+        return self._get_setting("device.name", "Strawberry Spoke")
+
+    def get_hub_url(self) -> str:
+        """Get the configured Hub URL."""
+        return self._get_setting("hub.url", "http://localhost:8000")
+
     # Event system (delegates to EventBus)
     async def _emit(self, event: CoreEvent) -> None:
         """Emit an event to all subscribers."""

@@ -190,18 +190,19 @@ class TestCommands:
         assert "/status" in output
 
     @pytest.mark.asyncio
-    async def test_status_shows_mode_and_model(self):
+    async def test_status_shows_mode_and_hub(self):
         cli = InteractiveCLI()
         cli._running = True
         cli._core = MagicMock()
         cli._core.is_online.return_value = False
-        cli._core.get_model_info.return_value = "llama3.2:3b"
+        cli._core.get_device_name.return_value = "my-device"
+        cli._core.get_hub_url.return_value = "http://hub:8000"
         buf = StringIO()
         with patch("sys.stdout", buf):
             await cli._handle_command("/status")
         output = buf.getvalue()
         assert "Local" in output
-        assert "llama3.2:3b" in output
+        assert "not connected" in output
         assert "OFF" in output
 
     @pytest.mark.asyncio
@@ -350,23 +351,26 @@ class TestWelcome:
         cli = InteractiveCLI()
         cli._core = MagicMock()
         cli._core.is_online.return_value = False
-        cli._core.get_model_info.return_value = "test-model"
+        cli._core.get_device_name.return_value = "my-device"
+        cli._core.get_hub_url.return_value = "http://localhost:8000"
         buf = StringIO()
         with patch("sys.stdout", buf):
             cli._print_welcome()
         output = buf.getvalue()
         assert "Strawberry CLI" in output
         assert "Local" in output
-        assert "test-model" in output
+        assert "not connected" in output
 
     def test_welcome_shows_online_mode(self):
         cli = InteractiveCLI()
         cli._core = MagicMock()
         cli._core.is_online.return_value = True
-        cli._core.get_model_info.return_value = "gemini-2.0"
+        cli._core.get_device_name.return_value = "adam-G5-5590"
+        cli._core.get_hub_url.return_value = "http://hub:8000"
         buf = StringIO()
         with patch("sys.stdout", buf):
             cli._print_welcome()
         output = buf.getvalue()
         assert "Online" in output
-        assert "gemini-2.0" in output
+        assert "adam-G5-5590" in output
+        assert "http://hub:8000" in output

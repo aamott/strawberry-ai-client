@@ -290,14 +290,25 @@ class InteractiveCLI:
         """
         online = self._core.is_online()
         mode = _styled("Online", GREEN) if online else _styled("Local", YELLOW)
-        model = self._core.get_model_info()
+        device_name = self._core.get_device_name()
+        hub_url = self._core.get_hub_url()
         skill_count = len(self._core.get_skill_summaries())
         failures = self._core.get_skill_load_failures()
         fail_count = len(failures)
 
         sys.stdout.write(f"\n{_styled('Strawberry CLI', CYAN, BOLD)}\n")
         sys.stdout.write(f"  Mode:   {mode}\n")
-        sys.stdout.write(f"  Model:  {_styled(model, DIM)}\n")
+
+        # Hub line: show device name + URL when connected, or dim placeholder
+        if online:
+            hub_info = (
+                f"{_styled(device_name, GREEN)}"
+                f" {_styled('·', DIM)} {_styled(hub_url, DIM)}"
+            )
+        else:
+            hub_info = _styled("─ (not connected)", DIM)
+        sys.stdout.write(f"  Hub:    {hub_info}\n")
+
         if fail_count:
             sys.stdout.write(
                 f"  Skills: {_styled(str(skill_count), CYAN)}"
@@ -503,12 +514,23 @@ class InteractiveCLI:
     def _cmd_status(self) -> None:
         """Print current status."""
         online = self._core.is_online() if self._core else False
-        model = self._core.get_model_info() if self._core else "unknown"
+        device_name = self._core.get_device_name() if self._core else "unknown"
+        hub_url = self._core.get_hub_url() if self._core else "unknown"
         voice = "ON" if self._voice_enabled else "OFF"
         mode = _styled("Online (Hub)", GREEN) if online else _styled("Local", YELLOW)
+
+        # Hub line matches the welcome banner format
+        if online:
+            hub_info = (
+                f"{_styled(device_name, GREEN)}"
+                f" {_styled('·', DIM)} {_styled(hub_url, DIM)}"
+            )
+        else:
+            hub_info = _styled("─ (not connected)", DIM)
+
         sys.stdout.write(
             f"\n  Mode:  {mode}\n"
-            f"  Model: {_styled(model, DIM)}\n"
+            f"  Hub:   {hub_info}\n"
             f"  Voice: {_styled(voice, GREEN if self._voice_enabled else DIM)}\n\n"
         )
         sys.stdout.flush()
