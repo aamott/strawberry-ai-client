@@ -315,10 +315,11 @@ class InteractiveCLI:
             )
         sys.stdout.write(f"  {_styled('Type /help for commands', DIM)}\n\n")
 
-        # Dump full system prompt so user sees ALL messages the LLM receives
-        prompt = self._core.get_system_prompt()
-        header_str = _styled("[System Prompt (initial)]", DIM)
-        sys.stdout.write(f"{header_str}\n{_styled(prompt, GRAY, DIM)}\n\n")
+        if self._verbose:
+            # Dump full system prompt so user sees ALL messages the LLM receives
+            prompt = self._core.get_system_prompt()
+            header_str = _styled("[System Prompt (initial)]", DIM)
+            sys.stdout.write(f"{header_str}\n{_styled(prompt, GRAY, DIM)}\n\n")
 
         sys.stdout.flush()
         self._show_prompt()
