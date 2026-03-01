@@ -259,15 +259,15 @@ class DeviceProxy:
     def describe_function(self, path: str) -> str:
         """Get full function details including docstring.
 
+        Returns only the raw ``def`` signature + docstring block.
+        The caller (SkillService) adds mode-appropriate examples.
+
         Args:
             path: "SkillName.method_name"
 
         Returns:
-            Full function signature with docstring
+            Full function signature with docstring (no call examples).
         """
-        # Import here to avoid circular dependency
-        from .prompt import build_example_call
-
         parts = path.split(".")
         if len(parts) != 2:
             return f"Error: Invalid path '{path}'. Use format 'SkillName.method_name'"
@@ -281,11 +281,7 @@ class DeviceProxy:
         for method in skill.methods:
             if method.name == method_name:
                 doc = method.docstring or "No description available"
-                example = build_example_call(skill_name, method)
-                result = f'def {method.signature}:\n    """\n    {doc}\n    """'
-                if example:
-                    result += f'\n\nExample:\n  python_exec(code="{example}")'
-                return result
+                return f'def {method.signature}:\n    """\n    {doc}\n    """'
 
         return f"Error: Method '{method_name}' not found in {skill_name}"
 

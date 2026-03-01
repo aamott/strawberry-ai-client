@@ -64,7 +64,10 @@ def enrich_exec_error(error: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def format_search_results(results: List[Dict[str, Any]]) -> str:
+def format_search_results(
+    results: List[Dict[str, Any]],
+    tool_mode: str = "code",
+) -> str:
     """Format search results as a compact text table for the LLM.
 
     Produces one line per result instead of verbose JSON, saving tokens
@@ -72,6 +75,9 @@ def format_search_results(results: List[Dict[str, Any]]) -> str:
 
     Args:
         results: List of dicts with path, signature, summary keys.
+        tool_mode: Tool mode (``"code"`` / ``"python_exec"`` or
+            ``"native"``). In native mode each result includes the
+            native tool name (``SkillClass__method_name``).
 
     Returns:
         Human/LLM-readable text listing.
@@ -79,6 +85,7 @@ def format_search_results(results: List[Dict[str, Any]]) -> str:
     if not results:
         return "No results found."
 
+    is_native = tool_mode == "native"
     lines = [f"Found {len(results)} result(s):"]
     for r in results:
         sig = r.get("signature", r.get("path", "?"))
@@ -92,6 +99,11 @@ def format_search_results(results: List[Dict[str, Any]]) -> str:
         line = f"  {path} — {sig}"
         if summary:
             line += f" — {summary}"
+        # In native mode, show the tool name the LLM should call
+        if is_native and "." in path:
+            parts = path.split(".", 1)
+            native_name = f"{parts[0]}__{parts[1]}"
+            line += f"  [tool: {native_name}]"
         line += device_suffix
         lines.append(line)
     return "\n".join(lines)

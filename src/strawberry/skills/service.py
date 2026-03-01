@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..hub import HubClient
 from .loader import SkillInfo, SkillLoader
-from .prompt import build_system_prompt
+from .prompt import build_example_call, build_system_prompt
 from .proxies import (
     DeviceProxy,
     SkillCallResult,
@@ -84,6 +84,7 @@ class SkillService:
         self._disabled_skills: set[str] = set()
 
         self._mode_override: Optional[SkillMode] = None
+        self._tool_mode: str = "python_exec"
 
         self._gatekeeper: Optional[Gatekeeper] = None
         self._proxy_gen: Optional[ProxyGenerator] = None
@@ -388,6 +389,20 @@ class SkillService:
             except Exception as e:
                 logger.error(f"Heartbeat failed: {e}")
 
+    @property
+    def tool_mode(self) -> str:
+        """Current tool mode ('python_exec' or 'native')."""
+        return self._tool_mode
+
+    @tool_mode.setter
+    def tool_mode(self, value: str) -> None:
+        """Set the tool mode.
+
+        Args:
+            value: Tool mode name ('python_exec' or 'native').
+        """
+        self._tool_mode = value
+
     def get_system_prompt(self) -> str:
         """Generate the system prompt with skill descriptions.
 
@@ -404,6 +419,7 @@ class SkillService:
             mode=mode,
             device_name=self.device_name,
             custom_template=self._custom_system_prompt,
+            tool_mode=self._tool_mode,
         )
 
     def set_custom_system_prompt(self, prompt: Optional[str]) -> None:
@@ -986,7 +1002,9 @@ class SkillService:
                 query=query,
                 device_limit=device_limit,
             )
-            return {"result": format_search_results(results)}
+            return {"result": format_search_results(
+                results, tool_mode=self._tool_mode,
+            )}
 
         result = self._execute_search_skills(query, device_limit=device_limit)
         return {"result": result}
@@ -1002,6 +1020,8 @@ class SkillService:
             return await self._describe_function_remote(path)
 
         result = self._execute_describe_function(path)
+        # Append mode-appropriate example call
+        result = self._append_describe_example(path, result)
         return {"result": result}
 
     async def _describe_function_remote(self, path: str) -> Dict[str, Any]:
@@ -1055,7 +1075,9 @@ class SkillService:
         device = DeviceProxy(self._loader)
         results = device.search_skills(query, device_limit=device_limit)
 
-        return format_search_results(results)
+        return format_search_results(
+            results, tool_mode=self._tool_mode,
+        )
 
     def _execute_describe_function(self, path: str) -> str:
         """Execute describe_function tool.
@@ -1070,3 +1092,45 @@ class SkillService:
 
         device = DeviceProxy(self._loader)
         return device.describe_function(path)
+
+    def _append_describe_example(
+        self, path: str, raw_result: str,
+    ) -> str:
+        """Append a mode-appropriate example to a describe_function result.
+
+        Looks up the SkillMethod from the loader and uses
+        :func:`build_example_call` with the current tool mode.
+
+        Args:
+            path: Function path (SkillName.method_name).
+            raw_result: Raw result from the proxy (def + docstring).
+
+        Returns:
+            Result with appended example, or original if lookup fails.
+        """
+        if raw_result.startswith("Error:"):
+            return raw_result
+
+        parts = path.split(".")
+        if len(parts) != 2:
+            return raw_result
+
+        skill_name, method_name = parts
+        skill = self._loader.get_skill(skill_name)
+        if not skill:
+            return raw_result
+
+        method = next((m for m in skill.methods if m.name == method_name), None)
+        if not method:
+            return raw_result
+
+        example = build_example_call(
+            skill_name, method, tool_mode=self._tool_mode,
+        )
+        if example:
+            if self._tool_mode == "native":
+                raw_result += f"\n\nExample:\n  {example}"
+            else:
+                raw_result += f'\n\nExample:\n  python_exec(code="{example}")'
+
+        return raw_result

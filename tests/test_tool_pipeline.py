@@ -131,3 +131,70 @@ async def test_native_tool_dispatch_nonexistent_skill(
     result = await skill_service.execute_tool_async("FakeSkill__method", {})
     assert "error" in result
     assert "FakeSkill" in result["error"]
+
+
+# ── Mode-aware discovery ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_describe_function_code_mode_example(
+    skill_service: SkillService,
+) -> None:
+    """In code mode (default), describe_function should include a python_exec example."""
+    result = await skill_service.execute_tool_async(
+        "describe_function",
+        {"path": "WeatherSkill.get_current_weather"},
+    )
+    assert "result" in result
+    text = result["result"]
+    assert "def get_current_weather" in text
+    # Should have a python_exec-style example
+    assert "python_exec" in text
+    assert "device.WeatherSkill.get_current_weather" in text
+
+
+@pytest.mark.asyncio
+async def test_describe_function_native_mode_example(
+    skill_service: SkillService,
+) -> None:
+    """In native mode, describe_function should include a native tool example."""
+    skill_service.tool_mode = "native"
+    result = await skill_service.execute_tool_async(
+        "describe_function",
+        {"path": "WeatherSkill.get_current_weather"},
+    )
+    assert "result" in result
+    text = result["result"]
+    assert "def get_current_weather" in text
+    # Should have a native-style example (SkillClass__method)
+    assert "WeatherSkill__get_current_weather" in text
+    # Should NOT have python_exec reference
+    assert "python_exec" not in text
+
+
+@pytest.mark.asyncio
+async def test_search_skills_native_mode_includes_tool_names(
+    skill_service: SkillService,
+) -> None:
+    """In native mode, search_skills results should include native tool names."""
+    skill_service.tool_mode = "native"
+    result = await skill_service.execute_tool_async(
+        "search_skills", {"query": "weather"},
+    )
+    assert "result" in result
+    payload = result["result"]
+    assert "[tool: WeatherSkill__get_current_weather]" in payload
+
+
+@pytest.mark.asyncio
+async def test_search_skills_code_mode_no_tool_names(
+    skill_service: SkillService,
+) -> None:
+    """In code mode, search_skills results should NOT include native tool names."""
+    result = await skill_service.execute_tool_async(
+        "search_skills", {"query": "weather"},
+    )
+    assert "result" in result
+    payload = result["result"]
+    assert "[tool:" not in payload
+

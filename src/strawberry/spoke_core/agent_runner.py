@@ -245,6 +245,8 @@ class LocalAgentRunner(AgentRunner):
         self._llm = llm
         self._skills = skills
         self._emit = emit
+        # Cache tool_mode so guidance messages match the active mode.
+        self._tool_mode: str = getattr(skills, "tool_mode", "python_exec")
 
     async def _emit_assistant_message(
         self,
@@ -506,17 +508,17 @@ class LocalAgentRunner(AgentRunner):
                 )
             )
 
-    @staticmethod
     def _format_tool_result_message(
+        self,
         tool_name: str,
         success: bool,
         result_text: str,
     ) -> str:
         """Build the session message injected after a tool call.
 
-        Tailors the follow-up instruction to the tool type so the model
-        knows whether to execute next (after search) or respond to the
-        user (after python_exec).
+        Tailors the follow-up instruction to the tool type and the
+        current tool mode so the model knows whether to execute next
+        (after search) or respond to the user (after execution).
 
         Args:
             tool_name: Name of the tool that was called.
@@ -533,22 +535,42 @@ class LocalAgentRunner(AgentRunner):
                 "Fix the error and try again with corrected arguments."
             )
 
+        is_native = self._tool_mode == "native"
+
         if tool_name == "search_skills":
+            if is_native:
+                exec_hint = (
+                    "Now call the appropriate skill tool directly by name "
+                    "(e.g. SkillClass__method_name). "
+                    "search_skills only finds skills — it does NOT run them."
+                )
+            else:
+                exec_hint = (
+                    "Now call python_exec to execute the skill. "
+                    "search_skills only finds skills — it does NOT run them."
+                )
             return (
                 f"[Tool Result: search_skills — SUCCESS]\n"
                 f"{result_text}\n\n"
-                "Now call python_exec to execute the skill. "
-                "search_skills only finds skills — it does NOT run them."
+                f"{exec_hint}"
             )
 
         if tool_name == "describe_function":
+            if is_native:
+                exec_hint = (
+                    "Now call the skill tool directly by name."
+                )
+            else:
+                exec_hint = (
+                    "Now call python_exec to execute the skill."
+                )
             return (
                 f"[Tool Result: describe_function — SUCCESS]\n"
                 f"{result_text}\n\n"
-                "Now call python_exec to execute the skill."
+                f"{exec_hint}"
             )
 
-        # python_exec or any other tool
+        # python_exec, native skill tool, or any other tool
         return (
             f"[Tool Result: {tool_name} — SUCCESS]\n"
             f"{result_text}\n\n"
