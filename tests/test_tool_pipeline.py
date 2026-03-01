@@ -99,3 +99,35 @@ async def test_unknown_tool_returns_error(skill_service: SkillService) -> None:
     result = await skill_service.execute_tool_async("not_a_tool", {})
     assert "error" in result
     assert "Unknown tool" in result["error"]
+
+
+# ── Native tool dispatch ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_native_tool_dispatch_calls_skill(skill_service: SkillService) -> None:
+    """Native tool names (Class__method) should dispatch to the skill directly."""
+    result = await skill_service.execute_tool_async(
+        "WeatherSkill__get_current_weather",
+        {"location": "Seattle"},
+    )
+    assert "result" in result
+    assert "sunny in Seattle" in result["result"]
+
+
+@pytest.mark.asyncio
+async def test_native_tool_dispatch_invalid_name(skill_service: SkillService) -> None:
+    """Malformed native tool names should return a clear error."""
+    result = await skill_service.execute_tool_async("__no_class", {})
+    assert "error" in result
+    assert "Invalid native tool name" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_native_tool_dispatch_nonexistent_skill(
+    skill_service: SkillService,
+) -> None:
+    """Native tool calls to missing skills should return a skill-not-found error."""
+    result = await skill_service.execute_tool_async("FakeSkill__method", {})
+    assert "error" in result
+    assert "FakeSkill" in result["error"]

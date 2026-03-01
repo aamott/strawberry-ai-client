@@ -923,16 +923,15 @@ class SkillService:
                 return await self._tool_describe_function(arguments, mode)
             elif tool_name == "python_exec":
                 return await self._tool_python_exec(arguments)
+            elif "__" in tool_name:
+                return await self._execute_native_tool(tool_name, arguments)
             else:
                 return {
                     "error": (
                         f"Unknown tool: {tool_name}. "
-                        "Use one of the available tools: search_skills, "
-                        "describe_function, python_exec. "
-                        "To call a skill method like multiply,"
-                        " use python_exec with code like: "
-                        "print(device.CalculatorSkill"
-                        ".multiply(a=5, b=3))"
+                        "Available tools: search_skills, describe_function, "
+                        "python_exec, or call a skill directly by its "
+                        "native tool name (e.g. SkillClass__method_name)."
                     )
                 }
 
@@ -940,6 +939,39 @@ class SkillService:
             import traceback
 
             return {"error": f"{type(e).__name__}: {e}\n{traceback.format_exc()}"}
+
+    async def _execute_native_tool(
+        self, tool_name: str, arguments: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Execute a native skill tool call.
+
+        Parses ``SkillClass__method_name`` and routes to the skill method
+        directly via :meth:`execute_skill_by_name` — no sandbox needed.
+
+        Args:
+            tool_name: Tool name in ``Class__method`` format.
+            arguments: Tool arguments (keyword arguments for the method).
+
+        Returns:
+            Dict with ``"result"`` or ``"error"`` key.
+        """
+        parts = tool_name.split("__", 1)
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            return {"error": f"Invalid native tool name: {tool_name}"}
+
+        skill_class, method_name = parts
+        try:
+            result = await self.execute_skill_by_name(
+                skill_class, method_name, args=[], kwargs=dict(arguments or {})
+            )
+            return {"result": str(result) if result is not None else "(no output)"}
+        except (ValueError, RuntimeError) as e:
+            return {"error": str(e)}
+        except Exception as e:
+            logger.error(
+                "Native tool dispatch failed for %s: %s", tool_name, e, exc_info=True
+            )
+            return {"error": f"{skill_class}.{method_name} failed: {e}"}
 
     async def _tool_search_skills(
         self,
