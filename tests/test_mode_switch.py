@@ -30,11 +30,11 @@ class TestBuildModeSwitchMessage:
         assert "devices." in msg
         assert "ONLINE" in msg
 
-    def test_online_message_warns_against_local_syntax(self):
-        """Online switch should tell LLM not to use device.* syntax."""
+    def test_online_message_has_devices_syntax(self):
+        """Online switch should include devices.* in the tool instructions."""
         msg = build_mode_switch_message("online", skills=[])
-        assert "device.*" in msg
-        assert "Do NOT" in msg
+        assert "devices." in msg
+        assert "ONLINE" in msg
 
     def test_local_message_mentions_device_syntax(self):
         """Local switch should tell LLM to use device.* syntax."""
@@ -42,11 +42,10 @@ class TestBuildModeSwitchMessage:
         assert "device." in msg
         assert "LOCAL" in msg
 
-    def test_local_message_warns_against_remote_syntax(self):
-        """Local switch should tell LLM not to use remote syntax."""
+    def test_local_message_has_device_syntax(self):
+        """Local switch should include device.* in the tool instructions."""
         msg = build_mode_switch_message("local", skills=[])
-        assert "devices" in msg  # mentioned in the "don't use" list
-        assert "NEVER" in msg or "Do NOT" in msg
+        assert "device." in msg
 
     def test_online_message_mentions_tools(self):
         """Online switch should reference the 3 tools."""
@@ -84,17 +83,15 @@ class TestBuildModeSwitchMessage:
         assert "search_skills" in msg
         assert "have changed" in msg or "rediscover" in msg
 
-    def test_online_message_enforces_python_exec(self):
-        """Online switch should reinforce that skills go through python_exec."""
+    def test_online_message_mentions_python_exec(self):
+        """Online switch should reference python_exec in the tool instructions."""
         msg = build_mode_switch_message("online", skills=[])
         assert "python_exec" in msg
-        assert "MUST" in msg or "Do NOT call skill methods directly" in msg
 
-    def test_local_message_enforces_python_exec(self):
-        """Local switch should reinforce that skills go through python_exec."""
+    def test_local_message_mentions_python_exec(self):
+        """Local switch should reference python_exec in the tool instructions."""
         msg = build_mode_switch_message("local", skills=[])
         assert "python_exec" in msg
-        assert "MUST" in msg or "Do NOT call skill methods directly" in msg
 
     def test_local_message_has_example(self):
         """Local switch should include a python_exec example with device.* syntax."""
@@ -117,11 +114,11 @@ class TestBuildModeSwitchMessage:
         msg = build_mode_switch_message("online", skills=[])
         assert "all connected devices" in msg
 
-    def test_warns_old_tools_unavailable(self):
-        """Mode switch should warn that previous tools are no longer available."""
+    def test_mentions_skills_changed(self):
+        """Mode switch should mention that available skills have changed."""
         for mode in ("local", "online"):
             msg = build_mode_switch_message(mode, skills=[])
-            assert "NO LONGER AVAILABLE" in msg
+            assert "changed" in msg.lower() or "search_skills" in msg
 
     def test_skill_catalog_not_embedded(self):
         """Mode switch must NOT embed the skill catalog.
@@ -199,15 +196,14 @@ class TestPromptParts:
         """ROLE_SECTION should identify as Strawberry."""
         assert "Strawberry" in ROLE_SECTION
 
-    def test_role_section_has_behavioral_guidelines(self):
-        """ROLE_SECTION should have behavioral guidelines."""
-        assert "search_skills" in ROLE_SECTION
-        assert "Do NOT say" in ROLE_SECTION
+    def test_role_section_mentions_tools(self):
+        """ROLE_SECTION should mention tool usage."""
+        assert "tools" in ROLE_SECTION.lower()
+        assert "search" in ROLE_SECTION.lower()
 
-    def test_role_section_has_search_tips(self):
-        """ROLE_SECTION should have search guidance."""
-        assert "Searching Tips" in ROLE_SECTION
-        assert "action" in ROLE_SECTION.lower()
+    def test_role_section_mentions_skills(self):
+        """ROLE_SECTION should mention skills."""
+        assert "skills" in ROLE_SECTION.lower()
 
     def test_role_section_is_mode_agnostic(self):
         """ROLE_SECTION should not reference specific mode names."""
@@ -224,34 +220,31 @@ class TestPromptParts:
         assert "python_exec" in section
 
     def test_local_tools_section_uses_device_syntax(self):
-        """Local tools section should use device.* syntax and warn against wrong names."""
+        """Local tools section should use device.* syntax."""
         section = build_tools_section(SkillMode.LOCAL, [])
         assert "device." in section
-        # Warns against wrong object names (devices, default_api, etc.)
-        assert "NEVER" in section or "Do NOT" in section
 
     def test_online_tools_section_uses_devices_syntax(self):
         """Online tools section should use devices.* syntax."""
         section = build_tools_section(SkillMode.REMOTE, [])
         assert "devices." in section
-        assert "device.*" in section  # mentioned in "Do NOT use device.*"
 
     def test_local_tools_section_has_examples(self):
         """Local tools section should include usage examples."""
         section = build_tools_section(SkillMode.LOCAL, [])
-        assert "Examples" in section
+        assert "Example" in section
         assert "WeatherSkill" in section
 
-    def test_local_tools_section_has_rules(self):
-        """Local tools section should include rules."""
+    def test_local_tools_section_has_important(self):
+        """Local tools section should include important notes."""
         section = build_tools_section(SkillMode.LOCAL, [])
-        assert "Rules" in section
-        assert "python_exec" in section
+        assert "Important" in section
+        assert "print()" in section
 
-    def test_online_tools_section_has_rules(self):
-        """Online tools section should include rules."""
+    def test_online_tools_section_has_important(self):
+        """Online tools section should include important notes."""
         section = build_tools_section(SkillMode.REMOTE, [])
-        assert "Rules" in section
+        assert "Important" in section
 
 
 # =============================================================================

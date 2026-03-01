@@ -50,32 +50,14 @@ MAX_SKILLS_IN_PROMPT = 8
 # ---------------------------------------------------------------------------
 
 ROLE_SECTION = """\
-You are Strawberry, a helpful AI assistant with access to skills.
+You are Strawberry, a helpful AI assistant. You have access to skills
+(specialized tools) that let you perform real-world actions — controlling
+smart home devices, checking weather, searching documents, and more.
 
-## How to Complete a Task (MANDATORY)
-
-Every task requires THREE steps — never skip step 2:
-  Step 1: search_skills(query="...") to find the right method.
-  Step 2: python_exec(code="print(device.<Skill>.<method>(...))").
-  Step 3: Reply to the user with a natural-language summary.
-
-search_skills only FINDS skills — it does NOT execute them.
-You MUST call python_exec to actually DO anything.
-
-## Other Rules
-
-- If a tool call fails, fix the error and retry. Don't give up.
-- Do NOT say "I can't" until you've searched and confirmed no
-  matching skill exists.
-- Don't ask for confirmation unless you're missing required info.
-
-## Searching Tips
-
-search_skills matches method names, skill names, and descriptions.
-Search by action/verb, not specific entity names.
-- Lights: search 'light' or 'brightness'
-- Weather: search 'weather'
-- If nothing found, try different keywords."""
+Use your tools to accomplish tasks. When you're unsure what's available,
+search first, then act. Ask followup questions when needed, but try to 
+accomplish the user's request in as few steps as possible. Overall, remember
+you're a smart agent - you can figure things out!"""
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +163,8 @@ class ToolModeProvider(ABC):
     3. Register in :func:`get_tool_mode_provider`
     """
 
+    # -- System prompt sections (abstract) -----------------------------------
+
     @abstractmethod
     def tool_header(self) -> str:
         """Return the 'Available Tools' header listing the tools."""
@@ -231,6 +215,35 @@ class ToolModeProvider(ABC):
             Example code string.
         """
 
+    # -- Behavioral hooks (abstract) -----------------------------------------
+
+    @abstractmethod
+    def tool_result_guidance(self, tool_name: str, success: bool) -> str:
+        """Return a steering message to inject after a tool call completes.
+
+        The agent loop injects this as a user-role message so the LLM
+        knows what to do next (e.g., "respond to the user" or "now
+        execute the skill").
+
+        Args:
+            tool_name: Name of the tool that just ran.
+            success: Whether the tool call succeeded.
+
+        Returns:
+            Guidance string. May be empty if no guidance is needed.
+        """
+
+    @abstractmethod
+    def max_discovery_after_execution(self) -> int:
+        """Max discovery-tool calls allowed after a skill has returned.
+
+        Prevents the LLM from calling search_skills/describe_function
+        repeatedly after already having the data it needs.
+
+        Returns:
+            Max discovery calls. 0 means no limit.
+        """
+
     # -- Concrete composition -----------------------------------------------
 
     def build_tools_section(
@@ -279,7 +292,7 @@ class ToolModeProvider(ABC):
 
 
 def _local_mode() -> "SkillMode":
-    """Import and return SkillMode.LOCAL (avoids circular import at class level)."""
+    """Import and return SkillMode.LOCAL (avoids circular import)."""
     from .sandbox.proxy_gen import SkillMode
 
     return SkillMode.LOCAL
@@ -299,43 +312,30 @@ class PythonExecToolMode(ToolModeProvider):
     """
 
     def tool_header(self) -> str:
-        """List the 3 available tools."""
+        """List the available tools."""
         return """\
 ## Available Tools
 
-You have exactly 3 tools and a set of python skills:
-1) search_skills(query) - Find skills by keyword
-   (searches method names and descriptions).
-2) describe_function(path) - Get the full signature for a skill
-   method. Call this if you need more information about a skill
-   function, e.g. after an error.
-3) python_exec(code) - Execute Python code, including skills."""
+1) search_skills(query) - Find skills by keyword.
+2) describe_function(path) - Get full signature and docstring for a
+   skill method.
+3) python_exec(code) - Execute Python code to call skills."""
 
     def discovery_section(self, skill_mode: "SkillMode") -> str:
-        """Describe search_skills behavior per skill mode."""
-        if skill_mode == _local_mode():
-            return """\
-## search_skills
-
-- search_skills(query) - Find skill functions by keyword.
-  Searches method names and descriptions and returns a list of
-  skill methods with a short description.
-  Example: `search_skills(query="weather")`"""
+        """Describe search_skills."""
         return """\
 ## search_skills
 
-- search_skills(query) - Find skill functions by keyword.
-  Returns skill methods, devices they belong to, and a short
-  description."""
+search_skills(query) returns matching skill methods with short
+descriptions. Example: search_skills(query="weather")"""
 
     def describe_section(self) -> str:
-        """Describe describe_function (shared across skill modes)."""
+        """Describe describe_function."""
         return """\
 ## describe_function
 
-- describe_function(path) - Get the full signature and docstring
-  for a skill method. Helpful for debugging or when you need more
-  information."""
+describe_function(path) returns the full signature and docstring
+for a skill method. Use it when you need parameter details."""
 
     def execution_section(self, skill_mode: "SkillMode") -> str:
         """Describe python_exec syntax per skill mode."""
@@ -343,56 +343,29 @@ You have exactly 3 tools and a set of python skills:
             return """\
 ## python_exec
 
-- Use `python_exec` to execute skills. It takes a string of Python
-  code and executes it. The code should call a skill method and
-  print the final output. Avoid importing — just use default
-  python functions.
-- The ONLY way to call skills:
-  `device.<SkillClass>.<method>(...)`
-- ALWAYS wrap calls in print() so you see the result.
-- WRONG names (will error): `default_api`, `api`, `devices`, `client`
-  The ONLY valid object is `device`. Nothing else exists."""
+Execute skills via python_exec. Syntax:
+  python_exec(code="print(device.<Skill>.<method>(...))")
+
+Always wrap calls in print() so you can see the result."""
         return """\
 ## python_exec
 
-- Use the `devices` object for remote devices:
-  `devices.<device>.<SkillClass>.<method>(...)`
-- print the final output so the result is surfaced to you.
-- Do NOT use `device.*` syntax — it only works in local mode.
-  Only `devices.<device>.*` works."""
+Execute skills via python_exec. Syntax:
+  python_exec(code="print(devices.<device>.<Skill>.<method>(...))")
+
+Always wrap calls in print() so you can see the result."""
 
     def examples_section(self, skill_mode: "SkillMode") -> str:
-        """Provide Python-exec examples per skill mode."""
+        """Provide a concise example per skill mode."""
         if skill_mode == _local_mode():
-            return (
-                "## Examples\n"
-                "\n"
-                "Each example shows the full flow: search → execute"
-                " → reply. ALWAYS follow all 3 steps.\n"
-                "\n"
-                "Weather:\n"
-                '- User: "Weather in Portland"\n'
-                "  1. search_skills(query=\"weather\")\n"
-                "  2. python_exec(code=\"print(device"
-                ".WeatherSkill.get_current_weather("
-                "location='Portland'))\")\n"
-                "  3. Read the result, then reply naturally"
-                ' (e.g. "It\'s 55°F and rainy").\n'
-                "\n"
-                "Smart home:\n"
-                '- User: "Turn the desk lamp purple"\n'
-                "  1. search_skills(query=\"light\")\n"
-                "  2. python_exec(code=\"print(device"
-                ".HomeAssistantSkill.HassLightSet("
-                "name='desk lamp', color='purple'))\")\n"
-                "  3. Read the result, then confirm"
-                ' (e.g. "Done! Desk lamp is now purple.").\n'
-                "\n"
-                "Key pattern:\n"
-                "  python_exec(code=\"print(device"
-                ".<SkillClass>.<method>(<args>))\")"
-            )
-        # Brief online example so the LLM sees devices.* usage
+            return """\
+## Example
+
+User: "What's the weather in Portland?"
+1. search_skills(query="weather")
+2. python_exec(code="print(device.WeatherSkill\
+.get_current_weather(location='Portland'))")
+3. Respond naturally with the result."""
         return """\
 ## Example
 
@@ -400,20 +373,13 @@ python_exec(code="print(devices.my_device.WeatherSkill\
 .get_current_weather(location='Seattle'))")"""
 
     def rules_section(self) -> str:
-        """Return Python-exec-specific rules."""
+        """Minimal rules — most steering is via tool_result_guidance."""
         return """\
-## Rules
+## Important
 
-1. search_skills only discovers skills. You MUST call python_exec
-   to actually execute anything. Never reply "Done" without a
-   python_exec call first.
-2. Inside python_exec, the ONLY object is `device`.
-   NEVER use: default_api, api, client, devices, or any other name.
-3. ALWAYS wrap calls in print() so you can see the output.
-4. After python_exec succeeds, reply in natural language. Don't repeat it.
-5. For smart-home (lights, locks, media): use HomeAssistantSkill
-   with name= kwarg.
-6. If multiple skills match, pick the best and proceed."""
+- Always print() results inside python_exec.
+- If a tool call fails, fix the error and retry.
+- If multiple skills match, pick the best and proceed."""
 
     def build_example_call(
         self, skill_name: str, method: "SkillMethod",
@@ -454,6 +420,159 @@ python_exec(code="print(devices.my_device.WeatherSkill\
         args_str = ", ".join(example_args)
         return f"print(device.{skill_name}.{method.name}({args_str}))"
 
+    # -- Behavioral hooks ---------------------------------------------------
+
+    def tool_result_guidance(self, tool_name: str, success: bool) -> str:
+        """Steer the LLM after each tool call."""
+        if not success:
+            return "Fix the error and try again."
+        if tool_name == "search_skills":
+            return (
+                "Now call python_exec to execute the skill. "
+                "search_skills only finds skills — it does NOT run them."
+            )
+        if tool_name == "describe_function":
+            return "Now call python_exec to execute the skill."
+        # python_exec succeeded
+        return (
+            "Respond to the user with a natural-language summary. "
+            "Do NOT repeat this tool call."
+        )
+
+    def max_discovery_after_execution(self) -> int:
+        """No limit on discovery calls for Spoke python_exec mode."""
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# NativeToolMode — native tool calling for the Spoke
+# ---------------------------------------------------------------------------
+
+
+class NativeToolMode(ToolModeProvider):
+    """Tool mode where each skill method is a native tool.
+
+    The LLM calls skill methods directly (e.g.
+    ``WeatherSkill__get_current_weather(location="here")``)
+    instead of writing Python code via ``python_exec``.
+
+    Discovery tools (``search_skills``, ``describe_function``)
+    remain available for finding the right tool.
+    """
+
+    def tool_header(self) -> str:
+        """List the available tools in native mode."""
+        return """\
+## Available Tools
+
+Each skill method is a native tool you can call directly.
+Discovery helpers:
+1) search_skills(query) - Find skills by keyword.
+2) describe_function(path) - Get full signature and docstring."""
+
+    def discovery_section(self, skill_mode: "SkillMode") -> str:
+        """Describe search_skills."""
+        return """\
+## search_skills
+
+search_skills(query) returns matching skill names and descriptions.
+Example: search_skills(query="weather")"""
+
+    def describe_section(self) -> str:
+        """Describe describe_function."""
+        return """\
+## describe_function
+
+describe_function(path) returns the full signature and docstring
+for a skill method. Use it when you need parameter details."""
+
+    def execution_section(self, skill_mode: "SkillMode") -> str:
+        """Describe native tool calling syntax."""
+        return """\
+## Calling Skills
+
+Call skill tools directly by name using the pattern:
+  SkillClass__method_name(param=value)
+
+No code required — just pass named arguments."""
+
+    def examples_section(self, skill_mode: "SkillMode") -> str:
+        """Provide a concise native-mode example."""
+        return """\
+## Example
+
+User: "What's the weather in Portland?"
+1. search_skills(query="weather")
+2. WeatherSkill__get_current_weather(location="Portland")
+3. Respond naturally with the result."""
+
+    def rules_section(self) -> str:
+        """Minimal native-mode rules."""
+        return """\
+## Important
+
+- Call tools directly — do NOT use python_exec.
+- If a tool call fails, check describe_function for correct
+  parameters and retry."""
+
+    def build_example_call(
+        self, skill_name: str, method: "SkillMethod",
+    ) -> str:
+        """Build a native tool example using structured params.
+
+        Uses ``method.params`` to produce an example with the
+        ``SkillClass__method_name(param=value)`` syntax.
+
+        Args:
+            skill_name: Name of the skill class.
+            method: SkillMethod with structured params.
+
+        Returns:
+            Example string, e.g.
+            ``WeatherSkill__get_current_weather(location='...')``
+        """
+        tool_name = f"{skill_name}__{method.name}"
+        if not method.params:
+            return f"{tool_name}()"
+
+        example_args: list[str] = []
+        for p in method.params:
+            if p.default is not None:
+                value = (
+                    _placeholder_for_type(p.type_hint.lower())
+                    if p.default == "None"
+                    else p.default
+                )
+                example_args.append(f"{p.name}={value}")
+            else:
+                # Required param — placeholder from type hint
+                example_args.append(
+                    f"{p.name}={_placeholder_for_type(p.type_hint.lower())}"
+                )
+
+        args_str = ", ".join(example_args)
+        return f"{tool_name}({args_str})"
+
+    # -- Behavioral hooks ---------------------------------------------------
+
+    _DISCOVERY_TOOLS = frozenset({"search_skills", "describe_function"})
+
+    def tool_result_guidance(self, tool_name: str, success: bool) -> str:
+        """Steer the LLM after each tool call."""
+        if not success:
+            return (
+                "Check describe_function for correct parameter "
+                "names and types, then retry."
+            )
+        if tool_name in self._DISCOVERY_TOOLS:
+            return "Now call the appropriate skill tool directly."
+        # A skill tool succeeded
+        return "Respond to the user naturally."
+
+    def max_discovery_after_execution(self) -> int:
+        """Allow up to 2 discovery calls after a skill tool returns."""
+        return 2
+
 
 # ---------------------------------------------------------------------------
 # Provider registry
@@ -469,7 +588,8 @@ def get_tool_mode_provider(name: str = "python_exec") -> ToolModeProvider:
     Providers are cached as singletons since they are stateless.
 
     Args:
-        name: Tool mode name. Currently supported: ``"python_exec"``.
+        name: Tool mode name. Currently supported:
+            ``"python_exec"`` and ``"native"``.
 
     Returns:
         ToolModeProvider instance.
@@ -480,10 +600,12 @@ def get_tool_mode_provider(name: str = "python_exec") -> ToolModeProvider:
     if name not in _PROVIDERS:
         if name == "python_exec":
             _PROVIDERS[name] = PythonExecToolMode()
+        elif name == "native":
+            _PROVIDERS[name] = NativeToolMode()
         else:
             raise ValueError(
                 f"Unknown tool mode: {name!r}. "
-                f"Available: {list(_PROVIDERS.keys()) or ['python_exec']}"
+                f"Available: {list(_PROVIDERS.keys()) or ['python_exec', 'native']}"
             )
     return _PROVIDERS[name]
 
@@ -523,15 +645,7 @@ def build_mode_switch_message(
     """Build a conversation-level message explaining a skill-mode switch.
 
     Composes a concise mode-change notice followed by the updated tool
-    instructions (WITHOUT the skill catalog).  The LLM should use
-    ``search_skills`` to rediscover what's available — dumping the
-    catalog here causes the LLM to treat skill names as native tools.
-
-    .. note:: The ``skills`` parameter is accepted for backward
-       compatibility but is intentionally NOT embedded in the message.
-       Embedding the catalog after a mode switch causes the LLM to
-       pattern-match on familiar skill names and attempt direct tool
-       calls instead of following the python_exec workflow.
+    instructions (WITHOUT the skill catalog).
 
     Args:
         to_mode: Target mode — ``"online"`` or ``"local"``.
@@ -558,18 +672,12 @@ def build_mode_switch_message(
         skill_mode = SkillMode.LOCAL
 
     context = (
-        "The available tools and skills have changed and their mode "
-        "of execution has changed. Any tools you were using before "
-        "might not be available anymore.\n"
-        "\n"
-        "You MUST use search_skills to rediscover available skills "
-        "before calling anything.\n"
-        "\n"
-        "Updated instructions follow."
+        "The available skills have changed. Use search_skills to "
+        "rediscover what's available before calling anything."
     )
 
     # Pass empty skills list — the catalog must NOT be embedded in
-    # mode-switch messages (see docstring).
+    # mode-switch messages.
     tools = build_tools_section(skill_mode, skills=[], tool_mode=tool_mode)
     return f"{notice}\n\n{context}\n\n{tools}"
 
@@ -639,6 +747,8 @@ def _strip_tool_sections(text: str) -> str:
         "searching tips",
         "critical notes",
         "available skills",
+        "important",
+        "calling skills",
     }
 
     lines = text.split("\n")

@@ -107,21 +107,21 @@ class TestPythonExecToolMode:
         section = provider.discovery_section(SkillMode.LOCAL)
         assert 'search_skills(query="weather")' in section
 
-    def test_remote_discovery_mentions_devices(self, provider) -> None:
-        """Remote discovery mentions devices in results."""
-        section = provider.discovery_section(SkillMode.REMOTE)
-        assert "devices" in section
+    def test_remote_discovery_same_as_local(self, provider) -> None:
+        """Discovery section is mode-agnostic."""
+        local = provider.discovery_section(SkillMode.LOCAL)
+        remote = provider.discovery_section(SkillMode.REMOTE)
+        assert local == remote  # simplified: no mode-specific variants
 
     def test_local_execution_uses_device(self, provider) -> None:
         """Local exec section uses device.* syntax."""
         section = provider.execution_section(SkillMode.LOCAL)
-        assert "device.<SkillClass>.<method>" in section
-        assert "default_api" in section  # warns against it
+        assert "device.<Skill>" in section
 
     def test_remote_execution_uses_devices(self, provider) -> None:
         """Remote exec section uses devices.* syntax."""
         section = provider.execution_section(SkillMode.REMOTE)
-        assert "devices.<device>.<SkillClass>" in section
+        assert "devices.<device>.<Skill>" in section
 
     def test_local_examples_have_device_syntax(self, provider) -> None:
         """Local examples use device.* syntax."""
@@ -133,10 +133,10 @@ class TestPythonExecToolMode:
         examples = provider.examples_section(SkillMode.REMOTE)
         assert "devices.my_device" in examples
 
-    def test_rules_mention_python_exec(self, provider) -> None:
-        """Rules reference python_exec."""
+    def test_rules_mention_print(self, provider) -> None:
+        """Rules mention print() requirement."""
         rules = provider.rules_section()
-        assert "python_exec" in rules
+        assert "print()" in rules
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +295,7 @@ class TestBuildToolsSection:
 
     def test_local_has_device_syntax(self) -> None:
         result = build_tools_section(SkillMode.LOCAL, [])
-        assert "device.<SkillClass>" in result
+        assert "device.<Skill>" in result
 
     def test_remote_has_devices_syntax(self) -> None:
         result = build_tools_section(SkillMode.REMOTE, [])
@@ -325,7 +325,7 @@ class TestModeSwitchMessages:
     def test_switch_to_local(self) -> None:
         msg = build_mode_switch_message("local")
         assert "LOCAL mode" in msg
-        assert "device.<SkillClass>" in msg
+        assert "device.<Skill>" in msg
 
     def test_tool_mode_switch(self) -> None:
         msg = build_tool_mode_switch_message(
@@ -333,7 +333,7 @@ class TestModeSwitchMessages:
         )
         assert "Tool mode changed" in msg
         assert "python_exec" in msg
-        assert "device.<SkillClass>" in msg
+        assert "device.<Skill>" in msg
 
 
 # ---------------------------------------------------------------------------
