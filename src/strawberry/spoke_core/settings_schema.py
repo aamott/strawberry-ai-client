@@ -48,6 +48,21 @@ SKILLS_CONFIG_SCHEMA: List[SettingField] = [
         description="Path to directory containing user skills",
         group="general",
     ),
+    SettingField(
+        key="tool_mode",
+        label="Tool Calling Mode",
+        type=FieldType.SELECT,
+        default="python_exec",
+        options=["python_exec", "native"],
+        description="Execution mode for LLM tool calls",
+        group="general",
+        metadata={
+            "help_text": (
+                "python_exec: LLM writes Python code in a sandbox (most flexible).\n"
+                "native: LLM uses native JSON tool schemas directly."
+            )
+        },
+    ),
 ]
 
 

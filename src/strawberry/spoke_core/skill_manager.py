@@ -48,6 +48,7 @@ class SkillManager:
         custom_system_prompt: Optional[str],
         emit: Callable[[CoreEvent], Any],
         settings_manager: Optional[Any] = None,
+        tool_mode: str = "python_exec",
     ) -> None:
         """Initialize the SkillManager.
 
@@ -59,6 +60,7 @@ class SkillManager:
             custom_system_prompt: Optional override for the system prompt.
             emit: Async callback to emit CoreEvent instances.
             settings_manager: Optional SettingsManager for skill settings.
+            tool_mode: Execution mode ('python_exec' or 'native').
         """
         from ..skills.service import SkillService
 
@@ -70,6 +72,7 @@ class SkillManager:
             allow_unsafe_exec=allow_unsafe_exec,
             custom_system_prompt=custom_system_prompt,
             settings_manager=settings_manager,
+            tool_mode=tool_mode,
         )
 
     @property

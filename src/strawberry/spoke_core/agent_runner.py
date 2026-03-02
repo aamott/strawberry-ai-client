@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from ..skills.service import SkillService
     from .session import ChatSession
 
+from ..llm.tensorzero_client import _build_chat_response, _parse_response_content
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,28 +55,29 @@ class AgentRunner(ABC):
 
 
 class HubAgentRunner(AgentRunner):
-    """Agent runner that forwards messages to Hub for processing.
+    """Executes the agent loop via the central Hub.
 
-    The Hub owns:
-    - System prompt construction
-    - Tool call execution on registered devices
-
-    The Spoke only receives events and final responses.
+    Passes the conversation to the Hub, which routes to a provider,
+    executes tools by calling Spoke endpoints, and returns the final
+    result in a stream.
     """
 
     def __init__(
         self,
         get_hub_client: Callable[[], Optional["HubClient"]],
         emit: Callable[[CoreEvent], Any],
+        get_tool_mode: Callable[[], str],
     ) -> None:
-        """Initialize HubAgentRunner.
+        """Initialize Hub runner.
 
         Args:
-            get_hub_client: Callback to get the current HubClient (or None).
-            emit: Async callback to emit CoreEvent instances.
+            get_hub_client: Callable returning the active HubClient
+            emit: Async callback to push UI events
+            get_tool_mode: Callable returning the requested tool mode
         """
         self._get_hub_client = get_hub_client
         self._emit = emit
+        self._get_tool_mode = get_tool_mode
 
     async def _dispatch_stream_event(
         self,
@@ -170,9 +173,11 @@ class HubAgentRunner(AgentRunner):
         try:
             final_content: Optional[str] = None
 
+            tool_mode = self._get_tool_mode()
             stream = hub_client.chat_stream(
                 messages=messages,
                 enable_tools=True,
+                tool_mode=tool_mode,
             )
             try:
                 while True:
@@ -263,7 +268,7 @@ class LocalAgentRunner(AgentRunner):
             )
         )
 
-    async def run(
+    async def run(  # noqa: C901
         self,
         session: "ChatSession",
         max_iterations: int = 5,
@@ -278,25 +283,48 @@ class LocalAgentRunner(AgentRunner):
         seen_tool_calls: set[str] = set()
 
         final_content: Optional[str] = None
-        for iteration in range(max_iterations):
-            # Build messages for LLM (skip system messages)
-            messages = [msg for msg in session.messages if msg.role != "system"]
 
-            # Get LLM response with system prompt passed explicitly
-            response = await self._llm.chat(
-                messages,
-                system_prompt=system_prompt,
+        # Build ephemeral tz_messages for the LLM context.
+        # We start with the actual session messages.
+        tz_messages = self._llm._build_tz_messages(
+            [msg for msg in session.messages if msg.role != "system"]
+        )
+
+        for iteration in range(max_iterations):
+            inference_input = {"messages": tz_messages}
+            if system_prompt:
+                inference_input["system"] = system_prompt
+
+            gateway = await self._llm._get_gateway()
+            raw_response = await gateway.inference(
                 function_name=function_name,
+                input=inference_input,
             )
+
+            content, tool_calls = _parse_response_content(
+                raw_response, label="[LocalAgentRunner] "
+            )
+            response = _build_chat_response(raw_response, content, tool_calls)
 
             # Check for native tool calls first
             if response.tool_calls:
                 if response.content:
                     await self._emit_assistant_message(session, response.content)
 
-                should_abort = await self._handle_tool_calls(
+                # 1. Append the assistant's request with the raw tool_calls
+                tz_messages.append(
+                    {"role": "assistant", "content": getattr(raw_response, "content", [])}
+                )
+
+                # 2. Handle the tool calls, returning properly formatted result blocks
+                should_abort, tool_results_content = await self._handle_tool_calls(
                     session, response.tool_calls, seen_tool_calls
                 )
+
+                # 3. Append the execution results to the ephemeral context
+                if tool_results_content:
+                    tz_messages.append({"role": "user", "content": tool_results_content})
+
                 if should_abort:
                     return None
                 continue
@@ -306,9 +334,15 @@ class LocalAgentRunner(AgentRunner):
             if legacy_code_blocks:
                 if response.content:
                     await self._emit_assistant_message(session, response.content)
-                await self._handle_legacy_code_blocks(
+
+                tz_messages.append({"role": "assistant", "content": response.content})
+
+                tool_results_content = await self._handle_legacy_code_blocks(
                     session, legacy_code_blocks, seen_tool_calls
                 )
+
+                if tool_results_content:
+                    tz_messages.append({"role": "user", "content": tool_results_content})
                 continue
 
             # No tool calls - final response
@@ -344,28 +378,8 @@ class LocalAgentRunner(AgentRunner):
         session: "ChatSession",
         tool_calls: List[Any],
         seen_tool_calls: set[str],
-    ) -> bool:
+    ) -> tuple[bool, list[dict[str, Any]]]:
         """Handle native tool calls from LLM response.
-
-        .. warning:: DO NOT suppress or fake duplicate tool calls.
-
-           It is tempting to detect duplicate tool calls and skip execution,
-           injecting a canned "already completed" message instead. **Do not
-           do this.** The rationale:
-
-           1. **Skills are cheap; LLM iterations are expensive.** Re-running
-              a skill costs almost nothing. Tricking the model into thinking
-              it executed a skill when it didn't wastes an entire LLM round
-              when the model inevitably notices the mismatch or retries.
-           2. **Legitimate repeated calls exist.** Some skills (polling,
-              retries with different state, actuator confirmation) genuinely
-              need to be called more than once with identical arguments.
-           3. **Honesty > cleverness.** The model must always receive
-              truthful tool results. Lying about execution breaks the
-              agent contract and leads to cascading hallucinations.
-
-           Instead we *warn* the model that the call looks like a duplicate
-           and let it decide. The max-iteration guard handles true loops.
 
         Args:
             session: Chat session.
@@ -373,8 +387,13 @@ class LocalAgentRunner(AgentRunner):
             seen_tool_calls: Set of seen tool call signatures (for dedup).
 
         Returns:
-            True if loop should abort (consecutive duplicates), False otherwise.
+            (should_abort, list_of_tool_result_blocks_for_ephemeral_context)
         """
+        tool_results_content: list[dict[str, Any]] = []
+        is_native = self._tool_mode == "native"
+
+        last_tcid = str(tool_calls[-1].id) if tool_calls else ""
+
         for tool_call in tool_calls:
             tool_key = json.dumps(
                 {
@@ -416,17 +435,25 @@ class LocalAgentRunner(AgentRunner):
                 )
             )
 
-            tool_msg = self._format_tool_result_message(
-                tool_call.name, success, result_text,
+            tool_msg, guidance_str = self._format_tool_result_message(
+                tool_call.name,
+                success,
+                result_text,
             )
             if is_duplicate:
-                tool_msg += (
-                    "\n\n[NOTICE: This is a duplicate call — you already made "
+                dup_str = (
+                    "NOTICE: This is a duplicate call — you already made "
                     "this exact call earlier in this conversation. Unless you "
                     "specifically need to repeat it, respond to the user now "
-                    "instead of calling tools again.]"
+                    "instead of calling tools again."
                 )
-            session.add_message("user", tool_msg)
+                tool_msg += f"\n\n[{dup_str}]"
+                guidance_str = (
+                    dup_str if not guidance_str else f"{guidance_str} | {dup_str}"
+                )
+
+            # Emit for UI visibility, but do NOT append to session.messages
+            # to preserve standard chat log structure without complex JSON.
             await self._emit(
                 MessageAdded(
                     session_id=session.id,
@@ -435,21 +462,41 @@ class LocalAgentRunner(AgentRunner):
                 )
             )
 
-        return False
+            # Format block for TensorZero
+            payload = {"result": result_text}
+
+            # Use strict JSON injection on the very last block in this batch
+            if is_native and guidance_str and str(tool_call.id) == last_tcid:
+                payload["_system_guidance"] = guidance_str
+
+            tool_results_content.append(
+                {
+                    "type": "tool_result",
+                    "id": str(tool_call.id),
+                    "name": tool_call.name,
+                    "result": json.dumps(payload, default=str),
+                }
+            )
+
+        return False, tool_results_content
 
     async def _handle_legacy_code_blocks(
         self,
         session: "ChatSession",
         code_blocks: List[str],
         seen_tool_calls: set[str],
-    ) -> None:
+    ) -> str:
         """Handle legacy code blocks extracted from LLM response.
 
         Args:
             session: Chat session.
             code_blocks: List of code strings to execute.
             seen_tool_calls: Set of seen tool call signatures (for dedup).
+
+        Returns:
+            String representing the text output to append back to the LLM.
         """
+        combined_outputs = []
         for code in code_blocks:
             tool_key = json.dumps(
                 {
@@ -489,8 +536,10 @@ class LocalAgentRunner(AgentRunner):
                 )
             )
 
-            tool_msg = self._format_tool_result_message(
-                "python_exec", success, result_text,
+            tool_msg, guidance = self._format_tool_result_message(
+                "python_exec",
+                success,
+                result_text,
             )
             if is_duplicate:
                 tool_msg += (
@@ -499,7 +548,7 @@ class LocalAgentRunner(AgentRunner):
                     "specifically need to repeat it, respond to the user now "
                     "instead of calling tools again.]"
                 )
-            session.add_message("user", tool_msg)
+
             await self._emit(
                 MessageAdded(
                     session_id=session.id,
@@ -507,18 +556,17 @@ class LocalAgentRunner(AgentRunner):
                     content=tool_msg,
                 )
             )
+            combined_outputs.append(tool_msg)
+
+        return "\n\n".join(combined_outputs)
 
     def _format_tool_result_message(
         self,
         tool_name: str,
         success: bool,
         result_text: str,
-    ) -> str:
+    ) -> tuple[str, str]:
         """Build the session message injected after a tool call.
-
-        Tailors the follow-up instruction to the tool type and the
-        current tool mode so the model knows whether to execute next
-        (after search) or respond to the user (after execution).
 
         Args:
             tool_name: Name of the tool that was called.
@@ -526,16 +574,16 @@ class LocalAgentRunner(AgentRunner):
             result_text: Output or error text from the tool.
 
         Returns:
-            Formatted message string to add to the session.
+            (formatted_ui_string, guidance_string_for_llm)
         """
         if not success:
+            err_guide = "Fix the error and try again with corrected arguments."
             return (
-                f"[Tool Result: {tool_name} — ERROR]\n"
-                f"{result_text}\n\n"
-                "Fix the error and try again with corrected arguments."
-            )
+                f"[Tool Result: {tool_name} — ERROR]\n{result_text}\n\n{err_guide}"
+            ), err_guide
 
         is_native = self._tool_mode == "native"
+        exec_hint = ""
 
         if tool_name == "search_skills":
             if is_native:
@@ -550,33 +598,28 @@ class LocalAgentRunner(AgentRunner):
                     "search_skills only finds skills — it does NOT run them."
                 )
             return (
-                f"[Tool Result: search_skills — SUCCESS]\n"
-                f"{result_text}\n\n"
-                f"{exec_hint}"
-            )
+                f"[Tool Result: search_skills — SUCCESS]\n{result_text}\n\n{exec_hint}"
+            ), exec_hint
 
         if tool_name == "describe_function":
             if is_native:
-                exec_hint = (
-                    "Now call the skill tool directly by name."
-                )
+                exec_hint = "Now call the skill tool directly by name."
             else:
-                exec_hint = (
-                    "Now call python_exec to execute the skill."
-                )
+                exec_hint = "Now call python_exec to execute the skill."
             return (
                 f"[Tool Result: describe_function — SUCCESS]\n"
                 f"{result_text}\n\n"
                 f"{exec_hint}"
-            )
+            ), exec_hint
 
         # python_exec, native skill tool, or any other tool
-        return (
-            f"[Tool Result: {tool_name} — SUCCESS]\n"
-            f"{result_text}\n\n"
+        exec_hint = (
             "Give the user a short, natural-language answer "
             "confirming what was done. Do NOT repeat this tool call."
         )
+        return (
+            f"[Tool Result: {tool_name} — SUCCESS]\n{result_text}\n\n{exec_hint}"
+        ), exec_hint
 
     def _extract_legacy_code_blocks(self, content: str) -> List[str]:
         """Extract executable code blocks from LLM response.

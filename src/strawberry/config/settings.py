@@ -88,6 +88,7 @@ class SkillsSettings(BaseModel):
     """Skill runner settings."""
 
     path: str = "./skills"
+    tool_mode: Literal["python_exec", "native"] = "python_exec"
     allow_unsafe_exec: bool = False
     sandbox: SandboxSettings = Field(default_factory=SandboxSettings)
 

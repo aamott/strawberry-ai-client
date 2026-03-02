@@ -199,6 +199,11 @@ class SpokeCore:
                 self._skill_mgr.set_allow_unsafe_exec(bool(value))
                 logger.info("Updated skills.allow_unsafe_exec from settings")
 
+            # Update tool mode at runtime
+            if section == "skills" and field == "tool_mode" and self._skill_mgr:
+                self._skill_mgr.service.tool_mode = str(value)
+                logger.info("Updated skills.tool_mode from settings to %s", value)
+
     def _schedule_hub_reconnection(self) -> None:
         """Schedule hub reconnection after settings change."""
         self._hub_manager.schedule_reconnection(
@@ -368,6 +373,7 @@ class SpokeCore:
             device_name = self._get_setting("device.name", "Strawberry Spoke")
             allow_unsafe = self._get_setting("skills.allow_unsafe_exec", False)
             custom_prompt = self._get_setting("llm.system_prompt", None)
+            tool_mode = self._get_setting("skills.tool_mode", "python_exec")
 
             self._skill_mgr = SkillManager(
                 skills_path=self._skills_path,
@@ -377,6 +383,7 @@ class SpokeCore:
                 custom_system_prompt=custom_prompt or None,
                 emit=self._emit,
                 settings_manager=self._settings_manager,
+                tool_mode=tool_mode,
             )
             await self._skill_mgr.load_and_emit(
                 on_skill_loaded=on_skill_loaded,
@@ -387,6 +394,9 @@ class SpokeCore:
             self._hub_runner = HubAgentRunner(
                 get_hub_client=lambda: self._hub_manager.client,
                 emit=self._emit,
+                get_tool_mode=lambda: (
+                    self._skill_mgr.service.tool_mode if self._skill_mgr else "python_exec"
+                ),
             )
             self._local_runner = LocalAgentRunner(
                 llm=self._llm,

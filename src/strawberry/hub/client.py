@@ -302,6 +302,7 @@ class HubClient:
         model: Optional[str],
         max_tokens: Optional[int],
         session_id: Optional[str],
+        tool_mode: str,
     ) -> Dict[str, Any]:
         """Build Hub chat payload with optional fields."""
         payload: Dict[str, Any] = {
@@ -309,6 +310,7 @@ class HubClient:
             "temperature": temperature,
             "enable_tools": enable_tools,
             "stream": stream,
+            "tool_mode": tool_mode,
         }
         if model:
             payload["model"] = model
@@ -328,6 +330,7 @@ class HubClient:
         enable_tools: bool = False,
         stream: bool = False,
         session_id: Optional[str] = None,
+        tool_mode: str = "python_exec",
     ) -> ChatResponse:
         """Send a chat completion request to the Hub.
 
@@ -339,6 +342,7 @@ class HubClient:
             enable_tools: If True, Hub runs agent loop and executes tools.
                          If False, Hub just passes through to LLM.
             session_id: Optional Hub session identifier for continuity.
+            tool_mode: Tool execution mode ('python_exec' or 'native').
 
         Returns:
             ChatResponse with the assistant's reply
@@ -351,6 +355,7 @@ class HubClient:
             model=model,
             max_tokens=max_tokens,
             session_id=session_id,
+            tool_mode=tool_mode,
         )
 
         response = await self.client.post("/api/v1/chat/completions", json=payload)
@@ -374,6 +379,7 @@ class HubClient:
         max_tokens: Optional[int] = None,
         enable_tools: bool = False,
         session_id: Optional[str] = None,
+        tool_mode: str = "python_exec",
     ) -> AsyncIterator[Dict[str, Any]]:
         """Stream Hub chat completion events.
 
@@ -387,6 +393,7 @@ class HubClient:
             max_tokens: Optional token cap.
             enable_tools: If True, Hub executes tools and streams tool events.
             session_id: Optional Hub session identifier for continuity.
+            tool_mode: Tool execution mode ('python_exec' or 'native').
 
         Yields:
             Parsed event dicts.
@@ -399,6 +406,7 @@ class HubClient:
             model=model,
             max_tokens=max_tokens,
             session_id=session_id,
+            tool_mode=tool_mode,
         )
 
         stream_cm = self.client.stream(

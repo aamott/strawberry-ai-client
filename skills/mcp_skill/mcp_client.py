@@ -170,6 +170,9 @@ async def discover_server_tools(
     """
     parsed = _parse_server_config(server_name, server_config)
     disabled_tools = server_config.get("disabledTools", [])
+    
+    # Allow per-server timeout from config, defaulting to a short 5s for CLI responsiveness
+    timeout_seconds = float(server_config.get("timeout", 5.0))
 
     if parsed["transport"] == "stdio":
         session = await asyncio.wait_for(
@@ -179,7 +182,7 @@ async def discover_server_tools(
                 env=parsed["env"],
                 exit_stack=exit_stack,
             ),
-            timeout=CONNECT_TIMEOUT_SECONDS,
+            timeout=timeout_seconds,
         )
     elif parsed["transport"] == "streamable_http":
         session = await asyncio.wait_for(
@@ -188,12 +191,12 @@ async def discover_server_tools(
                 headers=parsed["headers"],
                 exit_stack=exit_stack,
             ),
-            timeout=CONNECT_TIMEOUT_SECONDS,
+            timeout=timeout_seconds,
         )
     else:
         raise ValueError(f"Unknown transport: {parsed['transport']}")
 
-    result = await session.list_tools()
+    result = await asyncio.wait_for(session.list_tools(), timeout=timeout_seconds)
     tools = _extract_tools(result.tools, disabled_tools)
 
     logger.info(
@@ -244,10 +247,11 @@ async def discover_all_servers(
                 "MCP server '%s' has no enabled tools, skipping.", name,
             )
         except asyncio.TimeoutError:
+            timeout_seconds = float(cfg.get("timeout", 5.0))
             logger.error(
                 "Timed out connecting to MCP server '%s' after %ds",
                 name,
-                CONNECT_TIMEOUT_SECONDS,
+                timeout_seconds,
             )
         except Exception as e:
             logger.error("Failed to connect to MCP server '%s': %s", name, e)

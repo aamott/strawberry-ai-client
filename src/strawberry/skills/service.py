@@ -51,6 +51,7 @@ class SkillService:
         allow_unsafe_exec: Optional[bool] = None,
         custom_system_prompt: Optional[str] = None,
         settings_manager: Optional[Any] = None,
+        tool_mode: str = "python_exec",
     ):
         """Initialize skill service.
 
@@ -66,6 +67,7 @@ class SkillService:
                 contain ``{skill_descriptions}`` placeholder. If None
                 or empty, the default composable prompt is used.
             settings_manager: Optional SettingsManager for skill settings.
+            tool_mode: Execution mode ('python_exec' or 'native').
         """
         self.skills_path = Path(skills_path)
         self.hub_client = hub_client
@@ -84,7 +86,7 @@ class SkillService:
         self._disabled_skills: set[str] = set()
 
         self._mode_override: Optional[SkillMode] = None
-        self._tool_mode: str = "python_exec"
+        self._tool_mode: str = tool_mode
 
         self._gatekeeper: Optional[Gatekeeper] = None
         self._proxy_gen: Optional[ProxyGenerator] = None
