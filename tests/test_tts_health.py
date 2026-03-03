@@ -294,6 +294,54 @@ class TestTTSBackendHealthStatus:
             assert error is not None
             assert "google" in error.lower()
 
+    def test_neutts_health_matches_availability(self):
+        """NeuTTS health check should reflect actual package availability."""
+        from strawberry.voice.tts.backends.neutts import (
+            _NEUTTS_AVAILABLE,
+            NeuTTSEngine,
+        )
+
+        assert NeuTTSEngine.is_healthy() == _NEUTTS_AVAILABLE
+        if not _NEUTTS_AVAILABLE:
+            error = NeuTTSEngine.health_check_error()
+            assert error is not None
+            assert "neutts" in error.lower()
+
+    def test_optispeech_health_matches_availability(self):
+        """OptiSpeech health check should reflect actual package availability."""
+        from strawberry.voice.tts.backends.optispeech import (
+            _OPTISPEECH_AVAILABLE,
+            OptiSpeechTTS,
+        )
+
+        assert OptiSpeechTTS.is_healthy() == _OPTISPEECH_AVAILABLE
+        if not _OPTISPEECH_AVAILABLE:
+            error = OptiSpeechTTS.health_check_error()
+            assert error is not None
+            assert "optispeech" in error.lower()
+
+    def test_qwen3_tts_health_matches_availability(self):
+        """Qwen3-TTS health check should reflect actual package availability."""
+        from strawberry.voice.tts.backends.qwen3_tts import (
+            _QWEN3_TTS_AVAILABLE,
+            Qwen3TTSEngine,
+        )
+
+        assert Qwen3TTSEngine.is_healthy() == _QWEN3_TTS_AVAILABLE
+        if not _QWEN3_TTS_AVAILABLE:
+            error = Qwen3TTSEngine.health_check_error()
+            assert error is not None
+            assert "qwen" in error.lower()
+
+    def test_inworld_health_matches_availability(self):
+        """Inworld health check should reflect actual package availability."""
+        from strawberry.voice.tts.backends.inworld import (
+            _INWORLD_AVAILABLE,
+            InworldTTS,
+        )
+
+        assert InworldTTS.is_healthy() == _INWORLD_AVAILABLE
+
 
 class TestAIStudioTTSSettingsNormalization:
     """Tests for AIStudioTTS settings normalization.

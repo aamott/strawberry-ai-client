@@ -31,3 +31,31 @@ def get_sopro_tts():
     from .sopro import SoproTTS
 
     return SoproTTS
+
+
+def get_neutts_tts():
+    """Get NeuTTSEngine class (requires neutts)."""
+    from .neutts import NeuTTSEngine
+
+    return NeuTTSEngine
+
+
+def get_optispeech_tts():
+    """Get OptiSpeechTTS class (requires optispeech)."""
+    from .optispeech import OptiSpeechTTS
+
+    return OptiSpeechTTS
+
+
+def get_qwen3_tts():
+    """Get Qwen3TTSEngine class (requires qwen-tts)."""
+    from .qwen3_tts import Qwen3TTSEngine
+
+    return Qwen3TTSEngine
+
+
+def get_inworld_tts():
+    """Get InworldTTS class (requires Inworld API key)."""
+    from .inworld import InworldTTS
+
+    return InworldTTS
