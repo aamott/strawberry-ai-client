@@ -97,6 +97,7 @@ class VoiceCore:
         self._speak_thread: Optional[threading.Thread] = None
         self._speak_stop = threading.Event()
         self._current_speech_text: Optional[str] = None
+        self._last_tts_error: str | None = None
 
         # Re-init tracking
         self._reinit_pending = False
@@ -670,10 +671,27 @@ class VoiceCore:
                     self.event_emitter._event_loop,
                     timeout=30.0,
                 ):
+                    init_err = self.component_manager._tts_init_errors.get(
+                        name, f"TTS backend '{name}' init failed"
+                    )
+                    logger.warning(init_err)
+                    self.event_emitter.emit(VoiceError(error=init_err))
                     continue
 
             if self._try_tts_playback(text):
                 return
+
+            err = self._last_tts_error or "unknown error"
+            auth_hint = ""
+            if self._looks_like_auth_error(err):
+                auth_hint = " Check API key/token in Voice settings."
+            msg = (
+                f"TTS backend '{name}' failed ({err}). "
+                "Trying next backend."
+                f"{auth_hint}"
+            )
+            logger.warning(msg)
+            self.event_emitter.emit(VoiceError(error=msg))
 
         raise RuntimeError(f"All TTS backends failed. Tried: {tried}")
 
@@ -687,6 +705,8 @@ class VoiceCore:
 
         tts = self.component_manager.components.tts
         player = self.component_manager.components.audio_player
+        self._last_tts_error = None
+        wrote_audio = False
         try:
             player.start_stream(sample_rate=tts.sample_rate)
             for chunk in tts.synthesize_stream(text):
@@ -698,13 +718,36 @@ class VoiceCore:
                 if speaker_state != SpeakerState.SPEAKING:
                     player.stop()
                     return True
+                if len(chunk.audio) > 0:
+                    wrote_audio = True
                 player.write_chunk(chunk.audio)
             player.finish_stream()
+            if not wrote_audio:
+                self._last_tts_error = "backend returned no audio"
+                return False
             return True
         except Exception as e:
             logger.error(f"TTS backend failed: {e}")
             player.finish_stream()
+            self._last_tts_error = str(e)
             return False
+
+    def _looks_like_auth_error(self, error_text: str) -> bool:
+        text = error_text.lower()
+        signals = (
+            "401",
+            "403",
+            "unauthorized",
+            "forbidden",
+            "invalid api key",
+            "api key invalid",
+            "invalid token",
+            "authentication",
+            "permission denied",
+            "access denied",
+            "credentials",
+        )
+        return any(signal in text for signal in signals)
 
     def _watchdog_loop(self) -> None:
         while not self._watchdog_stop.wait(timeout=1.0):

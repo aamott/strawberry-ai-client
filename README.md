@@ -127,10 +127,11 @@ ai-pc-spoke/
 # TODO
 
 - [ ] Add TTS Engines
-   - [ ] [NeuTTS](https://github.com/neuphonic/neutts)
-   - [ ] [OptiSpeech](https://github.com/mush42/optispeech)
-   - [ ] [Qwen3 TTS](https://github.com/QwenLM/Qwen3-TTS)
-   - [ ] [Inworld AI](https://docs.inworld.ai/docs/quickstart-tts)
-- [ ] Add wakeword https://github.com/frymanofer/Python_WakeWordDetection
+   - [x] [NeuTTS](https://github.com/neuphonic/neutts)
+   - [x] [OptiSpeech](https://github.com/mush42/optispeech)
+   - [x] [Qwen3 TTS](https://github.com/QwenLM/Qwen3-TTS)
+   - [x] [Inworld AI](https://docs.inworld.ai/docs/quickstart-tts)
+- [x] Add wakeword https://github.com/frymanofer/Python_WakeWordDetection
 - [ ] Consider [Claude Code Damage Control](https://github.com/disler/claude-code-damage-control) for code generation
 - [ ] Better code search (https://blog.cloudflare.com/code-mode-mcp/) or Claude Tool search
+- [ ] Qwen LLM fallback

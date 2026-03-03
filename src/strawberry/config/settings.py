@@ -34,7 +34,7 @@ class AudioSettings(BaseModel):
 class WakeWordSettings(BaseModel):
     """Wake word detection settings."""
 
-    backend: Literal["porcupine"] = "porcupine"
+    backend: Literal["porcupine", "davoice", "mock"] = "porcupine"
     keywords: List[str] = ["jarvis"]
     sensitivity: float = 0.5
     enabled: bool = True

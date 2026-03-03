@@ -11,3 +11,10 @@ def get_porcupine_detector():
     from .porcupine import PorcupineDetector
 
     return PorcupineDetector
+
+
+def get_davoice_detector():
+    """Get DaVoiceDetector class (requires keyword-detection-lib)."""
+    from .davoice import DaVoiceDetector
+
+    return DaVoiceDetector

@@ -442,7 +442,18 @@ def _register_all_schemas(settings: "SettingsManager") -> None:
 
     register_gui_schema(settings)
 
-    # 5. Discover and register skill settings
+    # 5. Register voice schemas/providers so --settings includes
+    # dynamic backend options (stt/tts/vad/wakeword).
+    try:
+        from strawberry.voice import VoiceConfig, VoiceCore
+
+        # VoiceCore registers voice_core and voice.* backend namespaces in __init__
+        # when settings_manager is provided. We intentionally do not start it.
+        _ = VoiceCore(config=VoiceConfig(), settings_manager=settings)
+    except Exception as e:
+        print(f"[warn] Voice settings unavailable: {e}")
+
+    # 6. Discover and register skill settings
     skills_path_str = settings.get("skills_config", "path", "skills")
     skills_path = Path(skills_path_str)
     if not skills_path.is_absolute():

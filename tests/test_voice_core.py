@@ -378,6 +378,17 @@ class TestPTT:
         assert core._ptt_active is False
 
 
+class TestTTSFallbackWarnings:
+    """Tests for TTS fallback warning helpers."""
+
+    def test_auth_error_detection(self):
+        """VoiceCore should detect common auth/credential failures."""
+        core = VoiceCore(make_test_voice_config())
+        assert core._looks_like_auth_error("HTTP 401 Unauthorized")  # noqa: SLF001
+        assert core._looks_like_auth_error("invalid api key")  # noqa: SLF001
+        assert not core._looks_like_auth_error("temporary timeout")  # noqa: SLF001
+
+
 @pytest.mark.asyncio
 class TestThreadSafety:
     """Tests for thread safety and event marshaling."""

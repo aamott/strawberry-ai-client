@@ -132,8 +132,25 @@ class InworldTTS(TTSEngine):
             "Content-Type": "application/json",
         }
 
-        response = requests.post(self._url, json=payload, headers=headers, timeout=30)
-        response.raise_for_status()
+        try:
+            response = requests.post(
+                self._url,
+                json=payload,
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.HTTPError as e:
+            status = e.response.status_code if e.response is not None else None
+            if status in (401, 403):
+                raise RuntimeError(
+                    "Inworld authentication failed (invalid API key or permissions)."
+                ) from e
+            raise RuntimeError(
+                f"Inworld TTS request failed (status={status}): {e}"
+            ) from e
+        except requests.RequestException as e:
+            raise RuntimeError(f"Inworld TTS network error: {e}") from e
 
         body = response.json()
         audio_b64 = body.get("audioContent")

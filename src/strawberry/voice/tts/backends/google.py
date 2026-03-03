@@ -100,7 +100,16 @@ class GoogleTTS(TTSEngine):
                 voice=self._voice_params,
                 audio_config=self._audio_config,
             )
-        except Exception:
+        except Exception as e:
+            msg = str(e).lower()
+            if any(
+                token in msg
+                for token in ("401", "403", "unauthorized", "forbidden", "credentials")
+            ):
+                raise RuntimeError(
+                    "Google TTS authentication failed "
+                    "(invalid API key/credentials or permissions)."
+                ) from e
             # Fallback to standard voice if Journey fails (needs specific access)
             if "en-US-Journey" in self._voice_params.name:
                 self._voice_params = texttospeech.VoiceSelectionParams(
@@ -112,15 +121,10 @@ class GoogleTTS(TTSEngine):
                         voice=self._voice_params,
                         audio_config=self._audio_config,
                     )
-                except Exception:
-                    # Log properly in real app, here checking empty audio handling
-                    return AudioChunk(
-                        audio=np.array([], dtype=np.int16), sample_rate=self.sample_rate
-                    )
+                except Exception as inner:
+                    raise RuntimeError(f"Google TTS request failed: {inner}") from inner
             else:
-                return AudioChunk(
-                    audio=np.array([], dtype=np.int16), sample_rate=self.sample_rate
-                )
+                raise RuntimeError(f"Google TTS request failed: {e}") from e
 
         # Convert bytes to int16 numpy array
         # Google returns bytes in LINEAR16, which is distinct from int16 array

@@ -154,6 +154,14 @@ class AIStudioTTS(TTSEngine):
             except Exception as e:
                 last_error = e
                 msg = str(e)
+                if any(
+                    token in msg.lower()
+                    for token in ("401", "403", "unauthorized", "invalid api key")
+                ):
+                    raise RuntimeError(
+                        "Google AI Studio authentication failed "
+                        "(invalid API key or permissions)."
+                    ) from e
                 retryable = " 500 " in msg or "INTERNAL" in msg
                 if retryable and attempt < 3:
                     logger.warning(
