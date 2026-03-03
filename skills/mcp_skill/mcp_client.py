@@ -170,8 +170,9 @@ async def discover_server_tools(
     """
     parsed = _parse_server_config(server_name, server_config)
     disabled_tools = server_config.get("disabledTools", [])
-    
-    # Allow per-server timeout from config, defaulting to a short 5s for CLI responsiveness
+
+    # Allow per-server timeout from config,
+    # defaulting to a short 5s for CLI responsiveness
     timeout_seconds = float(server_config.get("timeout", 5.0))
 
     if parsed["transport"] == "stdio":
@@ -236,7 +237,8 @@ async def discover_all_servers(
 
     # Connect to all servers in parallel for faster startup.
     async def _safe_discover(
-        name: str, cfg: Dict[str, Any],
+        name: str,
+        cfg: Dict[str, Any],
     ) -> Optional[MCPServerInfo]:
         """Discover a single server, returning None on failure."""
         try:
@@ -244,7 +246,8 @@ async def discover_all_servers(
             if info.tools:
                 return info
             logger.warning(
-                "MCP server '%s' has no enabled tools, skipping.", name,
+                "MCP server '%s' has no enabled tools, skipping.",
+                name,
             )
         except asyncio.TimeoutError:
             timeout_seconds = float(cfg.get("timeout", 5.0))

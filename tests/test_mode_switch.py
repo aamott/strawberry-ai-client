@@ -264,9 +264,7 @@ class TestModeSwitchInjection:
     def _simulate_send(session: ChatSession, mode: str, user_text: str):
         """Simulate the send_message mode-switch + user-message logic."""
         if session.last_mode is not None and mode != session.last_mode:
-            session.add_message(
-                "user", build_mode_switch_message(mode, skills=[])
-            )
+            session.add_message("user", build_mode_switch_message(mode, skills=[]))
         session.last_mode = mode
         session.add_message("user", user_text)
 
@@ -326,12 +324,12 @@ class TestModeSwitchInjection:
 
         # Find the mode switch and user message
         switch_idx = next(
-            i for i, m in enumerate(session.messages)
+            i
+            for i, m in enumerate(session.messages)
             if "System Notice: Switched to" in m.content
         )
         user_idx = next(
-            i for i, m in enumerate(session.messages)
-            if m.content == "what about now?"
+            i for i, m in enumerate(session.messages) if m.content == "what about now?"
         )
         assert switch_idx < user_idx, (
             "Mode switch notice must come before the user's question"

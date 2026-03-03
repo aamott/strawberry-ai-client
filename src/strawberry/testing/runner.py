@@ -589,9 +589,7 @@ def _cmd_grep(cfg: RunnerConfig) -> int:
         return 2
 
 
-def _cmd_run_tests(
-    cfg: RunnerConfig, passthrough: list[str], project_root: Path
-) -> int:
+def _cmd_run_tests(cfg: RunnerConfig, passthrough: list[str], project_root: Path) -> int:
     _print_header()
     test_dir = project_root / "tests"
     print(f"Running tests in: {test_dir}")

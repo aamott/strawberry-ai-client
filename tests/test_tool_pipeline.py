@@ -179,7 +179,8 @@ async def test_search_skills_native_mode_includes_tool_names(
     """In native mode, search_skills results should include native tool names."""
     skill_service.tool_mode = "native"
     result = await skill_service.execute_tool_async(
-        "search_skills", {"query": "weather"},
+        "search_skills",
+        {"query": "weather"},
     )
     assert "result" in result
     payload = result["result"]
@@ -192,9 +193,9 @@ async def test_search_skills_code_mode_no_tool_names(
 ) -> None:
     """In code mode, search_skills results should NOT include native tool names."""
     result = await skill_service.execute_tool_async(
-        "search_skills", {"query": "weather"},
+        "search_skills",
+        {"query": "weather"},
     )
     assert "result" in result
     payload = result["result"]
     assert "[tool:" not in payload
-

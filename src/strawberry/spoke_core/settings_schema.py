@@ -198,23 +198,27 @@ SPOKE_CORE_SCHEMA: List[SettingField] = [
 CORE_SETTINGS_SCHEMA = SPOKE_CORE_SCHEMA
 
 # Keys removed in v2 (dead settings that were never wired up)
-_V1_DEAD_KEYS = frozenset({
-    "tensorzero.enabled",
-    "storage.db_path",
-    "conversation.max_history",
-    "llm.temperature",
-    "ui.theme",
-    "ui.start_minimized",
-    "ui.show_waveform",
-})
+_V1_DEAD_KEYS = frozenset(
+    {
+        "tensorzero.enabled",
+        "storage.db_path",
+        "conversation.max_history",
+        "llm.temperature",
+        "ui.theme",
+        "ui.start_minimized",
+        "ui.show_waveform",
+    }
+)
 
 # Keys removed in v3 (moved to tensorzero namespace / removed)
-_V2_DEAD_KEYS = frozenset({
-    "local_llm.url",
-    "local_llm.model",
-    "local_llm.enabled",
-    "skills.path",  # Moved to skills_config namespace
-})
+_V2_DEAD_KEYS = frozenset(
+    {
+        "local_llm.url",
+        "local_llm.model",
+        "local_llm.enabled",
+        "skills.path",  # Moved to skills_config namespace
+    }
+)
 
 
 def _migrate_v1_to_v2(values: Dict[str, Any]) -> Dict[str, Any]:

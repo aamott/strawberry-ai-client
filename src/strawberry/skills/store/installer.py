@@ -167,7 +167,8 @@ class SkillInstaller:
             logger.warning(
                 "Skill '%s' is not a git repo — cannot update. "
                 "Re-install with `store install --force %s`.",
-                name, name,
+                name,
+                name,
             )
             return None
 
@@ -217,7 +218,8 @@ class SkillInstaller:
     # ── Source resolution ───────────────────────────────────────────
 
     def _resolve_source(
-        self, name_or_url: str,
+        self,
+        name_or_url: str,
     ) -> Tuple[Optional[CatalogEntry], str, bool]:
         """Resolve a name or URL to a git URL.
 
@@ -291,9 +293,12 @@ class SkillInstaller:
         self._check_git_available()
 
         cmd = [
-            "git", "clone",
-            "--depth", "1",
-            "--branch", branch,
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--branch",
+            branch,
             url,
             str(target),
         ]
@@ -310,10 +315,16 @@ class SkillInstaller:
             stderr_lower = result.stderr.lower()
             if "not found" in stderr_lower or "could not find" in stderr_lower:
                 logger.warning(
-                    "Branch '%s' not found, trying default branch", branch,
+                    "Branch '%s' not found, trying default branch",
+                    branch,
                 )
                 cmd_fallback = [
-                    "git", "clone", "--depth", "1", url, str(target),
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    url,
+                    str(target),
                 ]
                 result = subprocess.run(
                     cmd_fallback,
@@ -322,13 +333,9 @@ class SkillInstaller:
                     timeout=120,
                 )
                 if result.returncode != 0:
-                    raise RuntimeError(
-                        f"git clone failed: {result.stderr.strip()}"
-                    )
+                    raise RuntimeError(f"git clone failed: {result.stderr.strip()}")
             else:
-                raise RuntimeError(
-                    f"git clone failed: {result.stderr.strip()}"
-                )
+                raise RuntimeError(f"git clone failed: {result.stderr.strip()}")
 
         # Get the commit hash
         return self._git_rev_parse(target)
@@ -350,9 +357,7 @@ class SkillInstaller:
             timeout=60,
         )
         if result.returncode != 0:
-            raise RuntimeError(
-                f"git pull failed in {repo_dir}: {result.stderr.strip()}"
-            )
+            raise RuntimeError(f"git pull failed in {repo_dir}: {result.stderr.strip()}")
         return self._git_rev_parse(repo_dir)
 
     @staticmethod
@@ -385,7 +390,9 @@ class SkillInstaller:
     # ── Dependency detection and installation ───────────────────────
 
     def _detect_deps(
-        self, skill_dir: Path, entry: Optional[CatalogEntry] = None,
+        self,
+        skill_dir: Path,
+        entry: Optional[CatalogEntry] = None,
     ) -> List[str]:
         """Detect dependencies for a skill.
 
@@ -480,8 +487,12 @@ class SkillInstaller:
             return []
 
         cmd = [
-            str(self._venv_python), "-m", "pip", "install",
-            "--quiet", *packages,
+            str(self._venv_python),
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            *packages,
         ]
         logger.info("Installing dependencies: %s", ", ".join(packages))
 
@@ -492,9 +503,7 @@ class SkillInstaller:
             timeout=300,
         )
         if result.returncode != 0:
-            raise RuntimeError(
-                f"pip install failed:\n{result.stderr.strip()}"
-            )
+            raise RuntimeError(f"pip install failed:\n{result.stderr.strip()}")
 
         return packages
 
@@ -508,8 +517,13 @@ class SkillInstaller:
             return
 
         cmd = [
-            str(self._venv_python), "-m", "pip", "uninstall",
-            "-y", "--quiet", *packages,
+            str(self._venv_python),
+            "-m",
+            "pip",
+            "uninstall",
+            "-y",
+            "--quiet",
+            *packages,
         ]
         logger.info("Removing dependencies: %s", ", ".join(packages))
 

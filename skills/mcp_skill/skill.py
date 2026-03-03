@@ -384,7 +384,8 @@ def _start_discovery() -> None:
 
     _bg_loop = _start_background_loop()
     _discovery_future = asyncio.run_coroutine_threadsafe(
-        _discover_and_build(), _bg_loop,
+        _discover_and_build(),
+        _bg_loop,
     )
 
 

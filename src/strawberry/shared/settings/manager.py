@@ -215,12 +215,16 @@ class SettingsManager:
                 if env_value is not None:
                     if field.type == FieldType.CHECKBOX:
                         env_value = env_value.strip().lower() in (
-                            "true", "1", "yes", "on",
+                            "true",
+                            "1",
+                            "yes",
+                            "on",
                         )
                     ns_vals[field.key] = env_value
                     logger.debug(
                         "Loaded '%s' from env var '%s'",
-                        field.key, field.env_key,
+                        field.key,
+                        field.env_key,
                     )
 
         # NAMESPACE__KEY convention overrides from .env

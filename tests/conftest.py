@@ -47,6 +47,7 @@ def pytest_sessionfinish(session, exitstatus):
     on background threads / event loops, the alarm will terminate the
     process after a short grace period.
     """
+
     def _alarm_handler(signum, frame):
         os._exit(exitstatus if isinstance(exitstatus, int) else 0)
 

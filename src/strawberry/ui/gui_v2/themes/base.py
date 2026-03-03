@@ -298,9 +298,7 @@ QScrollBar::sub-line:vertical {{ height: 0; }}
         inp = self.bg_input
         panel = self.bg_secondary
         section = (
-            self.bg_tertiary
-            if self.bg_tertiary != self.bg_secondary
-            else self.bg_input
+            self.bg_tertiary if self.bg_tertiary != self.bg_secondary else self.bg_input
         )
 
         return f"""

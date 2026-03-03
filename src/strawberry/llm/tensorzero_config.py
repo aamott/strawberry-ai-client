@@ -193,17 +193,11 @@ def _resolve_providers(
 
         elif pid == "custom":
             # Custom provider from tensorzero namespace
-            prov.model_name = settings.get(
-                "tensorzero", "custom.model", ""
-            )
-            prov.api_base = settings.get(
-                "tensorzero", "custom.api_base", ""
-            )
+            prov.model_name = settings.get("tensorzero", "custom.model", "")
+            prov.api_base = settings.get("tensorzero", "custom.api_base", "")
             api_key = os.environ.get(desc.api_key_env, "")
             # Enabled only if model, api_base, and api_key are all set
-            prov.enabled = bool(
-                prov.model_name and prov.api_base and api_key
-            )
+            prov.enabled = bool(prov.model_name and prov.api_base and api_key)
 
         else:
             # Cloud providers (google, openai, anthropic) from tensorzero namespace
@@ -217,9 +211,7 @@ def _resolve_providers(
         if prov.enabled:
             resolved.append(prov)
         else:
-            logger.debug(
-                "Provider '%s' skipped (disabled or missing API key)", pid
-            )
+            logger.debug("Provider '%s' skipped (disabled or missing API key)", pid)
 
     return resolved
 
@@ -263,10 +255,10 @@ def _build_model_section(prov: _ResolvedProvider) -> str:
     """Build the TOML [models.*] section for one provider."""
     d = prov.descriptor
     lines = [
-        f'[models.{d.model_section}]',
+        f"[models.{d.model_section}]",
         f'routing = ["{d.provider_name}"]',
         "",
-        f'[models.{d.model_section}.providers.{d.provider_name}]',
+        f"[models.{d.model_section}.providers.{d.provider_name}]",
         f'type = "{d.tz_type}"',
         f'model_name = "{prov.model_name}"',
     ]
@@ -280,8 +272,8 @@ def _build_model_section(prov: _ResolvedProvider) -> str:
         lines.append(f'api_key_location = "env::{d.api_key_env}"')
 
     if d.timeout_ms:
-        lines.append(f'[models.{d.model_section}.providers.{d.provider_name}.timeouts]')
-        lines.append(f'non_streaming = {{ total_ms = {d.timeout_ms} }}')
+        lines.append(f"[models.{d.model_section}.providers.{d.provider_name}.timeouts]")
+        lines.append(f"non_streaming = {{ total_ms = {d.timeout_ms} }}")
 
     return "\n".join(lines)
 
@@ -293,12 +285,12 @@ def _build_variant_section(
     """Build the variant section for one provider within a function."""
     d = prov.descriptor
     lines = [
-        f'[functions.{func_name}.variants.{d.variant_name}]',
+        f"[functions.{func_name}.variants.{d.variant_name}]",
         'type = "chat_completion"',
         f'model = "{d.model_section}"',
-        f'[functions.{func_name}.variants.{d.variant_name}.retries]',
-        f'num_retries = {d.retries}',
-        f'max_delay_s = {d.max_delay_s}',
+        f"[functions.{func_name}.variants.{d.variant_name}.retries]",
+        f"num_retries = {d.retries}",
+        f"max_delay_s = {d.max_delay_s}",
     ]
     return "\n".join(lines)
 
@@ -324,9 +316,7 @@ def _build_function_section(
     fallbacks = providers[1:]
 
     candidate_list = f'["{candidate.descriptor.variant_name}"]'
-    fallback_list = ", ".join(
-        f'"{p.descriptor.variant_name}"' for p in fallbacks
-    )
+    fallback_list = ", ".join(f'"{p.descriptor.variant_name}"' for p in fallbacks)
 
     lines = [
         f"[functions.{func_name}]",
@@ -359,9 +349,7 @@ def generate_toml(settings: "SettingsManager") -> str:
     Returns:
         Complete TOML config string.
     """
-    fallback_order = settings.get(
-        "tensorzero", "fallback_order", DEFAULT_FALLBACK_ORDER
-    )
+    fallback_order = settings.get("tensorzero", "fallback_order", DEFAULT_FALLBACK_ORDER)
     if not isinstance(fallback_order, list):
         fallback_order = list(DEFAULT_FALLBACK_ORDER)
 

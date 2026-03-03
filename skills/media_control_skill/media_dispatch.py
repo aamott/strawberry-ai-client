@@ -94,9 +94,7 @@ def _send_macos(command: str, app: str) -> None:
     """Send an AppleScript verb on macOS."""
     verb = MAC_MEDIA_VERBS.get(command)
     if verb:
-        subprocess.run(
-            ["osascript", "-e", f'tell application "{app}" to {verb}']
-        )
+        subprocess.run(["osascript", "-e", f'tell application "{app}" to {verb}'])
 
 
 def _send_linux(command: str) -> None:
@@ -147,14 +145,10 @@ def _set_linux_volume(volume: int) -> None:
         )
         return
     if shutil.which("pactl"):
-        subprocess.run(
-            ["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{volume}%"]
-        )
+        subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{volume}%"])
         return
     if shutil.which("amixer"):
-        subprocess.run(
-            ["amixer", "-D", "pulse", "sset", "Master", f"{volume}%"]
-        )
+        subprocess.run(["amixer", "-D", "pulse", "sset", "Master", f"{volume}%"])
         return
 
 
@@ -163,7 +157,8 @@ def _get_linux_volume() -> Optional[int]:
     if shutil.which("wpctl"):
         result = subprocess.run(
             ["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         match = re.search(r"([0-9.]+)", result.stdout or "")
         if match:
@@ -172,7 +167,8 @@ def _get_linux_volume() -> Optional[int]:
     if shutil.which("pactl"):
         result = subprocess.run(
             ["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         match = re.search(r"(\d+)%", result.stdout or "")
         if match:
@@ -181,7 +177,8 @@ def _get_linux_volume() -> Optional[int]:
     if shutil.which("amixer"):
         result = subprocess.run(
             ["amixer", "-D", "pulse", "sget", "Master"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         match = re.search(r"\[(\d+)%\]", result.stdout or "")
         if match:
@@ -200,7 +197,8 @@ def _set_windows_volume(volume: int) -> None:
     )
     subprocess.run(
         ["powershell", "-Command", script],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -211,7 +209,8 @@ def _get_windows_volume() -> Optional[int]:
     )
     result = subprocess.run(
         ["powershell", "-Command", script],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     match = re.search(r"([0-9.]+)", result.stdout or "")
     if match:
@@ -294,6 +293,5 @@ def _windows_volume_script(action: str) -> str:
         ]
     )
     return (
-        f"{type_def} $vol = [AudioUtilities.Audio]::GetDefaultEndpointVolume(); "
-        f"{action}"
+        f"{type_def} $vol = [AudioUtilities.Audio]::GetDefaultEndpointVolume(); {action}"
     )

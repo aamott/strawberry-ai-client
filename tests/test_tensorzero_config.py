@@ -119,7 +119,9 @@ class TestProviderResolution:
         assert len(resolved) == 0
 
     def test_google_enabled_with_key(
-        self, settings: SettingsManager, monkeypatch: pytest.MonkeyPatch,
+        self,
+        settings: SettingsManager,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """Google should be enabled when API key is set."""
         monkeypatch.setenv("GOOGLE_AI_STUDIO_API_KEY", "test-key")
@@ -134,7 +136,8 @@ class TestProviderResolution:
         assert len(resolved) == 0
 
     def test_custom_disabled_without_full_config(
-        self, settings: SettingsManager,
+        self,
+        settings: SettingsManager,
     ):
         """Custom provider needs model, api_base, and api_key."""
         os.environ.pop("CUSTOM_LLM_API_KEY", None)
@@ -142,7 +145,9 @@ class TestProviderResolution:
         assert len(resolved) == 0
 
     def test_custom_enabled_with_full_config(
-        self, settings: SettingsManager, monkeypatch: pytest.MonkeyPatch,
+        self,
+        settings: SettingsManager,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """Custom provider should enable when all fields are set."""
         monkeypatch.setenv("CUSTOM_LLM_API_KEY", "test-key")
@@ -153,12 +158,15 @@ class TestProviderResolution:
         assert resolved[0].descriptor.id == "custom"
 
     def test_order_preserved(
-        self, settings: SettingsManager, monkeypatch: pytest.MonkeyPatch,
+        self,
+        settings: SettingsManager,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """Resolved providers should preserve fallback_order."""
         monkeypatch.setenv("GOOGLE_AI_STUDIO_API_KEY", "test")
         resolved = _resolve_providers(
-            settings, ["ollama", "google", "hub"],
+            settings,
+            ["ollama", "google", "hub"],
         )
         ids = [p.descriptor.id for p in resolved]
         assert ids == ["ollama", "google", "hub"]
@@ -170,7 +178,8 @@ class TestProviderResolution:
         assert resolved[0].descriptor.id == "hub"
 
     def test_hub_reads_url_from_spoke_core(
-        self, settings: SettingsManager,
+        self,
+        settings: SettingsManager,
     ):
         """Hub provider should use hub.url from spoke_core namespace."""
         settings.set("spoke_core", "hub.url", "http://myhost:9000")
@@ -178,11 +187,14 @@ class TestProviderResolution:
         assert resolved[0].api_base == "http://myhost:9000/api/v1"
 
     def test_ollama_reads_settings_from_tensorzero(
-        self, settings: SettingsManager,
+        self,
+        settings: SettingsManager,
     ):
         """Ollama should use ollama.url and ollama.model from tensorzero."""
         settings.set(
-            "tensorzero", "ollama.url", "http://gpu-box:11434/v1",
+            "tensorzero",
+            "ollama.url",
+            "http://gpu-box:11434/v1",
         )
         settings.set("tensorzero", "ollama.model", "mistral:7b")
         resolved = _resolve_providers(settings, ["ollama"])
@@ -199,7 +211,8 @@ class TestTomlGeneration:
     """Tests for the full TOML output."""
 
     def test_generates_valid_toml_structure(
-        self, settings: SettingsManager,
+        self,
+        settings: SettingsManager,
     ):
         """Generated TOML should have gateway, models, tools, functions."""
         toml = generate_toml(settings)
@@ -216,7 +229,8 @@ class TestTomlGeneration:
         """With default settings (no API keys), only ollama is present."""
         # Clear any env keys that might be set
         for key in [
-            "GOOGLE_AI_STUDIO_API_KEY", "OPENAI_API_KEY",
+            "GOOGLE_AI_STUDIO_API_KEY",
+            "OPENAI_API_KEY",
             "ANTHROPIC_API_KEY",
         ]:
             os.environ.pop(key, None)
@@ -245,7 +259,8 @@ class TestTomlGeneration:
         assert "google_ai_studio_gemini" in toml
 
     def test_chat_function_hub_is_candidate(
-        self, settings: SettingsManager,
+        self,
+        settings: SettingsManager,
     ):
         """In the 'chat' function, hub should be the candidate variant."""
         settings.set("spoke_core", "hub.token", "test-token")
@@ -254,7 +269,8 @@ class TestTomlGeneration:
         assert 'candidate_variants = ["hub"]' in toml
 
     def test_chat_local_excludes_hub(
-        self, settings: SettingsManager,
+        self,
+        settings: SettingsManager,
     ):
         """The 'chat_local' function should not include hub variant."""
         toml = generate_toml(settings)
@@ -273,10 +289,13 @@ class TestTomlGeneration:
         monkeypatch.setenv("CUSTOM_LLM_API_KEY", "sk-test")
         settings.set("tensorzero", "custom.model", "llama-3-70b")
         settings.set(
-            "tensorzero", "custom.api_base", "https://api.together.xyz/v1",
+            "tensorzero",
+            "custom.api_base",
+            "https://api.together.xyz/v1",
         )
         settings.set(
-            "tensorzero", "fallback_order",
+            "tensorzero",
+            "fallback_order",
             ["hub", "custom", "ollama"],
         )
         toml = generate_toml(settings)
@@ -304,7 +323,8 @@ class TestTomlGeneration:
         monkeypatch.setenv("GOOGLE_AI_STUDIO_API_KEY", "test")
         # Put ollama before google
         settings.set(
-            "tensorzero", "fallback_order",
+            "tensorzero",
+            "fallback_order",
             ["hub", "ollama", "google"],
         )
         toml = generate_toml(settings)
@@ -329,14 +349,17 @@ class TestSchemaRegistration:
         """Schema should have fallback, ollama, google, openai, anthropic, custom."""
         groups = {f.group for f in TENSORZERO_SCHEMA}
         assert groups == {
-            "fallback", "ollama", "google", "openai", "anthropic", "custom",
+            "fallback",
+            "ollama",
+            "google",
+            "openai",
+            "anthropic",
+            "custom",
         }
 
     def test_api_keys_are_secrets(self):
         """All API key fields should be marked as secrets."""
-        api_key_fields = [
-            f for f in TENSORZERO_SCHEMA if f.key.endswith(".api_key")
-        ]
+        api_key_fields = [f for f in TENSORZERO_SCHEMA if f.key.endswith(".api_key")]
         assert len(api_key_fields) >= 3  # google, openai, anthropic
         for f in api_key_fields:
             assert f.secret, f"{f.key} should be secret"
@@ -350,6 +373,8 @@ class TestSchemaRegistration:
     def test_fallback_order_default(self, settings: SettingsManager):
         """Default fallback order should match DEFAULT_FALLBACK_ORDER."""
         order = settings.get(
-            "tensorzero", "fallback_order", None,
+            "tensorzero",
+            "fallback_order",
+            None,
         )
         assert order == DEFAULT_FALLBACK_ORDER

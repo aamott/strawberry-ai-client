@@ -131,9 +131,7 @@ class InteractiveCLI:
             for line in args_str.splitlines():
                 sys.stdout.write(f"  {_styled(line, DIM)}\n")
         else:
-            preview = ", ".join(
-                f"{k}={v!r}" for k, v in list(args.items())[:3]
-            )
+            preview = ", ".join(f"{k}={v!r}" for k, v in list(args.items())[:3])
             if len(preview) > 60:
                 preview = preview[:57] + "..."
             header = _styled(f"  * {name}", CYAN) + _styled(f"({preview})", DIM)
@@ -141,7 +139,11 @@ class InteractiveCLI:
         sys.stdout.flush()
 
     def _print_tool_result(
-        self, name: str, success: bool, result: Optional[str], error: Optional[str],
+        self,
+        name: str,
+        success: bool,
+        result: Optional[str],
+        error: Optional[str],
     ) -> None:
         """Print a tool call result."""
         output = result if success else error
@@ -226,13 +228,14 @@ class InteractiveCLI:
             skill_cb = None
             fail_cb = None
             if self._verbose:
+
                 def _on_skill(name: str, source: str, ms: float) -> None:
                     t = f"{ms:.0f}ms" if ms < 1000 else f"{ms / 1000:.1f}s"
                     sys.stdout.write(
-                        f"  {_styled(name, CYAN)}"
-                        f" {_styled(f'({source}, {t})', DIM)}\n"
+                        f"  {_styled(name, CYAN)} {_styled(f'({source}, {t})', DIM)}\n"
                     )
                     sys.stdout.flush()
+
                 skill_cb = _on_skill
 
                 def _on_failed(source: str, error: str, skill_name: str) -> None:
@@ -243,6 +246,7 @@ class InteractiveCLI:
                         f" {_styled(f'({source}, FAILED: {err})', DIM)}\n"
                     )
                     sys.stdout.flush()
+
                 fail_cb = _on_failed
 
             t0 = _time.monotonic()
@@ -321,9 +325,7 @@ class InteractiveCLI:
                 f" {_styled(f'({startup_s:.1f}s)', DIM)}\n"
             )
         if self._verbose:
-            sys.stdout.write(
-                f"  {_styled('[verbose mode]', YELLOW)}\n"
-            )
+            sys.stdout.write(f"  {_styled('[verbose mode]', YELLOW)}\n")
         sys.stdout.write(f"  {_styled('Type /help for commands', DIM)}\n\n")
 
         if self._verbose:
@@ -342,6 +344,7 @@ class InteractiveCLI:
         # Prefer aioconsole for non-blocking input; fall back to thread
         try:
             from aioconsole import ainput  # noqa: F401
+
             use_aioconsole = True
         except ImportError:
             use_aioconsole = False
@@ -350,6 +353,7 @@ class InteractiveCLI:
             try:
                 if use_aioconsole:
                     from aioconsole import ainput
+
                     raw = await ainput("")
                 else:
                     raw = await asyncio.to_thread(sys.stdin.readline)
@@ -421,7 +425,10 @@ class InteractiveCLI:
 
         elif isinstance(event, ToolCallResult):
             self._print_tool_result(
-                event.tool_name, event.success, event.result, event.error,
+                event.tool_name,
+                event.success,
+                event.result,
+                event.error,
             )
             # Stash for /last
             self._last_tool_result = event.result if event.success else event.error
@@ -654,9 +661,7 @@ class InteractiveCLI:
 
         elif isinstance(event, VoiceTranscription):
             if event.is_final and event.text:
-                sys.stdout.write(
-                    f"\r{_styled('You (voice):', GREEN)} {event.text}\n"
-                )
+                sys.stdout.write(f"\r{_styled('You (voice):', GREEN)} {event.text}\n")
                 sys.stdout.flush()
                 # Send transcription to SpokeCore
                 if self._session_id:

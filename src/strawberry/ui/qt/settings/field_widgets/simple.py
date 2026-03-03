@@ -53,7 +53,7 @@ class PasswordFieldWidget(BaseFieldWidget):
 
         # Show/hide eye toggle
         self._visible = False
-        self._eye_btn = QPushButton("\U0001F576")
+        self._eye_btn = QPushButton("\U0001f576")
         self._eye_btn.setFlat(True)
         self._eye_btn.setToolTip("Show value")
         self._eye_btn.setFixedWidth(24)
@@ -71,9 +71,7 @@ class PasswordFieldWidget(BaseFieldWidget):
                 "font-size: 11px; padding: 0 4px; }"
                 "QPushButton:hover { color: palette(highlight); }"
             )
-            link_btn.clicked.connect(
-                lambda: QDesktopServices.openUrl(QUrl(api_key_url))
-            )
+            link_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(api_key_url)))
             self._input_layout.addWidget(link_btn)
 
     def _toggle_visibility(self) -> None:
@@ -81,11 +79,11 @@ class PasswordFieldWidget(BaseFieldWidget):
         self._visible = not self._visible
         if self._visible:
             self._line_edit.setEchoMode(QLineEdit.EchoMode.Normal)
-            self._eye_btn.setText("\U0001F441")
+            self._eye_btn.setText("\U0001f441")
             self._eye_btn.setToolTip("Hide value")
         else:
             self._line_edit.setEchoMode(QLineEdit.EchoMode.Password)
-            self._eye_btn.setText("\U0001F576")
+            self._eye_btn.setText("\U0001f576")
             self._eye_btn.setToolTip("Show value")
 
     def get_value(self) -> str:

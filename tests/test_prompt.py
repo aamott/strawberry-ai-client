@@ -154,7 +154,8 @@ class TestBuildExampleCall:
 
     def test_required_params_with_type_hints(self) -> None:
         method = _make_method(
-            "add", "add(a: int, b: int) -> int",
+            "add",
+            "add(a: int, b: int) -> int",
             params=[
                 SkillParam(name="a", type_hint="int"),
                 SkillParam(name="b", type_hint="int"),
@@ -165,7 +166,8 @@ class TestBuildExampleCall:
 
     def test_string_param_placeholder(self) -> None:
         method = _make_method(
-            "greet", "greet(name: str) -> str",
+            "greet",
+            "greet(name: str) -> str",
             params=[SkillParam(name="name", type_hint="str")],
         )
         result = build_example_call("HelloSkill", method)
@@ -173,7 +175,8 @@ class TestBuildExampleCall:
 
     def test_param_with_default_uses_actual_default(self) -> None:
         method = _make_method(
-            "set_volume", "set_volume(level: int = 50)",
+            "set_volume",
+            "set_volume(level: int = 50)",
             params=[SkillParam(name="level", type_hint="int", default="50")],
         )
         result = build_example_call("AudioSkill", method)
@@ -181,7 +184,8 @@ class TestBuildExampleCall:
 
     def test_none_default_substituted_with_placeholder(self) -> None:
         method = _make_method(
-            "search", "search(query: str, limit: int = None)",
+            "search",
+            "search(query: str, limit: int = None)",
             params=[
                 SkillParam(name="query", type_hint="str"),
                 SkillParam(name="limit", type_hint="int", default="None"),
@@ -193,10 +197,12 @@ class TestBuildExampleCall:
     def test_complex_default_preserved(self) -> None:
         """Key regression test — commas in defaults don't break parsing."""
         method = _make_method(
-            "send", "send(data: dict = {'a': 1, 'b': 2})",
+            "send",
+            "send(data: dict = {'a': 1, 'b': 2})",
             params=[
                 SkillParam(
-                    name="data", type_hint="dict",
+                    name="data",
+                    type_hint="dict",
                     default="{'a': 1, 'b': 2}",
                 ),
             ],
@@ -206,7 +212,8 @@ class TestBuildExampleCall:
 
     def test_list_and_dict_placeholders(self) -> None:
         method = _make_method(
-            "batch", "batch(items: list, config: dict)",
+            "batch",
+            "batch(items: list, config: dict)",
             params=[
                 SkillParam(name="items", type_hint="list"),
                 SkillParam(name="config", type_hint="dict"),
@@ -260,8 +267,10 @@ class TestCustomTemplateIncludesToolsSection:
     def test_custom_template_with_placeholder(self) -> None:
         template = "You are a custom bot.\n{skill_descriptions}"
         result = build_system_prompt(
-            skills=[], mode=SkillMode.LOCAL,
-            device_name="test_device", custom_template=template,
+            skills=[],
+            mode=SkillMode.LOCAL,
+            device_name="test_device",
+            custom_template=template,
         )
         assert "You are a custom bot" in result
         assert "python_exec" in result
@@ -270,15 +279,19 @@ class TestCustomTemplateIncludesToolsSection:
     def test_custom_template_without_placeholder(self) -> None:
         template = "You are a pirate assistant. Arr!"
         result = build_system_prompt(
-            skills=[], mode=SkillMode.LOCAL,
-            device_name="test_device", custom_template=template,
+            skills=[],
+            mode=SkillMode.LOCAL,
+            device_name="test_device",
+            custom_template=template,
         )
         assert "You are a pirate assistant" in result
         assert "python_exec" in result
 
     def test_default_prompt_has_tools_section(self) -> None:
         result = build_system_prompt(
-            skills=[], mode=SkillMode.LOCAL, device_name="test_device",
+            skills=[],
+            mode=SkillMode.LOCAL,
+            device_name="test_device",
         )
         assert "Strawberry" in result
         assert "python_exec" in result
@@ -304,7 +317,9 @@ class TestBuildToolsSection:
     def test_accepts_tool_mode_kwarg(self) -> None:
         """Verify tool_mode parameter is accepted."""
         result = build_tools_section(
-            SkillMode.LOCAL, [], tool_mode="python_exec",
+            SkillMode.LOCAL,
+            [],
+            tool_mode="python_exec",
         )
         assert "python_exec" in result
 
@@ -329,7 +344,8 @@ class TestModeSwitchMessages:
 
     def test_tool_mode_switch(self) -> None:
         msg = build_tool_mode_switch_message(
-            SkillMode.LOCAL, "python_exec",
+            SkillMode.LOCAL,
+            "python_exec",
         )
         assert "Tool mode changed" in msg
         assert "python_exec" in msg
@@ -370,9 +386,14 @@ class TestStripToolSections:
     def test_strips_all_known_headers(self) -> None:
         """All known tool headers are stripped."""
         sections = [
-            "## Available Tools", "## search_skills",
-            "## describe_function", "## python_exec", "## Examples",
-            "## Rules", "## Searching Tips", "## Critical Notes",
+            "## Available Tools",
+            "## search_skills",
+            "## describe_function",
+            "## python_exec",
+            "## Examples",
+            "## Rules",
+            "## Searching Tips",
+            "## Critical Notes",
         ]
         text = "Personality.\n\n" + "\n\nContent.\n\n".join(sections)
         result = _strip_tool_sections(text)
@@ -393,8 +414,10 @@ class TestStripToolSections:
             "1. Don't call directly.\n"
         )
         result = build_system_prompt(
-            skills=[], mode=SkillMode.LOCAL,
-            device_name="test", custom_template=legacy,
+            skills=[],
+            mode=SkillMode.LOCAL,
+            device_name="test",
+            custom_template=legacy,
         )
         # Count occurrences of "## Available Tools"
         count = result.count("## Available Tools")

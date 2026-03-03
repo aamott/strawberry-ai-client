@@ -39,7 +39,6 @@ class SkillService:
     - Parse and execute skill calls from LLM responses
     """
 
-
     def __init__(
         self,
         skills_path: Path,
@@ -1004,9 +1003,12 @@ class SkillService:
                 query=query,
                 device_limit=device_limit,
             )
-            return {"result": format_search_results(
-                results, tool_mode=self._tool_mode,
-            )}
+            return {
+                "result": format_search_results(
+                    results,
+                    tool_mode=self._tool_mode,
+                )
+            }
 
         result = self._execute_search_skills(query, device_limit=device_limit)
         return {"result": result}
@@ -1078,7 +1080,8 @@ class SkillService:
         results = device.search_skills(query, device_limit=device_limit)
 
         return format_search_results(
-            results, tool_mode=self._tool_mode,
+            results,
+            tool_mode=self._tool_mode,
         )
 
     def _execute_describe_function(self, path: str) -> str:
@@ -1096,7 +1099,9 @@ class SkillService:
         return device.describe_function(path)
 
     def _append_describe_example(
-        self, path: str, raw_result: str,
+        self,
+        path: str,
+        raw_result: str,
     ) -> str:
         """Append a mode-appropriate example to a describe_function result.
 
@@ -1127,7 +1132,9 @@ class SkillService:
             return raw_result
 
         example = build_example_call(
-            skill_name, method, tool_mode=self._tool_mode,
+            skill_name,
+            method,
+            tool_mode=self._tool_mode,
         )
         if example:
             if self._tool_mode == "native":

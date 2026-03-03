@@ -111,9 +111,7 @@ class GoogleSTT(STTEngine):
                 env_key="GOOGLE_API_KEY",
                 description="Google Cloud API key for Speech-to-Text",
                 metadata={
-                    "api_key_url": (
-                        "https://console.cloud.google.com/apis/credentials"
-                    ),
+                    "api_key_url": ("https://console.cloud.google.com/apis/credentials"),
                     "help_text": (
                         "Requires a Google Cloud project with the\n"
                         "Cloud Speech-to-Text API enabled.\n"

@@ -115,9 +115,7 @@ def register_gui_schema(settings_manager: "SettingsManager") -> None:
         names = get_theme_names(themes_dir)
         return names if names else ["dark", "light"]
 
-    settings_manager.register_options_provider(
-        "gui_theme_names", _theme_names_provider
-    )
+    settings_manager.register_options_provider("gui_theme_names", _theme_names_provider)
 
     # Register the action handler for opening the themes folder
     settings_manager.register_action_handler(

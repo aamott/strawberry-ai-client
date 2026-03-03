@@ -208,8 +208,7 @@ class SkillTesterAgent:
         self._skills_loaded = True
 
         _log(
-            f"Ready: {len(skills)} skills, "
-            f"{len(self._tool_schemas)} tool schemas loaded."
+            f"Ready: {len(skills)} skills, {len(self._tool_schemas)} tool schemas loaded."
         )
 
         # Auto-load session if specified
@@ -241,20 +240,22 @@ class SkillTesterAgent:
         for skill in skills:
             methods = []
             for method in skill.methods:
-                methods.append({
-                    "name": method.name,
-                    "signature": method.signature,
-                    "docstring": method.docstring or "",
-                })
-            result.append({
-                "name": skill.name,
-                "docstring": (
-                    skill.class_obj.__doc__.strip()
-                    if skill.class_obj.__doc__
-                    else ""
-                ),
-                "methods": methods,
-            })
+                methods.append(
+                    {
+                        "name": method.name,
+                        "signature": method.signature,
+                        "docstring": method.docstring or "",
+                    }
+                )
+            result.append(
+                {
+                    "name": skill.name,
+                    "docstring": (
+                        skill.class_obj.__doc__.strip() if skill.class_obj.__doc__ else ""
+                    ),
+                    "methods": methods,
+                }
+            )
         return _ok("skills", result)
 
     def _handle_tool_call(
@@ -275,13 +276,16 @@ class SkillTesterAgent:
         entry = _HistoryEntry(tool_name, arguments, result, elapsed_ms)
         self._history.append(entry)
 
-        return _ok("tool_result", {
-            "tool": tool_name,
-            "arguments": arguments,
-            # The LLM sees either "result" or "error" — pass through as-is
-            **result,
-            "elapsed_ms": round(elapsed_ms, 2),
-        })
+        return _ok(
+            "tool_result",
+            {
+                "tool": tool_name,
+                "arguments": arguments,
+                # The LLM sees either "result" or "error" — pass through as-is
+                **result,
+                "elapsed_ms": round(elapsed_ms, 2),
+            },
+        )
 
     def _handle_get_history(self) -> Dict[str, Any]:
         """Return the full conversation history (tool calls + results)."""
@@ -309,10 +313,13 @@ class SkillTesterAgent:
             save_path.parent.mkdir(parents=True, exist_ok=True)
             with open(save_path, "w", encoding="utf-8") as f:
                 json.dump(session_data, f, indent=2, ensure_ascii=False)
-            return _ok("save_session", {
-                "path": str(save_path),
-                "entries": len(self._history),
-            })
+            return _ok(
+                "save_session",
+                {
+                    "path": str(save_path),
+                    "entries": len(self._history),
+                },
+            )
         except Exception as e:
             return _err(f"Failed to save session: {e}")
 
@@ -336,10 +343,13 @@ class SkillTesterAgent:
             if not load_path.exists():
                 return _err(f"Session file not found: {path}")
             loaded = self._load_session(load_path)
-            return _ok("load_session", {
-                "path": str(load_path),
-                "entries": loaded,
-            })
+            return _ok(
+                "load_session",
+                {
+                    "path": str(load_path),
+                    "entries": loaded,
+                },
+            )
         except Exception as e:
             return _err(f"Failed to load session: {e}")
 
@@ -350,10 +360,13 @@ class SkillTesterAgent:
 
         skills = self._service.reload_skills()
         self._tool_schemas = _load_tool_schemas(self._config_dir)
-        return _ok("reload", {
-            "skills_count": len(skills),
-            "tool_schemas_count": len(self._tool_schemas),
-        })
+        return _ok(
+            "reload",
+            {
+                "skills_count": len(skills),
+                "tool_schemas_count": len(self._tool_schemas),
+            },
+        )
 
     # ------------------------------------------------------------------
     # Command dispatch
@@ -415,9 +428,7 @@ class SkillTesterAgent:
         if cmd == "shutdown":
             return _ok("shutdown", {"message": "Shutting down"})
 
-        return _err(
-            f"Unknown command: {cmd!r}. Valid commands: {self._VALID_COMMANDS}"
-        )
+        return _err(f"Unknown command: {cmd!r}. Valid commands: {self._VALID_COMMANDS}")
 
     # ------------------------------------------------------------------
     # Stdin/stdout loop
@@ -433,23 +444,30 @@ class SkillTesterAgent:
         self._ensure_loaded()
 
         # Signal readiness on stdout (first line of protocol)
-        _emit(_ok("ready", {
-            "skills_count": len(self._service.get_all_skills()) if self._service else 0,
-            "tool_schemas": list(self._tool_schemas.keys()),
-            "session_entries": len(self._history),
-            "commands": [
-                "get_system_prompt",
-                "get_tool_schemas",
-                "get_skills",
-                "tool_call",
-                "get_history",
-                "clear_history",
-                "save_session",
-                "load_session",
-                "reload",
-                "shutdown",
-            ],
-        }))
+        _emit(
+            _ok(
+                "ready",
+                {
+                    "skills_count": len(self._service.get_all_skills())
+                    if self._service
+                    else 0,
+                    "tool_schemas": list(self._tool_schemas.keys()),
+                    "session_entries": len(self._history),
+                    "commands": [
+                        "get_system_prompt",
+                        "get_tool_schemas",
+                        "get_skills",
+                        "tool_call",
+                        "get_history",
+                        "clear_history",
+                        "save_session",
+                        "load_session",
+                        "reload",
+                        "shutdown",
+                    ],
+                },
+            )
+        )
 
         for line in sys.stdin:
             line = line.strip()

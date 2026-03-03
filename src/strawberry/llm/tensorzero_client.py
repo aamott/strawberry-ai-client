@@ -291,9 +291,7 @@ class TensorZeroClient:
         else:
             self.config_path = get_config_path()
         await self.start()
-        logger.info(
-            "TensorZero gateway restarted with %s", self.config_path
-        )
+        logger.info("TensorZero gateway restarted with %s", self.config_path)
 
     async def __aenter__(self) -> "TensorZeroClient":
         await self._get_gateway()

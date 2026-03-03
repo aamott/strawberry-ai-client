@@ -118,7 +118,10 @@ class TestOutputHelpers:
     def test_print_tool_call_regular(self):
         cli = InteractiveCLI()
         output = self._capture(
-            cli, "_print_tool_call", "search_skills", {"query": "weather"},
+            cli,
+            "_print_tool_call",
+            "search_skills",
+            {"query": "weather"},
         )
         assert "search_skills" in output
         assert "weather" in output
@@ -138,7 +141,12 @@ class TestOutputHelpers:
     def test_print_tool_result_success(self):
         cli = InteractiveCLI()
         output = self._capture(
-            cli, "_print_tool_result", "search_skills", True, "Found 3", None,
+            cli,
+            "_print_tool_result",
+            "search_skills",
+            True,
+            "Found 3",
+            None,
         )
         assert "OK" in output
         assert "Found 3" in output
@@ -146,7 +154,12 @@ class TestOutputHelpers:
     def test_print_tool_result_failure(self):
         cli = InteractiveCLI()
         output = self._capture(
-            cli, "_print_tool_result", "python_exec", False, None, "NameError",
+            cli,
+            "_print_tool_result",
+            "python_exec",
+            False,
+            None,
+            "NameError",
         )
         assert "ERR" in output
         assert "NameError" in output
@@ -278,7 +291,8 @@ class TestEventHandling:
 
         cli, buf = self._make_cli()
         event = ConnectionChanged(
-            connected=False, error="Hub connection lost",
+            connected=False,
+            error="Hub connection lost",
         )
         with patch("sys.stdout", buf):
             cli._handle_event(event)
@@ -325,7 +339,9 @@ class TestEventHandling:
 
         cli, buf = self._make_cli()
         event = MessageAdded(
-            session_id="s1", role="assistant", content="Hello!",
+            session_id="s1",
+            role="assistant",
+            content="Hello!",
         )
         with patch("sys.stdout", buf):
             cli._handle_event(event)

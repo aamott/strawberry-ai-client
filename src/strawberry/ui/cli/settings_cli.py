@@ -384,7 +384,9 @@ def _coerce_field_value(field: SettingField, raw: str) -> Optional[Any]:
 
 
 def _interactive_edit_field(
-    cli: SettingsCLI, namespace: str, field: SettingField,
+    cli: SettingsCLI,
+    namespace: str,
+    field: SettingField,
 ) -> None:
     """Prompt user to edit a single field value.
 
@@ -445,7 +447,8 @@ def _interactive_namespace(cli: SettingsCLI, namespace: str) -> None:
                 idx = len(fields_flat) + 1
                 value = section.values.get(field.key, field.default)
                 pending = cli.pending_changes.get(
-                    namespace, {},
+                    namespace,
+                    {},
                 ).get(field.key)
                 display = format_field_value(field, value)
                 marker = ""
@@ -466,7 +469,9 @@ def _interactive_namespace(cli: SettingsCLI, namespace: str) -> None:
             idx = int(cmd) - 1
             if 0 <= idx < len(fields_flat):
                 _interactive_edit_field(
-                    cli, namespace, fields_flat[idx],
+                    cli,
+                    namespace,
+                    fields_flat[idx],
                 )
             else:
                 print("Invalid field number")
@@ -531,9 +536,13 @@ def _run_interactive(cli: SettingsCLI) -> int:
 
         if cmd in ("q", "quit", "exit"):
             if cli.has_pending_changes():
-                confirm = input(
-                    "Discard pending changes? (y/n): ",
-                ).strip().lower()
+                confirm = (
+                    input(
+                        "Discard pending changes? (y/n): ",
+                    )
+                    .strip()
+                    .lower()
+                )
                 if confirm != "y":
                     continue
             print("Goodbye!")

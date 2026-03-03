@@ -31,7 +31,8 @@ def skills_dir():
             src = skills_base / repo_name
             dst = Path(tmpdir) / repo_name
             shutil.copytree(
-                src, dst,
+                src,
+                dst,
                 ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
             )
 

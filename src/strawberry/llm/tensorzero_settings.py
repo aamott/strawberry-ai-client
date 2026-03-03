@@ -130,8 +130,7 @@ TENSORZERO_SCHEMA: List[SettingField] = [
         group="openai",
         metadata={
             "help_text": (
-                "Model identifier for OpenAI.\n"
-                "Examples: gpt-4o-mini, gpt-4o, o3-mini"
+                "Model identifier for OpenAI.\nExamples: gpt-4o-mini, gpt-4o, o3-mini"
             )
         },
     ),

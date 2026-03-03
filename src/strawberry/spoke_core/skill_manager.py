@@ -206,9 +206,7 @@ class SkillManager:
                 arguments={"query": ""},
             )
         )
-        result = await self._service.execute_tool_async(
-            "search_skills", {"query": ""}
-        )
+        result = await self._service.execute_tool_async("search_skills", {"query": ""})
         success = "error" not in result
         result_text = result.get("result", result.get("error", ""))
         await self._emit(
@@ -243,9 +241,7 @@ class SkillManager:
                 arguments={"code": code},
             )
         )
-        result = await self._service.execute_tool_async(
-            "python_exec", {"code": code}
-        )
+        result = await self._service.execute_tool_async("python_exec", {"code": code})
         success = "error" not in result
         result_text = result.get("result", result.get("error", ""))
         await self._emit(

@@ -45,7 +45,9 @@ class MediaControlSkill:
         if self._settings_manager:
             player = (
                 self._settings_manager.get(
-                    self.SETTINGS_NAMESPACE, "macos_player", "spotify",
+                    self.SETTINGS_NAMESPACE,
+                    "macos_player",
+                    "spotify",
                 )
                 or "spotify"
             )
@@ -53,6 +55,7 @@ class MediaControlSkill:
             # Backward compat: fall back to deprecated config
             try:
                 from strawberry.config import get_settings
+
                 settings = get_settings()
                 player = settings.media.macos_player.lower()
             except Exception:

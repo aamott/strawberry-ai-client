@@ -270,7 +270,8 @@ class SkillLoader:
         return entries
 
     def _partition_repos(
-        self, repo_entries: list[tuple],
+        self,
+        repo_entries: list[tuple],
     ) -> tuple[list[tuple], list[tuple]]:
         """Split repos into deferred (async discovery) and regular groups.
 
@@ -307,7 +308,9 @@ class SkillLoader:
                 if on_skill_loaded:
                     for s in skills:
                         on_skill_loaded(
-                            s.name, repo_dir.name, elapsed_ms,
+                            s.name,
+                            repo_dir.name,
+                            elapsed_ms,
                         )
             except Exception as e:
                 logger.error(f"Failed to load repo skill from {entrypoint}: {e}")
@@ -319,7 +322,9 @@ class SkillLoader:
                 )
                 if on_skill_failed:
                     on_skill_failed(
-                        repo_dir.name, str(e), "",
+                        repo_dir.name,
+                        str(e),
+                        "",
                     )
 
     def _load_top_level_files(
@@ -341,7 +346,9 @@ class SkillLoader:
                 if on_skill_loaded:
                     for s in skills:
                         on_skill_loaded(
-                            s.name, py_file.stem, elapsed_ms,
+                            s.name,
+                            py_file.stem,
+                            elapsed_ms,
                         )
             except Exception as e:
                 logger.error(f"Failed to load {py_file}: {e}")
@@ -353,7 +360,9 @@ class SkillLoader:
                 )
                 if on_skill_failed:
                     on_skill_failed(
-                        py_file.stem, str(e), "",
+                        py_file.stem,
+                        str(e),
+                        "",
                     )
 
     def _find_repo_entrypoint(self, repo_dir: Path) -> Optional[Path]:
@@ -471,7 +480,10 @@ class SkillLoader:
         for name, obj in inspect.getmembers(module, inspect.isclass):
             if obj.__module__ == module_name and name.endswith("Skill"):
                 skill_info = self._extract_skill_info(
-                    name, obj, entrypoint, repo_name=repo_name,
+                    name,
+                    obj,
+                    entrypoint,
+                    repo_name=repo_name,
                 )
                 if skill_info.methods:
                     # Attach module-level schema to first skill in the repo
@@ -510,7 +522,10 @@ class SkillLoader:
             # Only classes defined in this module and ending with 'Skill'
             if obj.__module__ == module_name and name.endswith("Skill"):
                 skill_info = self._extract_skill_info(
-                    name, obj, file_path, repo_name=derived_repo,
+                    name,
+                    obj,
+                    file_path,
+                    repo_name=derived_repo,
                 )
                 if skill_info.methods:  # Only include if it has methods
                     if module_schema and not skill_info.settings_schema:
@@ -566,7 +581,9 @@ class SkillLoader:
                     type_hint = ""
                     if p.annotation is not inspect.Parameter.empty:
                         type_hint = getattr(
-                            p.annotation, "__name__", str(p.annotation),
+                            p.annotation,
+                            "__name__",
+                            str(p.annotation),
                         )
                     default = None
                     if p.default is not inspect.Parameter.empty:
@@ -651,7 +668,8 @@ class SkillLoader:
             skill = self._skills.get(skill_name)
             if skill:
                 self._instances[skill_name] = self._instantiate_skill(
-                    skill_name, skill.class_obj,
+                    skill_name,
+                    skill.class_obj,
                 )
         return self._instances.get(skill_name)
 

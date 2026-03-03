@@ -54,9 +54,9 @@ def local_git_repo(tmp_path: Path) -> Path:
 
     # Create a minimal skill.py
     (repo_dir / "skill.py").write_text(
-        'class TestRepoSkill:\n'
+        "class TestRepoSkill:\n"
         '    """A test skill."""\n'
-        '    def hello(self) -> str:\n'
+        "    def hello(self) -> str:\n"
         '        return "hello"\n',
         encoding="utf-8",
     )
@@ -69,17 +69,22 @@ def local_git_repo(tmp_path: Path) -> Path:
 
     # Init git repo
     subprocess.run(
-        ["git", "init"], cwd=str(repo_dir),
-        capture_output=True, check=True,
+        ["git", "init"],
+        cwd=str(repo_dir),
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
-        ["git", "add", "-A"], cwd=str(repo_dir),
-        capture_output=True, check=True,
+        ["git", "add", "-A"],
+        cwd=str(repo_dir),
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
         ["git", "commit", "-m", "init"],
         cwd=str(repo_dir),
-        capture_output=True, check=True,
+        capture_output=True,
+        check=True,
         env={
             **__import__("os").environ,
             "GIT_AUTHOR_NAME": "test",
@@ -119,13 +124,17 @@ class TestCatalogEntry:
 
     def test_matches_description(self):
         entry = CatalogEntry(
-            name="foo", git_url="x", description="Get the forecast",
+            name="foo",
+            git_url="x",
+            description="Get the forecast",
         )
         assert entry.matches("forecast")
 
     def test_matches_tags(self):
         entry = CatalogEntry(
-            name="foo", git_url="x", tags=["temperature", "api"],
+            name="foo",
+            git_url="x",
+            tags=["temperature", "api"],
         )
         assert entry.matches("temperature")
 
@@ -135,8 +144,10 @@ class TestCatalogEntry:
 
     def test_matches_all_terms_required(self):
         entry = CatalogEntry(
-            name="weather_skill", git_url="x",
-            description="forecasts", tags=["api"],
+            name="weather_skill",
+            git_url="x",
+            description="forecasts",
+            tags=["api"],
         )
         # Both terms must match
         assert entry.matches("weather api")
@@ -219,7 +230,10 @@ class TestSkillInstaller:
     """Tests for SkillInstaller install/uninstall/update."""
 
     def test_install_from_local_repo(
-        self, local_git_repo: Path, skills_dir: Path, config_dir: Path,
+        self,
+        local_git_repo: Path,
+        skills_dir: Path,
+        config_dir: Path,
     ):
         installer = SkillInstaller(skills_dir, config_dir)
         record = installer.install(str(local_git_repo), install_deps=False)
@@ -229,7 +243,10 @@ class TestSkillInstaller:
         assert record.from_catalog is False
 
     def test_install_creates_record(
-        self, local_git_repo: Path, skills_dir: Path, config_dir: Path,
+        self,
+        local_git_repo: Path,
+        skills_dir: Path,
+        config_dir: Path,
     ):
         installer = SkillInstaller(skills_dir, config_dir)
         installer.install(str(local_git_repo), install_deps=False)
@@ -239,7 +256,10 @@ class TestSkillInstaller:
         assert record.source_url == str(local_git_repo)
 
     def test_install_duplicate_raises(
-        self, local_git_repo: Path, skills_dir: Path, config_dir: Path,
+        self,
+        local_git_repo: Path,
+        skills_dir: Path,
+        config_dir: Path,
     ):
         installer = SkillInstaller(skills_dir, config_dir)
         installer.install(str(local_git_repo), install_deps=False)
@@ -248,19 +268,27 @@ class TestSkillInstaller:
             installer.install(str(local_git_repo), install_deps=False)
 
     def test_install_force_overwrites(
-        self, local_git_repo: Path, skills_dir: Path, config_dir: Path,
+        self,
+        local_git_repo: Path,
+        skills_dir: Path,
+        config_dir: Path,
     ):
         installer = SkillInstaller(skills_dir, config_dir)
         installer.install(str(local_git_repo), install_deps=False)
 
         # Force reinstall should succeed
         record = installer.install(
-            str(local_git_repo), install_deps=False, force=True,
+            str(local_git_repo),
+            install_deps=False,
+            force=True,
         )
         assert record.name == "test_skill_repo"
 
     def test_uninstall(
-        self, local_git_repo: Path, skills_dir: Path, config_dir: Path,
+        self,
+        local_git_repo: Path,
+        skills_dir: Path,
+        config_dir: Path,
     ):
         installer = SkillInstaller(skills_dir, config_dir)
         installer.install(str(local_git_repo), install_deps=False)
@@ -271,13 +299,18 @@ class TestSkillInstaller:
         assert installer.get_record("test_skill_repo") is None
 
     def test_uninstall_nonexistent(
-        self, skills_dir: Path, config_dir: Path,
+        self,
+        skills_dir: Path,
+        config_dir: Path,
     ):
         installer = SkillInstaller(skills_dir, config_dir)
         assert installer.uninstall("nonexistent") is False
 
     def test_list_installed(
-        self, local_git_repo: Path, skills_dir: Path, config_dir: Path,
+        self,
+        local_git_repo: Path,
+        skills_dir: Path,
+        config_dir: Path,
     ):
         installer = SkillInstaller(skills_dir, config_dir)
         installer.install(str(local_git_repo), install_deps=False)
@@ -287,13 +320,18 @@ class TestSkillInstaller:
         assert installed[0].name == "test_skill_repo"
 
     def test_list_installed_empty(
-        self, skills_dir: Path, config_dir: Path,
+        self,
+        skills_dir: Path,
+        config_dir: Path,
     ):
         installer = SkillInstaller(skills_dir, config_dir)
         assert installer.list_installed() == []
 
     def test_detect_deps_from_requirements_txt(
-        self, local_git_repo: Path, skills_dir: Path, config_dir: Path,
+        self,
+        local_git_repo: Path,
+        skills_dir: Path,
+        config_dir: Path,
     ):
         installer = SkillInstaller(skills_dir, config_dir)
         # Install without deps to check detection
@@ -303,7 +341,10 @@ class TestSkillInstaller:
         assert "requests>=2.28" in deps
 
     def test_update_pulls_latest(
-        self, local_git_repo: Path, skills_dir: Path, config_dir: Path,
+        self,
+        local_git_repo: Path,
+        skills_dir: Path,
+        config_dir: Path,
     ):
         installer = SkillInstaller(skills_dir, config_dir)
         installer.install(str(local_git_repo), install_deps=False)
@@ -312,13 +353,16 @@ class TestSkillInstaller:
         readme = local_git_repo / "README.md"
         readme.write_text("# Updated", encoding="utf-8")
         subprocess.run(
-            ["git", "add", "-A"], cwd=str(local_git_repo),
-            capture_output=True, check=True,
+            ["git", "add", "-A"],
+            cwd=str(local_git_repo),
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "commit", "-m", "update"],
             cwd=str(local_git_repo),
-            capture_output=True, check=True,
+            capture_output=True,
+            check=True,
             env={
                 **__import__("os").environ,
                 "GIT_AUTHOR_NAME": "test",
@@ -330,13 +374,12 @@ class TestSkillInstaller:
 
         # Update should pull the new commit
         updated = installer.update(
-            "test_skill_repo", install_deps=False,
+            "test_skill_repo",
+            install_deps=False,
         )
         assert updated is not None
         # The README should now exist in the installed copy
-        assert (
-            skills_dir / "test_skill_repo" / "README.md"
-        ).exists()
+        assert (skills_dir / "test_skill_repo" / "README.md").exists()
 
 
 # ── Name extraction tests ──────────────────────────────────────────
@@ -392,8 +435,7 @@ class TestDependencyParsing:
     def test_parse_pyproject_deps(self, tmp_path: Path):
         pyproject = tmp_path / "pyproject.toml"
         pyproject.write_text(
-            '[project]\nname = "test"\n'
-            'dependencies = ["requests>=2.28", "pyyaml"]\n',
+            '[project]\nname = "test"\ndependencies = ["requests>=2.28", "pyyaml"]\n',
             encoding="utf-8",
         )
         deps = SkillInstaller._parse_pyproject_deps(pyproject)

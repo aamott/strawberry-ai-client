@@ -271,7 +271,9 @@ def _edit_checkbox(field: SettingField, current: Any) -> bool:
 
 
 def _edit_select(
-    field: SettingField, current: Any, settings: SettingsManager,
+    field: SettingField,
+    current: Any,
+    settings: SettingsManager,
 ) -> Optional[str]:
     """Edit a SELECT or DYNAMIC_SELECT field with numbered picker."""
     options = list(field.options or [])
@@ -382,7 +384,8 @@ def _edit_file_path(field: SettingField, current: Any) -> Optional[str]:
 
 
 def _edit_directory_path(
-    field: SettingField, current: Any,
+    field: SettingField,
+    current: Any,
 ) -> Optional[str]:
     """Edit a DIRECTORY_PATH field."""
     if current:
@@ -432,7 +435,8 @@ def _edit_time(field: SettingField, current: Any) -> Optional[str]:
 def _edit_datetime(field: SettingField, current: Any) -> Optional[str]:
     """Edit a DATETIME field (YYYY-MM-DD HH:MM)."""
     fmt = (field.metadata or {}).get(
-        "display_format", "YYYY-MM-DD HH:MM",
+        "display_format",
+        "YYYY-MM-DD HH:MM",
     )
     print(f"  {_dim(f'Format: {fmt}')}")
     if current:
@@ -545,8 +549,7 @@ class InteractiveSettingsMenu:
                 old_disp = format_field_value(field, old_val)
                 new_disp = format_field_value(field, new_val)
                 print(
-                    f"    {field.label}: "
-                    f"{_red(old_disp)} → {_green(new_disp)}",
+                    f"    {field.label}: {_red(old_disp)} → {_green(new_disp)}",
                 )
         print(_box_bottom(56))
 
@@ -611,10 +614,7 @@ class InteractiveSettingsMenu:
             pending = self._ctrl.get_pending_for(ns, field.key)
             v = _render_value(field, val, pending)
             badge = _type_badge(field.type)
-            print(
-                f"  {i}. {badge} {_bold(field.label)}: {v}"
-                f"  {_dim(f'({ns_disp})')}"
-            )
+            print(f"  {i}. {badge} {_bold(field.label)}: {v}  {_dim(f'({ns_disp})')}")
         print(_box_bottom(56))
 
         # Allow editing from search results
@@ -652,7 +652,9 @@ class InteractiveSettingsMenu:
             print(_yellow(f"  Buffered: {field.label} → {disp}"))
 
     def _dispatch_editor(
-        self, field: SettingField, current: Any,
+        self,
+        field: SettingField,
+        current: Any,
     ) -> Any:
         """Route to the correct type-specific editor.
 
@@ -687,7 +689,9 @@ class InteractiveSettingsMenu:
             return _edit_select(field, current, self._settings)
         if field.type in (FieldType.LIST, FieldType.PROVIDER_SELECT):
             return self._edit_list(
-                namespace="", field=field, current=current,
+                namespace="",
+                field=field,
+                current=current,
             )
         if field.type == FieldType.ACTION:
             print(_dim("  (actions are not editable from CLI)"))
@@ -696,7 +700,9 @@ class InteractiveSettingsMenu:
         return _edit_text(field, current)
 
     def _list_cmd_add(
-        self, items: list, field: SettingField,
+        self,
+        items: list,
+        field: SettingField,
     ) -> None:
         """Handle the 'add' command inside the list editor."""
         avail = get_available_options(self._settings, field, items)
@@ -719,7 +725,8 @@ class InteractiveSettingsMenu:
 
     @staticmethod
     def _list_cmd_reorder(
-        items: list, cmd: str,
+        items: list,
+        cmd: str,
     ) -> None:
         """Handle move-up, move-down, and remove in list editor."""
         op = cmd[0]  # 'r', 'u', or 'd'
@@ -737,7 +744,10 @@ class InteractiveSettingsMenu:
             print(_red("  Invalid index"))
 
     def _edit_list(
-        self, namespace: str, field: SettingField, current: Any,
+        self,
+        namespace: str,
+        field: SettingField,
+        current: Any,
     ) -> Optional[list]:
         """Interactive list editor for LIST/PROVIDER_SELECT fields.
 
@@ -750,16 +760,11 @@ class InteractiveSettingsMenu:
             New list value, or None to cancel.
         """
         items = (
-            list(current)
-            if isinstance(current, list)
-            else ([current] if current else [])
+            list(current) if isinstance(current, list) else ([current] if current else [])
         )
         print(f"\n  {_bold('List Editor')}")
         self._print_list(items)
-        print(_dim(
-            "  Commands: a=add, r N=remove, u N=up,"
-            " d N=down, q=done, x=cancel"
-        ))
+        print(_dim("  Commands: a=add, r N=remove, u N=up, d N=down, q=done, x=cancel"))
 
         while True:
             cmd = _prompt("  list>")
@@ -806,12 +811,12 @@ class InteractiveSettingsMenu:
                 idx = len(ns_flat) + 1
                 count = len(sec.schema) if sec.schema else 0
                 pending_ns = self._ctrl._pending.get(
-                    sec.namespace, {},
+                    sec.namespace,
+                    {},
                 )
                 p_mark = _yellow(" ●") if pending_ns else ""
                 print(
-                    f"    {idx}. {sec.display_name}"
-                    f" {_dim(f'({count} fields)')}{p_mark}"
+                    f"    {idx}. {sec.display_name} {_dim(f'({count} fields)')}{p_mark}"
                 )
                 ns_flat.append(sec)
 
@@ -819,14 +824,13 @@ class InteractiveSettingsMenu:
         if status:
             print(f"\n{status}")
         print(_box_bottom(56))
-        print(_dim(
-            "  <N> open, (a)pply, (p)ending,"
-            " (s) search, (h)elp, (q)uit"
-        ))
+        print(_dim("  <N> open, (a)pply, (p)ending, (s) search, (h)elp, (q)uit"))
         return ns_flat
 
     def _handle_home_input(
-        self, cmd: str, ns_flat: list[SettingsSection],
+        self,
+        cmd: str,
+        ns_flat: list[SettingsSection],
     ) -> bool:
         """Handle a command on the home screen.
 
@@ -865,7 +869,9 @@ class InteractiveSettingsMenu:
                 return
 
     def _render_ns_fields(
-        self, namespace: str, section: SettingsSection,
+        self,
+        namespace: str,
+        section: SettingsSection,
     ) -> List[SettingField]:
         """Render namespace fields and return flat field list."""
         self._show_breadcrumb()
@@ -878,7 +884,8 @@ class InteractiveSettingsMenu:
                 idx = len(fields_flat) + 1
                 value = section.values.get(field.key, field.default)
                 pending = self._ctrl.get_pending_for(
-                    namespace, field.key,
+                    namespace,
+                    field.key,
                 )
                 v = _render_value(field, value, pending)
                 badge = _type_badge(field.type)
@@ -891,14 +898,14 @@ class InteractiveSettingsMenu:
         if status:
             print(f"\n{status}")
         print(_box_bottom(56))
-        print(_dim(
-            "  <N> edit, (r N) reset, (a)pply,"
-            " (b)ack, (h)elp"
-        ))
+        print(_dim("  <N> edit, (r N) reset, (a)pply, (b)ack, (h)elp"))
         return fields_flat
 
     def _handle_ns_input(
-        self, cmd: str, namespace: str, fields: List[SettingField],
+        self,
+        cmd: str,
+        namespace: str,
+        fields: List[SettingField],
     ) -> bool:
         """Handle a command on the namespace screen.
 
@@ -978,9 +985,7 @@ class InteractiveSettingsMenu:
         else:
             default_disp = format_field_value(field, field.default)
             print(
-                _yellow(
-                    f"  Buffered reset: {field.label} → {default_disp}"
-                ),
+                _yellow(f"  Buffered reset: {field.label} → {default_disp}"),
             )
 
     # ── Main loop ───────────────────────────────────────────────

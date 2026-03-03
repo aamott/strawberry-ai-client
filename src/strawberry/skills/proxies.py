@@ -213,9 +213,7 @@ class DeviceProxy:
         candidates: list[tuple] = []
         for skill in self._loader.get_all_skills():
             # Include class summary (MCP keyword aggregation) if present
-            class_summary = getattr(
-                skill.class_obj, "__class_summary__", ""
-            )
+            class_summary = getattr(skill.class_obj, "__class_summary__", "")
             for method in skill.methods:
                 if not query_words:
                     candidates.append((skill, method, True))

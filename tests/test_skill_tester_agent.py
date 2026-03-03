@@ -47,23 +47,27 @@ def tmp_config_dir(tmp_path):
     tools_dir.mkdir(parents=True)
 
     (tools_dir / "search_skills.json").write_text(
-        json.dumps({
-            "type": "object",
-            "description": "Search for skills.",
-            "properties": {
-                "query": {"type": "string", "default": ""},
-            },
-        }),
+        json.dumps(
+            {
+                "type": "object",
+                "description": "Search for skills.",
+                "properties": {
+                    "query": {"type": "string", "default": ""},
+                },
+            }
+        ),
         encoding="utf-8",
     )
     (tools_dir / "python_exec.json").write_text(
-        json.dumps({
-            "type": "object",
-            "description": "Execute Python code.",
-            "properties": {
-                "code": {"type": "string"},
-            },
-        }),
+        json.dumps(
+            {
+                "type": "object",
+                "description": "Execute Python code.",
+                "properties": {
+                    "code": {"type": "string"},
+                },
+            }
+        ),
         encoding="utf-8",
     )
     return tmp_path / "config"
@@ -226,61 +230,73 @@ class TestToolCall:
     """Test tool_call command with the three built-in tools."""
 
     def test_search_skills_empty(self, agent):
-        resp = agent.dispatch({
-            "command": "tool_call",
-            "tool": "search_skills",
-            "arguments": {"query": ""},
-        })
+        resp = agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "search_skills",
+                "arguments": {"query": ""},
+            }
+        )
         assert resp["status"] == "ok"
         assert resp["type"] == "tool_result"
         assert resp["data"]["tool"] == "search_skills"
         assert "result" in resp["data"]
 
     def test_search_skills_with_query(self, agent):
-        resp = agent.dispatch({
-            "command": "tool_call",
-            "tool": "search_skills",
-            "arguments": {"query": "add"},
-        })
+        resp = agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "search_skills",
+                "arguments": {"query": "add"},
+            }
+        )
         assert resp["status"] == "ok"
         assert "add" in resp["data"].get("result", "").lower()
 
     def test_describe_function(self, agent):
-        resp = agent.dispatch({
-            "command": "tool_call",
-            "tool": "describe_function",
-            "arguments": {"path": "CalcSkill.add"},
-        })
+        resp = agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "describe_function",
+                "arguments": {"path": "CalcSkill.add"},
+            }
+        )
         assert resp["status"] == "ok"
         assert "result" in resp["data"]
         # Should contain the signature
         assert "add" in resp["data"]["result"]
 
     def test_python_exec(self, agent):
-        resp = agent.dispatch({
-            "command": "tool_call",
-            "tool": "python_exec",
-            "arguments": {"code": "print(device.CalcSkill.add(a=2, b=3))"},
-        })
+        resp = agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "python_exec",
+                "arguments": {"code": "print(device.CalcSkill.add(a=2, b=3))"},
+            }
+        )
         assert resp["status"] == "ok"
         assert "5" in resp["data"].get("result", "")
 
     def test_python_exec_error(self, agent):
-        resp = agent.dispatch({
-            "command": "tool_call",
-            "tool": "python_exec",
-            "arguments": {"code": "raise ValueError('boom')"},
-        })
+        resp = agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "python_exec",
+                "arguments": {"code": "raise ValueError('boom')"},
+            }
+        )
         assert resp["status"] == "ok"
         assert "error" in resp["data"]
         assert "boom" in resp["data"]["error"]
 
     def test_unknown_tool(self, agent):
-        resp = agent.dispatch({
-            "command": "tool_call",
-            "tool": "nonexistent_tool",
-            "arguments": {},
-        })
+        resp = agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "nonexistent_tool",
+                "arguments": {},
+            }
+        )
         assert resp["status"] == "ok"
         assert "error" in resp["data"]
 
@@ -290,21 +306,25 @@ class TestToolCall:
         assert "Missing" in resp["message"]
 
     def test_tool_call_recorded_in_history(self, agent):
-        agent.dispatch({
-            "command": "tool_call",
-            "tool": "search_skills",
-            "arguments": {"query": "calc"},
-        })
+        agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "search_skills",
+                "arguments": {"query": "calc"},
+            }
+        )
         resp = agent.dispatch({"command": "get_history"})
         assert len(resp["data"]) == 1
         assert resp["data"][0]["tool_name"] == "search_skills"
 
     def test_elapsed_ms_present(self, agent):
-        resp = agent.dispatch({
-            "command": "tool_call",
-            "tool": "search_skills",
-            "arguments": {"query": ""},
-        })
+        resp = agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "search_skills",
+                "arguments": {"query": ""},
+            }
+        )
         assert "elapsed_ms" in resp["data"]
         assert resp["data"]["elapsed_ms"] >= 0
 
@@ -324,20 +344,24 @@ class TestHistory:
 
     def test_history_accumulates(self, agent):
         for query in ["calc", "add", "multiply"]:
-            agent.dispatch({
-                "command": "tool_call",
-                "tool": "search_skills",
-                "arguments": {"query": query},
-            })
+            agent.dispatch(
+                {
+                    "command": "tool_call",
+                    "tool": "search_skills",
+                    "arguments": {"query": query},
+                }
+            )
         resp = agent.dispatch({"command": "get_history"})
         assert len(resp["data"]) == 3
 
     def test_clear_history(self, agent):
-        agent.dispatch({
-            "command": "tool_call",
-            "tool": "search_skills",
-            "arguments": {"query": "x"},
-        })
+        agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "search_skills",
+                "arguments": {"query": "x"},
+            }
+        )
         resp = agent.dispatch({"command": "clear_history"})
         assert resp["status"] == "ok"
         assert resp["data"]["cleared"] == 1
@@ -356,16 +380,20 @@ class TestSessionPersistence:
 
     def test_save_and_load(self, agent, tmp_path):
         # Build some history
-        agent.dispatch({
-            "command": "tool_call",
-            "tool": "search_skills",
-            "arguments": {"query": "calc"},
-        })
-        agent.dispatch({
-            "command": "tool_call",
-            "tool": "python_exec",
-            "arguments": {"code": "print(device.CalcSkill.add(a=1, b=2))"},
-        })
+        agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "search_skills",
+                "arguments": {"query": "calc"},
+            }
+        )
+        agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "python_exec",
+                "arguments": {"code": "print(device.CalcSkill.add(a=1, b=2))"},
+            }
+        )
 
         # Save session
         session_file = str(tmp_path / "session.json")
@@ -413,18 +441,22 @@ class TestSessionPersistence:
         """Test that --session auto-loads on startup."""
         # Create a session file manually
         session_file = tmp_path / "auto.json"
-        session_file.write_text(json.dumps({
-            "version": 1,
-            "skills_dir": str(tmp_skills_dir),
-            "history": [
+        session_file.write_text(
+            json.dumps(
                 {
-                    "tool_name": "search_skills",
-                    "arguments": {"query": "test"},
-                    "result": {"result": "mocked"},
-                    "elapsed_ms": 5.0,
+                    "version": 1,
+                    "skills_dir": str(tmp_skills_dir),
+                    "history": [
+                        {
+                            "tool_name": "search_skills",
+                            "arguments": {"query": "test"},
+                            "result": {"result": "mocked"},
+                            "elapsed_ms": 5.0,
+                        }
+                    ],
                 }
-            ],
-        }))
+            )
+        )
 
         agent = SkillTesterAgent(
             skills_dir=tmp_skills_dir,
@@ -447,16 +479,20 @@ class TestSessionPersistence:
         5. Verify the full history is continuous
         """
         # Original conversation
-        agent.dispatch({
-            "command": "tool_call",
-            "tool": "search_skills",
-            "arguments": {"query": ""},
-        })
-        agent.dispatch({
-            "command": "tool_call",
-            "tool": "describe_function",
-            "arguments": {"path": "CalcSkill.add"},
-        })
+        agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "search_skills",
+                "arguments": {"query": ""},
+            }
+        )
+        agent.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "describe_function",
+                "arguments": {"path": "CalcSkill.add"},
+            }
+        )
 
         # Save
         session_file = str(tmp_path / "continue.json")
@@ -471,11 +507,13 @@ class TestSessionPersistence:
         agent2._ensure_loaded()
 
         # Continue the conversation
-        agent2.dispatch({
-            "command": "tool_call",
-            "tool": "python_exec",
-            "arguments": {"code": "print(device.CalcSkill.add(a=10, b=20))"},
-        })
+        agent2.dispatch(
+            {
+                "command": "tool_call",
+                "tool": "python_exec",
+                "arguments": {"code": "print(device.CalcSkill.add(a=10, b=20))"},
+            }
+        )
 
         # Full history should have 3 entries
         resp = agent2.dispatch({"command": "get_history"})

@@ -351,8 +351,7 @@ async def run_one_shot(
                 )
             else:
                 print(
-                    f"[ready] Core loaded ({startup_s:.1f}s), "
-                    f"{skill_count} skill(s)",
+                    f"[ready] Core loaded ({startup_s:.1f}s), {skill_count} skill(s)",
                     flush=True,
                 )
 
@@ -577,12 +576,10 @@ def main() -> None:
 
     # Validate flag conflicts
     if args.verbose and args.quiet:
-        print("Error: --verbose and --quiet are mutually exclusive.",
-              file=sys.stderr)
+        print("Error: --verbose and --quiet are mutually exclusive.", file=sys.stderr)
         sys.exit(EXIT_ERROR)
     if args.verbose and args.compact:
-        print("Error: --verbose and --compact are mutually exclusive.",
-              file=sys.stderr)
+        print("Error: --verbose and --compact are mutually exclusive.", file=sys.stderr)
         sys.exit(EXIT_ERROR)
 
     # Determine mode

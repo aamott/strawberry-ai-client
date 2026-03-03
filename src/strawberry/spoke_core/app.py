@@ -86,7 +86,9 @@ class SpokeCore:
 
         # Get skills path from settings (lives in skills_config namespace)
         skills_path_str = self._settings_manager.get(
-            "skills_config", "path", "skills",
+            "skills_config",
+            "path",
+            "skills",
         )
         skills_path = Path(skills_path_str)
         if not skills_path.is_absolute():
@@ -146,7 +148,10 @@ class SpokeCore:
         self._settings_manager.on_change(self._on_settings_changed)
 
     def _on_settings_changed(
-        self, namespace: str, key: str, value: Any,
+        self,
+        namespace: str,
+        key: str,
+        value: Any,
     ) -> None:
         """Handle settings changes from the SettingsManager."""
         logger.debug("Setting changed: %s.%s", namespace, key)
@@ -172,7 +177,8 @@ class SpokeCore:
                 try:
                     str_value = "" if value is None else str(value)
                     self._settings_manager.set_env(
-                        "HUB_DEVICE_TOKEN", str_value,
+                        "HUB_DEVICE_TOKEN",
+                        str_value,
                     )
                     self._settings_manager.set_env("HUB_TOKEN", str_value)
                     logger.debug("Persisted HUB_DEVICE_TOKEN and HUB_TOKEN to .env")
@@ -284,7 +290,9 @@ class SpokeCore:
 
             # Read Ollama URL from tensorzero namespace
             url = self._settings_manager.get(
-                "tensorzero", "ollama.url", "http://localhost:11434/v1",
+                "tensorzero",
+                "ollama.url",
+                "http://localhost:11434/v1",
             )
             url = url.replace("/v1", "")
             response = httpx.get(f"{url}/api/tags", timeout=5.0)
@@ -356,12 +364,13 @@ class SpokeCore:
                         self._settings_manager,
                     )
                     logger.info(
-                        "Generated TensorZero config: %s", config_path,
+                        "Generated TensorZero config: %s",
+                        config_path,
                     )
                 except Exception as e:
                     logger.warning(
-                        "Could not generate TensorZero config, "
-                        "using static fallback: %s", e,
+                        "Could not generate TensorZero config, using static fallback: %s",
+                        e,
                     )
 
             # Initialize LLM client (picks up generated TOML if available)
@@ -395,7 +404,9 @@ class SpokeCore:
                 get_hub_client=lambda: self._hub_manager.client,
                 emit=self._emit,
                 get_tool_mode=lambda: (
-                    self._skill_mgr.service.tool_mode if self._skill_mgr else "python_exec"
+                    self._skill_mgr.service.tool_mode
+                    if self._skill_mgr
+                    else "python_exec"
                 ),
             )
             self._local_runner = LocalAgentRunner(
@@ -464,10 +475,7 @@ class SpokeCore:
             # the LLM sees the context change first, then the question.
             current_online = self.is_online()
             current_mode = "online" if current_online else "local"
-            if (
-                session.last_mode is not None
-                and current_mode != session.last_mode
-            ):
+            if session.last_mode is not None and current_mode != session.last_mode:
                 from ..skills.prompt import build_mode_switch_message
 
                 # Truncate stale tool-call messages from the previous
@@ -506,9 +514,7 @@ class SpokeCore:
                 "testing.deterministic_tool_hooks", False
             )
             if deterministic_hooks and (not self.is_online()) and self._skill_mgr:
-                hook_result = await self._skill_mgr.run_deterministic_hooks(
-                    session, text
-                )
+                hook_result = await self._skill_mgr.run_deterministic_hooks(session, text)
                 if hook_result is not None:
                     return hook_result
 
@@ -524,7 +530,8 @@ class SpokeCore:
         return result_content
 
     def _truncate_session_on_mode_switch(
-        self, session: ChatSession,
+        self,
+        session: ChatSession,
     ) -> None:
         """Truncate session history when switching execution modes.
 
@@ -662,7 +669,9 @@ class SpokeCore:
     def get_model_info(self) -> str:
         """Get current model name."""
         return self._settings_manager.get(
-            "tensorzero", "ollama.model", "llama3.2:3b",
+            "tensorzero",
+            "ollama.model",
+            "llama3.2:3b",
         )
 
     def get_device_name(self) -> str:

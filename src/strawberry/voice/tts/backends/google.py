@@ -141,9 +141,7 @@ class GoogleTTS(TTSEngine):
                 env_key="GOOGLE_API_KEY",
                 description="Google Cloud API key for Text-to-Speech",
                 metadata={
-                    "api_key_url": (
-                        "https://console.cloud.google.com/apis/credentials"
-                    ),
+                    "api_key_url": ("https://console.cloud.google.com/apis/credentials"),
                     "help_text": (
                         "Requires a Google Cloud project with the\n"
                         "Cloud Text-to-Speech API enabled.\n"

@@ -116,9 +116,7 @@ def _format_installed(record: InstalledSkill) -> str:
     if record.installed_at:
         lines.append(f"    Installed: {record.installed_at[:19]}")
     if record.deps_installed:
-        lines.append(
-            f"    Dependencies: {', '.join(record.deps_installed)}"
-        )
+        lines.append(f"    Dependencies: {', '.join(record.deps_installed)}")
     return "\n".join(lines)
 
 
@@ -194,13 +192,8 @@ def cmd_install(args: argparse.Namespace) -> int:
         if record.commit:
             print(f"  Commit: {record.commit[:12]}")
         if record.deps_installed:
-            print(
-                f"  Dependencies installed: "
-                f"{', '.join(record.deps_installed)}"
-            )
-        print(
-            "\n  Restart strawberry-cli to load the new skill."
-        )
+            print(f"  Dependencies installed: {', '.join(record.deps_installed)}")
+        print("\n  Restart strawberry-cli to load the new skill.")
         return 0
 
     except FileExistsError as e:
@@ -231,10 +224,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     if not args.yes:
         prompt = f"Uninstall '{name}'?"
         if record and record.deps_installed and args.remove_deps:
-            prompt += (
-                f" (will also remove: "
-                f"{', '.join(record.deps_installed)})"
-            )
+            prompt += f" (will also remove: {', '.join(record.deps_installed)})"
         prompt += " [y/N] "
         answer = input(prompt).strip().lower()
         if answer not in ("y", "yes"):
@@ -265,7 +255,8 @@ def cmd_update(args: argparse.Namespace) -> int:
         for rec in records:
             try:
                 updated = installer.update(
-                    rec.name, install_deps=not args.no_deps,
+                    rec.name,
+                    install_deps=not args.no_deps,
                 )
                 if updated:
                     print(f"  {rec.name}: updated to {updated.commit[:12]}")
@@ -344,23 +335,29 @@ def build_store_parser() -> argparse.ArgumentParser:
     # search
     p_search = sub.add_parser("search", help="Search the catalog")
     p_search.add_argument(
-        "query", nargs="+", help="Search terms",
+        "query",
+        nargs="+",
+        help="Search terms",
     )
 
     # install
     p_install = sub.add_parser(
-        "install", help="Install a skill from catalog or URL",
+        "install",
+        help="Install a skill from catalog or URL",
     )
     p_install.add_argument(
         "name_or_url",
         help="Catalog skill name or git URL",
     )
     p_install.add_argument(
-        "--force", "-f", action="store_true",
+        "--force",
+        "-f",
+        action="store_true",
         help="Overwrite existing installation",
     )
     p_install.add_argument(
-        "--no-deps", action="store_true",
+        "--no-deps",
+        action="store_true",
         help="Skip dependency installation",
     )
 
@@ -368,31 +365,41 @@ def build_store_parser() -> argparse.ArgumentParser:
     p_uninstall = sub.add_parser("uninstall", help="Uninstall a skill")
     p_uninstall.add_argument("name", help="Skill name")
     p_uninstall.add_argument(
-        "--yes", "-y", action="store_true",
+        "--yes",
+        "-y",
+        action="store_true",
         help="Skip confirmation prompt",
     )
     p_uninstall.add_argument(
-        "--remove-deps", action="store_true",
+        "--remove-deps",
+        action="store_true",
         help="Also remove pip dependencies installed for this skill",
     )
 
     # update
     p_update = sub.add_parser("update", help="Update an installed skill")
     p_update.add_argument(
-        "name", nargs="?", default=None, help="Skill name",
+        "name",
+        nargs="?",
+        default=None,
+        help="Skill name",
     )
     p_update.add_argument(
-        "--all", "-a", action="store_true",
+        "--all",
+        "-a",
+        action="store_true",
         help="Update all installed skills",
     )
     p_update.add_argument(
-        "--no-deps", action="store_true",
+        "--no-deps",
+        action="store_true",
         help="Skip dependency re-check",
     )
 
     # installed
     sub.add_parser(
-        "installed", help="List skills installed via the store",
+        "installed",
+        help="List skills installed via the store",
     )
 
     return parser

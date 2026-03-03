@@ -240,9 +240,7 @@ class MainWindow(QMainWindow):
         font.setPixelSize(size)
         self.setFont(font)
 
-    def _on_gui_setting_changed(
-        self, namespace: str, key: str, value: object
-    ) -> None:
+    def _on_gui_setting_changed(self, namespace: str, key: str, value: object) -> None:
         """React to runtime GUI setting changes.
 
         Args:

@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-
 class SettingsWindow(QDialog):
     """Themed settings window for GUI V2.
 
@@ -296,14 +295,13 @@ class SettingsWindow(QDialog):
 
                 # Set health status if available
                 if field.provider_type:
-                    health_provider = (
-                        f"{field.provider_type}_backend_health"
-                    )
+                    health_provider = f"{field.provider_type}_backend_health"
                     health_status = self._settings.get_options(
                         health_provider,
                     )
                     if health_status and hasattr(
-                        widget, "set_provider_health",
+                        widget,
+                        "set_provider_health",
                     ):
                         widget.set_provider_health(health_status)
 

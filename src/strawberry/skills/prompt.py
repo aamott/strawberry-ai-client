@@ -55,7 +55,7 @@ You are Strawberry, a helpful AI assistant. You have access to skills
 smart home devices, checking weather, searching documents, and more.
 
 Use your tools to accomplish tasks. When you're unsure what's available,
-search first, then act. Ask followup questions when needed, but try to 
+search first, then act. Ask followup questions when needed, but try to
 accomplish the user's request in as few steps as possible. Overall, remember
 you're a smart agent - you can figure things out!"""
 
@@ -88,9 +88,7 @@ def _build_local_skill_descriptions(skills: List["SkillInfo"]) -> str:
     for skill in skills_for_prompt:
         class_summary = "No description available"
         if skill.class_obj.__doc__:
-            class_summary = (
-                skill.class_obj.__doc__.strip().split("\n")[0].strip()
-            )
+            class_summary = skill.class_obj.__doc__.strip().split("\n")[0].strip()
 
         method_count = len(skill.methods)
         method_word = "method" if method_count == 1 else "methods"
@@ -99,9 +97,7 @@ def _build_local_skill_descriptions(skills: List["SkillInfo"]) -> str:
         if method_count > 3:
             sample_methods += ", ..."
 
-        descriptions.append(
-            f"- {skill.name} ({method_count} {method_word})"
-        )
+        descriptions.append(f"- {skill.name} ({method_count} {method_word})")
         descriptions.append(f"  {class_summary}")
         if sample_methods:
             descriptions.append(f"  Sample methods: {sample_methods}")
@@ -203,7 +199,9 @@ class ToolModeProvider(ABC):
 
     @abstractmethod
     def build_example_call(
-        self, skill_name: str, method: "SkillMethod",
+        self,
+        skill_name: str,
+        method: "SkillMethod",
     ) -> str:
         """Build a ready-to-use example call for describe_function.
 
@@ -382,7 +380,9 @@ python_exec(code="print(devices.my_device.WeatherSkill\
 - If multiple skills match, pick the best and proceed."""
 
     def build_example_call(
-        self, skill_name: str, method: "SkillMethod",
+        self,
+        skill_name: str,
+        method: "SkillMethod",
     ) -> str:
         """Build a python_exec example using structured params.
 
@@ -467,7 +467,8 @@ class NativeToolMode(ToolModeProvider):
 
 Each skill method is a native tool you can call directly.
 Discovery helpers:
-1) search_skills(query) - Find skills by keyword.
+1) search_skills(query) - Find skills by keyword. Might require a few queries
+   to find the right skill, but try to be efficient.
 2) describe_function(path) - Get full signature and docstring."""
 
     def discovery_section(self, skill_mode: "SkillMode") -> str:
@@ -484,7 +485,8 @@ Example: search_skills(query="weather")"""
 ## describe_function
 
 describe_function(path) returns the full signature and docstring
-for a skill method. Use it when you need parameter details."""
+for a skill method. Use it when you need more details to use a skill
+or if a skill isn't doing what you expect."""
 
     def execution_section(self, skill_mode: "SkillMode") -> str:
         """Describe native tool calling syntax."""
@@ -492,9 +494,7 @@ for a skill method. Use it when you need parameter details."""
 ## Calling Skills
 
 Call skill tools directly by name using the pattern:
-  SkillClass__method_name(param=value)
-
-No code required — just pass named arguments."""
+  SkillClass__method_name(param=value)"""
 
     def examples_section(self, skill_mode: "SkillMode") -> str:
         """Provide a concise native-mode example."""
@@ -516,7 +516,9 @@ User: "What's the weather in Portland?"
   parameters and retry."""
 
     def build_example_call(
-        self, skill_name: str, method: "SkillMethod",
+        self,
+        skill_name: str,
+        method: "SkillMethod",
     ) -> str:
         """Build a native tool example using structured params.
 

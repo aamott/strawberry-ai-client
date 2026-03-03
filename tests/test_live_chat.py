@@ -96,9 +96,7 @@ class TestLiveTensorZeroChat:
                 "Live provider returned empty response (likely auth/config issue)"
             )
         # The response should mention "4" somewhere
-        assert "4" in response.content, (
-            f"Expected '4' in response: {response.content}"
-        )
+        assert "4" in response.content, f"Expected '4' in response: {response.content}"
 
         print(f"\n[Test] Math response: {response.content[:100]}")
 

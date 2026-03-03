@@ -44,12 +44,14 @@ class CatalogEntry:
         if not terms:
             return True
 
-        searchable = " ".join([
-            self.name.lower(),
-            self.description.lower(),
-            self.author.lower(),
-            " ".join(t.lower() for t in self.tags),
-        ])
+        searchable = " ".join(
+            [
+                self.name.lower(),
+                self.description.lower(),
+                self.author.lower(),
+                " ".join(t.lower() for t in self.tags),
+            ]
+        )
 
         return all(term in searchable for term in terms)
 
