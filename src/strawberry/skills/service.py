@@ -335,6 +335,9 @@ class SkillService:
     async def register_with_hub(self) -> bool:
         """Register loaded skills with the Hub.
 
+        Disabled skills are excluded from the registration payload so
+        the Hub never routes calls to them.
+
         Returns:
             True if registration succeeded
         """
@@ -344,7 +347,12 @@ class SkillService:
 
         self._ensure_skills_loaded()
 
-        skills_data = self._loader.get_registration_data()
+        # Filter out disabled skills before building registration data
+        all_data = self._loader.get_registration_data()
+        skills_data = [
+            d for d in all_data
+            if d.get("class_name") not in self._disabled_skills
+        ]
 
         if not skills_data:
             logger.info("No skills to register")
@@ -575,8 +583,8 @@ class SkillService:
                 ),
             )
 
-        # Create device proxy for local skills
-        device = DeviceProxy(self._loader)
+        # Create device proxy for local skills (disabled skills excluded)
+        device = DeviceProxy(self._loader, disabled_skills=self._disabled_skills)
 
         # Prepare device manager for remote calls (if Hub is connected)
         device_manager = self._build_device_manager()
@@ -737,10 +745,14 @@ class SkillService:
             Result from skill execution
 
         Raises:
-            ValueError: If skill or method not found
+            ValueError: If skill or method not found, or skill is disabled
             RuntimeError: If skill execution fails
         """
         self._ensure_skills_loaded()
+
+        # Reject disabled skills
+        if not self.is_skill_enabled(skill_name):
+            raise ValueError(f"Skill '{skill_name}' is disabled")
 
         # Get skill
         skill = self._loader.get_skill(skill_name)
@@ -1076,7 +1088,8 @@ class SkillService:
         self._ensure_skills_loaded()
 
         # Use device proxy for search (has the search_skills method)
-        device = DeviceProxy(self._loader)
+        # Pass disabled set so disabled skills are excluded from results
+        device = DeviceProxy(self._loader, disabled_skills=self._disabled_skills)
         results = device.search_skills(query, device_limit=device_limit)
 
         return format_search_results(
@@ -1095,7 +1108,8 @@ class SkillService:
         """
         self._ensure_skills_loaded()
 
-        device = DeviceProxy(self._loader)
+        # Pass disabled set so disabled skills are rejected
+        device = DeviceProxy(self._loader, disabled_skills=self._disabled_skills)
         return device.describe_function(path)
 
     def _append_describe_example(

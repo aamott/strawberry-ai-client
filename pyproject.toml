@@ -17,6 +17,7 @@ dependencies = [
     "websockets>=12.0",  # WebSocket client for Hub connection
     "tensorzero>=0.1.0",  # LLM routing via embedded gateway
     "mcp>=1.0",  # Model Context Protocol client
+    "aioconsole>=0.8",  # Non-blocking console input
     
     # Audio
     "sounddevice>=0.4",

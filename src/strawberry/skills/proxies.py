@@ -152,13 +152,21 @@ class DeviceProxy:
     - device.SkillName.method_name(args) - Call a skill
     """
 
-    def __init__(self, loader: SkillLoader):
+    def __init__(
+        self,
+        loader: SkillLoader,
+        disabled_skills: Optional[frozenset[str] | set[str]] = None,
+    ):
         """Initialize the device proxy.
 
         Args:
             loader: Skill loader used to resolve skills.
+            disabled_skills: Optional set of disabled skill names to exclude.
         """
         self._loader = loader
+        self._disabled_skills: frozenset[str] = frozenset(
+            disabled_skills or ()
+        )
 
     def search_skills(
         self, query: str = "", device_limit: int = 10
@@ -209,9 +217,15 @@ class DeviceProxy:
         self,
         query_words: list[str],
     ) -> list[tuple]:
-        """Build (skill, method, word_set) triples."""
+        """Build (skill, method, word_set) triples.
+
+        Disabled skills are excluded from the candidate list.
+        """
         candidates: list[tuple] = []
         for skill in self._loader.get_all_skills():
+            # Skip disabled skills
+            if skill.name in self._disabled_skills:
+                continue
             # Include class summary (MCP keyword aggregation) if present
             class_summary = getattr(skill.class_obj, "__class_summary__", "")
             for method in skill.methods:
@@ -259,6 +273,7 @@ class DeviceProxy:
 
         Returns only the raw ``def`` signature + docstring block.
         The caller (SkillService) adds mode-appropriate examples.
+        Disabled skills are rejected.
 
         Args:
             path: "SkillName.method_name"
@@ -271,6 +286,11 @@ class DeviceProxy:
             return f"Error: Invalid path '{path}'. Use format 'SkillName.method_name'"
 
         skill_name, method_name = parts
+
+        # Reject disabled skills
+        if skill_name in self._disabled_skills:
+            return f"Error: Skill '{skill_name}' is disabled"
+
         skill = self._loader.get_skill(skill_name)
 
         if not skill:
@@ -284,15 +304,28 @@ class DeviceProxy:
         return f"Error: Method '{method_name}' not found in {skill_name}"
 
     def __getattr__(self, name: str):
-        """Get a skill class by name for direct calls."""
+        """Get a skill class by name for direct calls.
+
+        Disabled skills are rejected.
+        """
         # Don't intercept private attributes
         if name.startswith("_"):
             raise AttributeError(name)
 
+        # Reject disabled skills
+        if name in self._disabled_skills:
+            raise AttributeError(
+                f"Skill '{name}' is disabled. "
+                f"Use device.search_skills() to find available skills."
+            )
+
         skill = self._loader.get_skill(name)
         if skill is None:
             # Get list of available skills for helpful error
-            available = [s.name for s in self._loader.get_all_skills()]
+            available = [
+                s.name for s in self._loader.get_all_skills()
+                if s.name not in self._disabled_skills
+            ]
             available_str = ", ".join(available) if available else "none loaded"
             raise AttributeError(
                 f"Skill '{name}' not found. "
