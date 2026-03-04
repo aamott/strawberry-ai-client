@@ -132,7 +132,6 @@ class SkillLoader:
         self.skills_path = Path(skills_path)
         self._settings_manager = settings_manager
         self._skills: Dict[str, SkillInfo] = {}
-        self._instances: Dict[str, Any] = {}
         self._failures: List[SkillLoadFailure] = []
 
         self._repo_namespace_root = "strawberry_skillrepos"
@@ -182,7 +181,6 @@ class SkillLoader:
             List of loaded SkillInfo objects
         """
         self._skills.clear()
-        self._instances.clear()
         self._failures.clear()
 
         if not self.skills_path.exists():
@@ -660,18 +658,28 @@ class SkillLoader:
         return self._skills.get(name)
 
     def get_instance(self, skill_name: str) -> Any:
-        """Get or create an instance of a skill class.
+        """Get the canonical instance of a skill class.
 
-        Skill instances are cached for reuse.
+        Returns the instance stored on :class:`SkillInfo` (created at
+        load time).  If the instance is ``None`` (e.g. instantiation
+        failed initially), a new attempt is made and the result is
+        stored back on the ``SkillInfo`` so all callers share the same
+        object.
+
+        Returns:
+            Skill instance, or ``None`` if the skill is unknown or
+            cannot be instantiated.
         """
-        if skill_name not in self._instances:
-            skill = self._skills.get(skill_name)
-            if skill:
-                self._instances[skill_name] = self._instantiate_skill(
-                    skill_name,
-                    skill.class_obj,
-                )
-        return self._instances.get(skill_name)
+        skill = self._skills.get(skill_name)
+        if skill is None:
+            return None
+        if skill.instance is None:
+            # Retry instantiation (e.g. if it failed at load time)
+            skill.instance = self._instantiate_skill(
+                skill_name,
+                skill.class_obj,
+            )
+        return skill.instance
 
     @property
     def failures(self) -> List[SkillLoadFailure]:
