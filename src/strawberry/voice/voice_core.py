@@ -65,6 +65,7 @@ class VoiceCore:
 
         # Legacy state lock for backward compat during transition
         self._state_lock = threading.Lock()
+        self._state = VoiceState.STOPPED
 
         # Sub-components
         self.event_emitter = VoiceEventEmitter()

@@ -252,6 +252,9 @@ class VoiceComponentManager:
     def init_stt_backend(self, name: str) -> bool:
         """Initialize a specific STT backend.
 
+        Creates the new engine first, then cleans up the old one only on
+        success. This prevents a failed init from leaving a broken reference.
+
         Returns:
             True if initialization succeeded, False otherwise.
         """
@@ -261,19 +264,22 @@ class VoiceComponentManager:
             return False
 
         try:
-            if self.components.stt:
-                self.components.stt.cleanup()
-
             settings = self._get_backend_settings("stt", name)
-            self.components.stt = cls(**settings)
-            self.active_stt_backend = name
-            logger.info(f"STT backend selected: {name}")
-            return True
+            new_stt = cls(**settings)
         except Exception as e:
             msg = f"STT backend '{name}' init failed: {e}"
             self._stt_init_errors[name] = msg
             logger.warning(msg)
             return False
+
+        # New instance created successfully — now swap
+        if self.components.stt:
+            self.components.stt.cleanup()
+
+        self.components.stt = new_stt
+        self.active_stt_backend = name
+        logger.info(f"STT backend selected: {name}")
+        return True
 
     async def _init_tts(self, backend_names: List[str]) -> None:
         """Initialize TTS."""
@@ -308,22 +314,24 @@ class VoiceComponentManager:
             return False
 
         try:
-            if self.components.tts:
-                self.components.tts.cleanup()
-
             settings = self._get_backend_settings("tts", name)
-            self.components.tts = cls(**settings)
-            self.components.audio_player = AudioPlayer(
-                sample_rate=self.components.tts.sample_rate
-            )
-            self.active_tts_backend = name
-            logger.info(f"TTS backend selected: {name}")
-            return True
+            new_tts = cls(**settings)
+            new_player = AudioPlayer(sample_rate=new_tts.sample_rate)
         except Exception as e:
             msg = f"TTS backend '{name}' init failed: {e}"
             self._tts_init_errors[name] = msg
             logger.warning(msg)
             return False
+
+        # New instance created successfully — now swap
+        if self.components.tts:
+            self.components.tts.cleanup()
+
+        self.components.tts = new_tts
+        self.components.audio_player = new_player
+        self.active_tts_backend = name
+        logger.info(f"TTS backend selected: {name}")
+        return True
 
     # -------------------------------------------------------------------------
     # Re-initialization (Hot Reload)

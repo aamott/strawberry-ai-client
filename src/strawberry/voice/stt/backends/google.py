@@ -32,19 +32,28 @@ class GoogleSTT(STTEngine):
     name: ClassVar[str] = "Google Cloud STT"
     description: ClassVar[str] = "Online speech recognition using Google Cloud API"
 
-    def __init__(self):
-        """Initialize Google STT client."""
+    def __init__(self, api_key: str | None = None, **kwargs):
+        """Initialize Google STT client.
+
+        Args:
+            api_key: Google Cloud API key. Falls back to GOOGLE_API_KEY or
+                GOOGLE_AI_STUDIO_API_KEY env vars if not provided.
+        """
         if speech is None:
             raise ImportError(
                 "google-cloud-speech not installed. "
                 "Install with: pip install google-cloud-speech"
             )
 
-        # Check for API key in env if standard creds aren't set
+        # Check for API key: explicit arg > env vars
         client_options = None
-        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GOOGLE_AI_STUDIO_API_KEY")
-        if api_key and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-            client_options = {"api_key": api_key}
+        resolved_key = (
+            api_key
+            or os.getenv("GOOGLE_API_KEY")
+            or os.getenv("GOOGLE_AI_STUDIO_API_KEY")
+        )
+        if resolved_key and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+            client_options = {"api_key": resolved_key}
 
         try:
             self._client = speech.SpeechClient(client_options=client_options)

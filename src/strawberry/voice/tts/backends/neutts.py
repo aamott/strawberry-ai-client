@@ -1,6 +1,8 @@
 """NeuTTS backend.
 
-Requires: pip install neutts
+Install options:
+- pip install neutts
+- pip install "neutts @ git+https://github.com/neuphonic/neutts.git"
 Project: https://github.com/neuphonic/neutts
 """
 
@@ -22,7 +24,9 @@ try:
     _NEUTTS_AVAILABLE = True
 except ImportError as e:
     _NEUTTS_IMPORT_ERROR = (
-        "neutts not installed. Install with: pip install neutts. " f"({e})"
+        "neutts not installed. Install with: pip install neutts "
+        "or pip install \"neutts @ git+https://github.com/neuphonic/neutts.git\". "
+        f"({e})"
     )
 
 logger = logging.getLogger(__name__)
@@ -137,7 +141,8 @@ class NeuTTSEngine(TTSEngine):
             from neutts import NeuTTS
         except ImportError as e:
             raise ImportError(
-                "neutts not installed. Install with: pip install neutts"
+                "neutts not installed. Install with: pip install neutts "
+                "or pip install \"neutts @ git+https://github.com/neuphonic/neutts.git\""
             ) from e
 
         resolved_backbone_device = self._resolve_device(backbone_device, "backbone")

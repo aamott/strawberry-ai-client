@@ -15,6 +15,10 @@ pip install -e "ai-pc-spoke[ui]"        # CLI + GUI (recommended)
 pip install -e "ai-pc-spoke[picovoice,silero]"  # CLI + voice
 pip install -e "ai-pc-spoke[all]"       # Everything (stable set)
 pip install -e "ai-pc-spoke[all_neutts]"  # Everything + NeuTTS from GitHub
+
+# Or from inside ai-pc-spoke/
+pip install ".[all]"                    # Stable set
+pip install ".[all_neutts]"             # Stable set + NeuTTS from GitHub
 ```
 
 ## Configuration
