@@ -41,6 +41,9 @@ pocket = [
 neutts = [
     "neutts",
 ]
+neutts_git = [
+    "neutts @ git+https://github.com/neuphonic/neutts.git",
+]
 qwen3_tts = [
     "qwen-tts",
 ]
@@ -73,7 +76,10 @@ dev = [
     "ruff>=0.1",
 ]
 all = [
-    "strawberry-spoke[picovoice,ai_studio,pocket,neutts,inworld,davoice,google,silero,ui,dev]",
+    "strawberry-spoke[picovoice,ai_studio,pocket,inworld,davoice,google,silero,ui,dev]",
+]
+all_neutts = [
+    "strawberry-spoke[all,neutts_git]",
 ]
 
 [project.scripts]

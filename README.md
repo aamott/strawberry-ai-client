@@ -13,7 +13,8 @@ source .venv/bin/activate
 pip install -e "ai-pc-spoke"           # CLI only
 pip install -e "ai-pc-spoke[ui]"        # CLI + GUI (recommended)
 pip install -e "ai-pc-spoke[picovoice,silero]"  # CLI + voice
-pip install -e "ai-pc-spoke[all]"       # Everything
+pip install -e "ai-pc-spoke[all]"       # Everything (stable set)
+pip install -e "ai-pc-spoke[all_neutts]"  # Everything + NeuTTS from GitHub
 ```
 
 ## Configuration
@@ -111,7 +112,23 @@ ai-pc-spoke/
 - **CLI only**: `pip install -e "ai-pc-spoke"` (no UI, no voice)
 - **CLI + GUI**: `pip install -e "ai-pc-spoke[ui]"` 
 - **CLI + Voice**: `pip install -e "ai-pc-spoke[picovoice,silero]"`
-- **Everything**: `pip install -e "ai-pc-spoke[all]"` (recommended)
+- **Everything (stable)**: `pip install -e "ai-pc-spoke[all]"` (recommended)
+- **Everything + NeuTTS**: `pip install -e "ai-pc-spoke[all_neutts]"`
+
+## NeuTTS Installation
+
+NeuTTS is available, but some environments fail to build/install it from PyPI.
+To keep `pip install -e "ai-pc-spoke[all]"` reliable, NeuTTS is opt-in.
+
+- Install NeuTTS from GitHub extra: `pip install -e "ai-pc-spoke[neutts_git]"`
+- Or install with everything: `pip install -e "ai-pc-spoke[all_neutts]"`
+
+After install, set the TTS backend order to include `neutts` first (already the default in this repo):
+
+```bash
+strawberry-cli --settings set voice_core tts.order "neutts,pocket,orca,piper,google"
+strawberry-cli --settings apply
+```
 
 
 
