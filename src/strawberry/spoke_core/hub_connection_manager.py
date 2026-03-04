@@ -257,6 +257,12 @@ class HubConnectionManager:
         was_connected = self._hub_connected
         self._hub_connected = False
 
+        # Clear the SkillService's hub_client so _get_effective_mode()
+        # falls back to LOCAL immediately (mirrors the WebSocket drop
+        # handler in _on_ws_connection_changed).
+        if self._skill_service:
+            self._skill_service.set_hub_client(None)
+
         if was_connected:
             await self._emit(ConnectionChanged(connected=False))
             await self._emit(
