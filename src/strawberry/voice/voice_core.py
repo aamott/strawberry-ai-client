@@ -100,6 +100,12 @@ class VoiceCore:
         self._current_speech_text: Optional[str] = None
         self._last_tts_error: str | None = None
 
+        # Backends that failed init or transcription/synthesis are cached
+        # here so they are not retried on every call.  Cleared when the
+        # user saves new settings for that component type.
+        self._failed_stt_backends: set[str] = set()
+        self._failed_tts_backends: set[str] = set()
+
         # Re-init tracking
         self._reinit_pending = False
         self._pending_changes: set[str] = set()
@@ -324,6 +330,12 @@ class VoiceCore:
             pass
 
     def _on_component_settings_changed(self, type_: str) -> None:
+        # Clear failure caches so updated settings get a fresh chance
+        if type_ == "stt":
+            self._failed_stt_backends.clear()
+        elif type_ == "tts":
+            self._failed_tts_backends.clear()
+
         with self._pending_changes_lock:
             self._pending_changes.add(type_)
             self._reinit_pending = True
@@ -505,7 +517,7 @@ class VoiceCore:
         tried: list[str] = []
         errors: list[str] = []
         for name in backends:
-            if name in tried:
+            if name in tried or name in self._failed_stt_backends:
                 continue
             tried.append(name)
 
@@ -520,6 +532,7 @@ class VoiceCore:
                         name, f"STT backend '{name}' init failed"
                     )
                     errors.append(f"  • {name}: {init_err}")
+                    self._failed_stt_backends.add(name)
                     continue
 
             try:
@@ -528,6 +541,7 @@ class VoiceCore:
                 err_str = str(e)
                 errors.append(f"  • {name}: transcription failed — {err_str}")
                 logger.error(f"STT backend '{name}' failed: {e}")
+                self._failed_stt_backends.add(name)
 
         # All backends exhausted — build a clear user-facing summary
         self._emit_stt_failure_summary(tried, errors)
@@ -691,7 +705,7 @@ class VoiceCore:
         )
         tried: list[str] = []
         for name in backends:
-            if name in tried:
+            if name in tried or name in self._failed_tts_backends:
                 continue
             tried.append(name)
 
@@ -710,6 +724,7 @@ class VoiceCore:
                     )
                     logger.warning(init_err)
                     self.event_emitter.emit(VoiceError(error=init_err))
+                    self._failed_tts_backends.add(name)
                     continue
 
             if self._try_tts_playback(text):
@@ -726,6 +741,7 @@ class VoiceCore:
             )
             logger.warning(msg)
             self.event_emitter.emit(VoiceError(error=msg))
+            self._failed_tts_backends.add(name)
 
         raise RuntimeError(f"All TTS backends failed. Tried: {tried}")
 

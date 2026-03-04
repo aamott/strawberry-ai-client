@@ -265,3 +265,62 @@ class TestMissingDepDetection:
     def test_ignores_unrelated(self):
         core = VoiceCore(_make_config())
         assert not core._looks_like_missing_dep("timeout after 30s")
+
+
+# ---------------------------------------------------------------------------
+# VoiceCore — failure caching
+# ---------------------------------------------------------------------------
+
+class TestFailureCaching:
+    """Tests for caching permanently failed backends."""
+
+    def _make_core(self, stt_backend: str = "mock") -> VoiceCore:
+        config = _make_config(stt_backend=stt_backend)
+        return VoiceCore(config)
+
+    def test_failed_backend_not_retried(self):
+        """A backend that failed once should be skipped on subsequent calls."""
+        call_count = 0
+
+        class _CountingFailSTT(_FailingSTT):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+
+            def transcribe(self, audio):
+                nonlocal call_count
+                call_count += 1
+                raise RuntimeError("always fails")
+
+        core = self._make_core(stt_backend="counting")
+        mgr = core.component_manager
+        mgr._stt_modules = {"counting": _CountingFailSTT}
+        mgr.stt_backend_names = ["counting"]
+        mgr.init_stt_backend("counting")
+
+        audio = np.zeros(1600, dtype=np.int16)
+
+        # First call — should try and fail
+        core._try_stt_backends(audio)
+        assert call_count == 1
+        assert "counting" in core._failed_stt_backends
+
+        # Second call — should be skipped entirely
+        core._try_stt_backends(audio)
+        assert call_count == 1  # NOT incremented
+
+    def test_settings_change_clears_cache(self):
+        """Changing settings should clear the failure cache, allowing retry."""
+        core = self._make_core(stt_backend="failing")
+        mgr = core.component_manager
+        mgr._stt_modules = {"failing": _FailingSTT, "good": _GoodSTT}
+        mgr.stt_backend_names = ["failing"]
+        mgr.init_stt_backend("failing")
+
+        audio = np.zeros(1600, dtype=np.int16)
+        core._try_stt_backends(audio)
+        assert "failing" in core._failed_stt_backends
+
+        # Simulate settings change
+        core._on_component_settings_changed("stt")
+        assert len(core._failed_stt_backends) == 0
+
