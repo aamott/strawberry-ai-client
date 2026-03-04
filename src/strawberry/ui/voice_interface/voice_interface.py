@@ -88,7 +88,11 @@ class VoiceInterface:
                 sensitivity=float(mgr.get("voice_core", "wakeword.sensitivity", 0.5)),
                 sample_rate=int(mgr.get("voice_core", "audio.sample_rate", 16000)),
                 stt_backend=mgr.get("voice_core", "stt.order", "leopard"),
-                tts_backend=mgr.get("voice_core", "tts.order", "pocket"),
+                tts_backend=mgr.get(
+                    "voice_core",
+                    "tts.order",
+                    "neutts,pocket,orca,piper,google",
+                ),
                 vad_backend=mgr.get("voice_core", "vad.order", "silero"),
                 wake_backend=mgr.get("voice_core", "wakeword.order", "porcupine"),
             )

@@ -19,7 +19,6 @@ from strawberry.skills.loader import SkillLoader
 from strawberry.skills.proxies import DeviceProxy
 from strawberry.skills.service import SkillService
 
-
 # ── Fixtures ────────────────────────────────────────────────────────
 
 

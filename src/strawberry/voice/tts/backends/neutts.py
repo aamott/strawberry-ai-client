@@ -6,6 +6,7 @@ Project: https://github.com/neuphonic/neutts
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import ClassVar, List
 
@@ -23,6 +24,8 @@ except ImportError as e:
     _NEUTTS_IMPORT_ERROR = (
         "neutts not installed. Install with: pip install neutts. " f"({e})"
     )
+
+logger = logging.getLogger(__name__)
 
 
 class NeuTTSEngine(TTSEngine):
@@ -65,20 +68,36 @@ class NeuTTSEngine(TTSEngine):
                 description="NeuCodec repo or local path",
             ),
             SettingField(
+                key="language",
+                label="Language",
+                type=FieldType.TEXT,
+                default="",
+                description=(
+                    "Optional eSpeak language code (e.g. en-us, de, fr-fr). "
+                    "Leave blank to auto-select for known Neuphonic backbones."
+                ),
+            ),
+            SettingField(
                 key="backbone_device",
                 label="Backbone Device",
                 type=FieldType.SELECT,
-                options=["cpu", "cuda", "mps"],
-                default="cpu",
-                description="Device for NeuTTS backbone inference",
+                options=["auto", "cpu", "cuda", "mps"],
+                default="auto",
+                description=(
+                    "Device for NeuTTS backbone inference. "
+                    "'auto' prefers CUDA, then MPS, then CPU."
+                ),
             ),
             SettingField(
                 key="codec_device",
                 label="Codec Device",
                 type=FieldType.SELECT,
-                options=["cpu", "cuda", "mps"],
-                default="cpu",
-                description="Device for NeuCodec inference",
+                options=["auto", "cpu", "cuda", "mps"],
+                default="auto",
+                description=(
+                    "Device for NeuCodec inference. "
+                    "'auto' prefers CUDA, then MPS, then CPU."
+                ),
             ),
             SettingField(
                 key="ref_audio_path",
@@ -107,8 +126,9 @@ class NeuTTSEngine(TTSEngine):
         self,
         backbone_repo: str = "neuphonic/neutts-nano",
         codec_repo: str = "neuphonic/neucodec",
-        backbone_device: str = "cpu",
-        codec_device: str = "cpu",
+        language: str = "",
+        backbone_device: str = "auto",
+        codec_device: str = "auto",
         ref_audio_path: str | None = None,
         ref_text: str | None = None,
         ref_text_path: str | None = None,
@@ -120,17 +140,81 @@ class NeuTTSEngine(TTSEngine):
                 "neutts not installed. Install with: pip install neutts"
             ) from e
 
+        resolved_backbone_device = self._resolve_device(backbone_device, "backbone")
+        resolved_codec_device = self._resolve_device(codec_device, "codec")
+
         self._model = NeuTTS(
             backbone_repo=backbone_repo,
-            backbone_device=backbone_device,
+            backbone_device=resolved_backbone_device,
             codec_repo=codec_repo,
-            codec_device=codec_device,
+            codec_device=resolved_codec_device,
+            language=(language or "").strip() or None,
         )
 
         self._ref_audio_path = (ref_audio_path or "").strip() or None
         self._ref_text = (ref_text or "").strip() or None
         self._ref_text_path = (ref_text_path or "").strip() or None
         self._ref_codes = None
+
+    @staticmethod
+    def _resolve_device(requested: str | None, component: str) -> str:
+        """Resolve device with safe fallback.
+
+        `auto` prefers CUDA, then MPS, then CPU.
+        Explicit CUDA/MPS requests fall back to CPU if unavailable.
+        """
+        normalized = (requested or "auto").strip().lower()
+
+        try:
+            import torch
+        except Exception:
+            if normalized in {"auto", "cpu"}:
+                return "cpu"
+            logger.warning(
+                "NeuTTS %s device '%s' requested but torch is unavailable; "
+                "falling back to CPU",
+                component,
+                normalized,
+            )
+            return "cpu"
+
+        has_cuda = bool(torch.cuda.is_available())
+        has_mps = bool(
+            hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+        )
+
+        if normalized == "auto":
+            if has_cuda:
+                return "cuda"
+            if has_mps:
+                return "mps"
+            return "cpu"
+
+        if normalized == "cuda" and not has_cuda:
+            logger.warning(
+                "NeuTTS %s device 'cuda' requested but CUDA is unavailable; "
+                "falling back to CPU",
+                component,
+            )
+            return "cpu"
+
+        if normalized == "mps" and not has_mps:
+            logger.warning(
+                "NeuTTS %s device 'mps' requested but MPS is unavailable; "
+                "falling back to CPU",
+                component,
+            )
+            return "cpu"
+
+        if normalized not in {"cpu", "cuda", "mps"}:
+            logger.warning(
+                "NeuTTS %s device '%s' is invalid; falling back to CPU",
+                component,
+                normalized,
+            )
+            return "cpu"
+
+        return normalized
 
     @property
     def sample_rate(self) -> int:

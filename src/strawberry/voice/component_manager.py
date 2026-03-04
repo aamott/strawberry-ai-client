@@ -51,8 +51,9 @@ class VoiceComponentManager:
         self._config = config
         self._settings_manager = settings_manager
 
-        # TTS init error details (backend name -> reason). Used to provide
+        # Init error details (backend name -> reason). Used to provide
         # user-facing error messages when all backends fail.
+        self._stt_init_errors: Dict[str, str] = {}
         self._tts_init_errors: Dict[str, str] = {}
 
         # Active components container
@@ -235,32 +236,44 @@ class VoiceComponentManager:
         raise RuntimeError(f"VAD initialization failed. Errors: {errors}")
 
     async def _init_stt(self, backend_names: List[str]) -> None:
-        """Initialize STT."""
-        errors = []
+        """Initialize STT by trying each backend in order."""
+        errors: List[str] = []
         for name in backend_names:
-            try:
-                self.init_stt_backend(name)
+            if self.init_stt_backend(name):
                 return
-            except Exception as e:
-                msg = f"STT backend '{name}' init failed: {e}"
-                logger.error(msg)
-                errors.append(msg)
+
+            # Use the stored error detail if available
+            errors.append(
+                self._stt_init_errors.get(name, f"STT backend '{name}' failed")
+            )
 
         raise RuntimeError(f"STT initialization failed. Errors: {errors}")
 
-    def init_stt_backend(self, name: str) -> None:
-        """Initialize a specific STT backend (used for fallback)."""
+    def init_stt_backend(self, name: str) -> bool:
+        """Initialize a specific STT backend.
+
+        Returns:
+            True if initialization succeeded, False otherwise.
+        """
         cls = self._stt_modules.get(name)
         if not cls:
-            raise RuntimeError(f"STT backend '{name}' not found")
+            self._stt_init_errors[name] = f"STT backend '{name}' not found"
+            return False
 
-        if self.components.stt:
-            self.components.stt.cleanup()
+        try:
+            if self.components.stt:
+                self.components.stt.cleanup()
 
-        settings = self._get_backend_settings("stt", name)
-        self.components.stt = cls(**settings)
-        self.active_stt_backend = name
-        logger.info(f"STT backend selected: {name}")
+            settings = self._get_backend_settings("stt", name)
+            self.components.stt = cls(**settings)
+            self.active_stt_backend = name
+            logger.info(f"STT backend selected: {name}")
+            return True
+        except Exception as e:
+            msg = f"STT backend '{name}' init failed: {e}"
+            self._stt_init_errors[name] = msg
+            logger.warning(msg)
+            return False
 
     async def _init_tts(self, backend_names: List[str]) -> None:
         """Initialize TTS."""
@@ -324,18 +337,12 @@ class VoiceComponentManager:
             # Refresh list
             self.stt_backend_names = self._parse_backend_names(self._config.stt_backend)
             # Try to re-init current or fallback
-            try:
-                # If current still in list, try to keep it
-                # (or re-init it with new settings)
-                target = self.active_stt_backend
-                if not target or target not in self.stt_backend_names:
-                    target = self.stt_backend_names[0] if self.stt_backend_names else None
+            # If current still in list, try to keep (or re-init with new settings)
+            target = self.active_stt_backend
+            if not target or target not in self.stt_backend_names:
+                target = self.stt_backend_names[0] if self.stt_backend_names else None
 
-                if target:
-                    self.init_stt_backend(target)
-                else:
-                    success = False
-            except Exception:
+            if not target or not self.init_stt_backend(target):
                 # Fallback to full init loop
                 try:
                     await self._init_stt(self.stt_backend_names)

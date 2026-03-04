@@ -72,14 +72,14 @@ VOICE_CORE_SCHEMA: List[SettingField] = [
         provider_type="tts",
         provider_namespace_template="voice.tts.{value}",
         options_provider="available_tts_backends",
-        default=["pocket", "orca", "piper", "google"],
+        default=["neutts", "pocket", "orca", "piper", "google"],
         description=("Ordered list of TTS backends. First one is active provider."),
         group="tts",
         metadata={
             "help_text": (
                 "The order defines which TTS engine to try first.\n"
                 "If the first one fails, the next one is used.\n"
-                "Example: 'pocket,orca'"
+                "Example: 'neutts,pocket,orca'"
             )
         },
     ),

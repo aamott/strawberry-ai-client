@@ -115,7 +115,7 @@ class VoiceSettingsHelper:
         elif key == "stt.order":
             cfg.stt_backend = value if value else "leopard"
         elif key == "tts.order":
-            cfg.tts_backend = value if value else "pocket"
+            cfg.tts_backend = value if value else "neutts"
         elif key == "vad.order":
             cfg.vad_backend = value if value else "silero"
         elif key == "wakeword.order":

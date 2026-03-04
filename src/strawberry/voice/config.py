@@ -32,6 +32,6 @@ class VoiceConfig:
     # - A comma-separated string (e.g. "leopard,google,mock")
     # - A list of backend names (e.g. ["leopard", "google", "mock"])
     stt_backend: str | Sequence[str] = "leopard"
-    tts_backend: str | Sequence[str] = "pocket"
+    tts_backend: str | Sequence[str] = "neutts,pocket,orca,piper,google"
     vad_backend: str | Sequence[str] = "silero"
     wake_backend: str | Sequence[str] = "porcupine"

@@ -502,27 +502,60 @@ class VoiceCore:
             self.component_manager.active_stt_backend,
         )
         tried: list[str] = []
+        errors: list[str] = []
         for name in backends:
             if name in tried:
                 continue
             tried.append(name)
 
+            # Re-init if the active backend doesn't match this candidate
             stt_mismatch = (
                 name != self.component_manager.active_stt_backend
                 or not self.component_manager.components.stt
             )
             if stt_mismatch:
-                try:
-                    self.component_manager.init_stt_backend(name)
-                except Exception:
+                if not self.component_manager.init_stt_backend(name):
+                    init_err = self.component_manager._stt_init_errors.get(
+                        name, f"STT backend '{name}' init failed"
+                    )
+                    errors.append(f"  • {name}: {init_err}")
                     continue
 
             try:
                 return self.component_manager.components.stt.transcribe(audio)
             except Exception as e:
+                err_str = str(e)
+                errors.append(f"  • {name}: transcription failed — {err_str}")
                 logger.error(f"STT backend '{name}' failed: {e}")
-                self.event_emitter.emit(VoiceError(error=str(e), exception=e))
+
+        # All backends exhausted — build a clear user-facing summary
+        self._emit_stt_failure_summary(tried, errors)
         return None
+
+    def _emit_stt_failure_summary(
+        self, tried: list[str], errors: list[str]
+    ) -> None:
+        """Emit a single VoiceError with a detailed, actionable summary."""
+        lines = [f"All STT backends failed (tried: {', '.join(tried)})."]
+        if errors:
+            lines.append("Details:")
+            lines.extend(errors)
+
+        # Scan for common fixable causes and add hints
+        combined = "\n".join(errors)
+        if self._looks_like_auth_error(combined):
+            lines.append(
+                "Hint: Check your API key / credentials in Voice settings."
+            )
+        if self._looks_like_missing_dep(combined):
+            lines.append(
+                "Hint: A required package may be missing. "
+                "Run `pip install <package>` or check the backend README."
+            )
+
+        summary = "\n".join(lines)
+        logger.error(summary)
+        self.event_emitter.emit(VoiceError(error=summary))
 
     def _process_audio_sync(self, audio: np.ndarray) -> None:
         try:
@@ -532,7 +565,7 @@ class VoiceCore:
 
             result = self._try_stt_backends(audio)
             if result is None:
-                logger.error("All STT backends failed")
+                # Summary error already emitted by _try_stt_backends
                 self._safe_transition_to(VoiceState.IDLE)
                 return
 
@@ -746,6 +779,18 @@ class VoiceCore:
             "permission denied",
             "access denied",
             "credentials",
+        )
+        return any(signal in text for signal in signals)
+
+    def _looks_like_missing_dep(self, error_text: str) -> bool:
+        """Detect import / missing-package errors in backend output."""
+        text = error_text.lower()
+        signals = (
+            "no module named",
+            "importerror",
+            "modulenotfounderror",
+            "not installed",
+            "pip install",
         )
         return any(signal in text for signal in signals)
 
