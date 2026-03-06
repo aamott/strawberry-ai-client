@@ -39,9 +39,11 @@ pocket = [
     "pocket-tts>=0.0",
 ]
 neutts = [
+    "llama-cpp-python",
     "neutts",
 ]
 neutts_git = [
+    "llama-cpp-python",
     "neutts @ git+https://github.com/neuphonic/neutts.git",
 ]
 qwen3_tts = [
@@ -62,6 +64,14 @@ google = [
 silero = [
     "torch>=2.0",
     "torchaudio>=2.0",
+]
+voice = [
+    "neutts",
+    "qwen3_tts",
+    "inworld",
+    "davoice",
+    "google",
+    "silero",
 ]
 ui = [
     "PySide6>=6.5",
