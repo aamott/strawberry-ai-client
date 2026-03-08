@@ -145,6 +145,8 @@ class OrcaTTS(TTSEngine):
         return AudioChunk(audio=audio, sample_rate=self._sample_rate_val)
 
     def synthesize_stream(self, text: str) -> Iterator[AudioChunk]:
+        # TODO: Implement pre-buffer for streaming playback (note: VoiceCore
+        # already provides global adaptive pre-buffering)
         """Synthesize with streaming output.
 
         Yields audio chunks as they're generated for low-latency playback.

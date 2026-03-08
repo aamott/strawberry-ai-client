@@ -63,6 +63,8 @@ class MockTTS(TTSEngine):
         return AudioChunk(audio=audio, sample_rate=self._sample_rate)
 
     def synthesize_stream(self, text: str) -> Iterator[AudioChunk]:
+        # TODO: Implement pre-buffer for streaming playback (note: VoiceCore
+        # already provides global adaptive pre-buffering)
         """Synthesize with simulated streaming."""
         self._call_count += 1
         self._last_text = text

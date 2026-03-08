@@ -227,6 +227,8 @@ class SoproTTS(TTSEngine):
         return AudioChunk(audio=audio, sample_rate=self.SAMPLE_RATE)
 
     def synthesize_stream(self, text: str) -> Iterator[AudioChunk]:
+        # TODO: Implement pre-buffer for streaming playback (note: VoiceCore
+        # already provides global adaptive pre-buffering)
         """Synthesize with streaming output for low-latency playback.
 
         Note: Streaming version is not bit-exact with non-streaming.

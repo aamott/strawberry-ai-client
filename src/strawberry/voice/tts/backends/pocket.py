@@ -182,6 +182,8 @@ class PocketTTS(TTSEngine):
         return AudioChunk(audio=audio, sample_rate=self._sample_rate_val)
 
     def synthesize_stream(self, text: str) -> Iterator[AudioChunk]:
+        # TODO: Implement pre-buffer for streaming playback (note: VoiceCore
+        # already provides global adaptive pre-buffering)
         """Synthesize with streaming output using native pocket-tts streaming.
 
         Uses ``generate_audio_stream()`` which yields audio tensors as each
