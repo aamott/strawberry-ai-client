@@ -100,6 +100,13 @@ class VoiceCore:
         self._current_speech_text: Optional[str] = None
         self._last_tts_error: str | None = None
 
+        # Adaptive streaming pre-buffer: number of TTS chunks to
+        # collect before starting audio playback.  Grows by 1 on
+        # each underrun (capped at _TTS_PREBUFFER_MAX).
+        self._tts_prebuffer_chunks: int = 2
+        _TTS_PREBUFFER_MAX: int = 10  # noqa: N806
+        self._tts_prebuffer_max = _TTS_PREBUFFER_MAX
+
         # Backends that failed init or transcription/synthesis are cached
         # here so they are not retried on every call.  Cleared when the
         # user saves new settings for that component type.
@@ -746,7 +753,11 @@ class VoiceCore:
         raise RuntimeError(f"All TTS backends failed. Tried: {tried}")
 
     def _try_tts_playback(self, text: str) -> bool:
-        """Attempt TTS playback with the currently active backend.
+        """Attempt TTS playback with adaptive pre-buffering.
+
+        Collects chunks before opening the audio stream, then
+        streams the remainder.  On underrun the pre-buffer size
+        is bumped for the next call.
 
         Returns:
             True if playback completed successfully.
@@ -756,31 +767,75 @@ class VoiceCore:
         tts = self.component_manager.components.tts
         player = self.component_manager.components.audio_player
         self._last_tts_error = None
-        wrote_audio = False
+
         try:
+            chunks_iter = tts.synthesize_stream(text)
+
+            # Phase 1: fill pre-buffer
+            prebuffer = self._fill_prebuffer(chunks_iter)
+            if not prebuffer:
+                self._last_tts_error = "backend returned no audio"
+                return False
+
+            # Phase 2: start stream & flush pre-buffer
             player.start_stream(sample_rate=tts.sample_rate)
-            for chunk in tts.synthesize_stream(text):
+            for chunk in prebuffer:
+                player.write_chunk(chunk.audio)
+
+            # Phase 3: stream remaining chunks
+            for chunk in chunks_iter:
                 speaker_state = self._pipeline.speaker.state
                 if speaker_state == SpeakerState.INTERRUPTED:
                     player.stop()
                     logger.info("Stopping playback due to interrupt")
-                    return True  # Intentional stop, not a failure
+                    return True
                 if speaker_state != SpeakerState.SPEAKING:
                     player.stop()
                     return True
                 if len(chunk.audio) > 0:
-                    wrote_audio = True
-                player.write_chunk(chunk.audio)
+                    player.write_chunk(chunk.audio)
+
             player.finish_stream()
-            if not wrote_audio:
-                self._last_tts_error = "backend returned no audio"
-                return False
             return True
+
         except Exception as e:
-            logger.error(f"TTS backend failed: {e}")
+            logger.error("TTS backend failed: %s", e)
             player.finish_stream()
             self._last_tts_error = str(e)
+            if "underrun" in str(e).lower():
+                self._grow_prebuffer()
             return False
+
+    def _fill_prebuffer(self, chunks_iter) -> list:
+        """Collect up to ``_tts_prebuffer_chunks`` from the iterator.
+
+        Returns:
+            List of AudioChunk objects with non-empty audio.
+        """
+        prebuffer: list = []
+        target = self._tts_prebuffer_chunks
+        for chunk in chunks_iter:
+            if len(chunk.audio) > 0:
+                prebuffer.append(chunk)
+            if len(prebuffer) >= target:
+                break
+        logger.debug(
+            "TTS pre-buffer filled: %d/%d chunks",
+            len(prebuffer), target,
+        )
+        return prebuffer
+
+    def _grow_prebuffer(self) -> None:
+        """Increase TTS pre-buffer by 1 (up to max)."""
+        old = self._tts_prebuffer_chunks
+        self._tts_prebuffer_chunks = min(
+            old + 1, self._tts_prebuffer_max
+        )
+        if self._tts_prebuffer_chunks != old:
+            logger.info(
+                "TTS pre-buffer grown: %d -> %d chunks",
+                old, self._tts_prebuffer_chunks,
+            )
 
     def _looks_like_auth_error(self, error_text: str) -> bool:
         text = error_text.lower()
