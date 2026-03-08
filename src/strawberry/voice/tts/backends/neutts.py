@@ -83,7 +83,7 @@ class NeuTTSEngine(TTSEngine):
                 key="codec_repo",
                 label="Codec Repo",
                 type=FieldType.TEXT,
-                default="neuphonic/neucodec",
+                default="neuphonic/distill-neucodec",
                 description=(
                     "NeuCodec repo or local path. "
                     "Use neucodec-onnx-decoder for "
@@ -170,7 +170,7 @@ class NeuTTSEngine(TTSEngine):
     def __init__(
         self,
         backbone_repo: str = "neuphonic/neutts-nano-q4-gguf",
-        codec_repo: str = "neuphonic/neucodec",
+        codec_repo: str = "neuphonic/distill-neucodec",
         language: str = "",
         voice: str = "jo",
         backbone_device: str = "auto",
